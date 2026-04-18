@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  DATABASE_URL: postgres://app:app@localhost:5432/admission?sslmode=disable
+  JWT_SECRET: ci-test-secret-key
+  REDIS_ADDR: localhost:6379
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install swag (matching go.mod version)
+        run: go install github.com/swaggo/swag/cmd/swag@$(grep 'swaggo/swag' go.mod | awk '{print $2}')
+
+      - name: Generate Swagger docs
+        run: swag init -g cmd/api/main.go
+
+      - name: Run tests with coverage
+        run: go test -race -cover ./...
+
+      - name: Build
+        run: go build -o api ./cmd/api
+
+      - name: Run go vet
+        run: go vet ./...
