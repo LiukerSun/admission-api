@@ -1,5 +1,26 @@
 version: '3.8'
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: admission-api
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://app:app@db:5432/admission?sslmode=disable
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_ACCESS_TTL_MINUTES: 15
+      JWT_REFRESH_TTL_HOURS: 168
+      ENV: development
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   db:
     image: postgres:15-alpine
     container_name: admission-db

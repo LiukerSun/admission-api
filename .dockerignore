@@ -1,0 +1,14 @@
+.git
+.gitignore
+.github
+*.md
+.env
+.env.example
+api
+*.test
+integration.test
+user.test
+openspec
+.claude
+.vscode
+.idea

@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-playground/validator/v10"
+
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/web"
-	"github.com/go-playground/validator/v10"
 )
 
 // Request/Response DTOs for Swagger.
@@ -27,7 +28,7 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 }
 
-type UserResponse struct {
+type Response struct {
 	ID        int64     `json:"id" example:"1"`
 	Email     string    `json:"email" example:"user@example.com"`
 	Role      string    `json:"role" example:"user"`
@@ -62,7 +63,7 @@ func NewHandler(service Service, jwtConfig *middleware.JWTConfig) *Handler {
 // @Accept       json
 // @Produce      json
 // @Param        body  body      RegisterRequest  true  "注册信息"
-// @Success      200   {object}  web.Response{data=UserResponse}
+// @Success      200   {object}  web.Response{data=Response}
 // @Failure      400   {object}  web.Response
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/auth/register [post]
@@ -88,7 +89,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(UserResponse{
+	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(Response{
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      u.Role,
@@ -177,7 +178,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  web.Response{data=UserResponse}
+// @Success      200  {object}  web.Response{data=Response}
 // @Failure      401  {object}  web.Response
 // @Router       /api/v1/me [get]
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
@@ -193,7 +194,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(UserResponse{
+	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(Response{
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      u.Role,

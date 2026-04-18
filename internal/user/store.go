@@ -17,16 +17,16 @@ type Store interface {
 	GetByID(ctx context.Context, id int64) (*User, error)
 }
 
-// UserStore implements Store using pgx.
-type UserStore struct {
+// store implements Store using pgx.
+type store struct {
 	pool *pgxpool.Pool
 }
 
-func NewStore(pool *pgxpool.Pool) *UserStore {
-	return &UserStore{pool: pool}
+func NewStore(pool *pgxpool.Pool) *store {
+	return &store{pool: pool}
 }
 
-func (s *UserStore) Create(ctx context.Context, email, passwordHash, role string) (*User, error) {
+func (s *store) Create(ctx context.Context, email, passwordHash, role string) (*User, error) {
 	if role == "" {
 		role = "user"
 	}
@@ -52,7 +52,7 @@ func (s *UserStore) Create(ctx context.Context, email, passwordHash, role string
 	return &u, nil
 }
 
-func (s *UserStore) GetByEmail(ctx context.Context, email string) (*User, error) {
+func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 	query := `
 		SELECT id, email, password_hash, role, created_at, updated_at
 		FROM users
@@ -73,7 +73,7 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*User, error)
 	return &u, nil
 }
 
-func (s *UserStore) GetByID(ctx context.Context, id int64) (*User, error) {
+func (s *store) GetByID(ctx context.Context, id int64) (*User, error) {
 	query := `
 		SELECT id, email, password_hash, role, created_at, updated_at
 		FROM users

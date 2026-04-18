@@ -22,23 +22,28 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	httpSwagger "github.com/swaggo/http-swagger"
 
+	_ "admission-api/docs"
 	"admission-api/internal/health"
 	"admission-api/internal/platform/config"
 	"admission-api/internal/platform/db"
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/user"
-
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-
-	httpSwagger "github.com/swaggo/http-swagger"
-	_ "admission-api/docs"
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("fatal error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	migrateFlag := flag.String("migrate", "", "Run migrations: up or down")
 	flag.Parse()
 
@@ -48,20 +53,17 @@ func main() {
 
 	database, err := db.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		slog.Error("failed to connect to database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer database.Close()
 
 	if *migrateFlag != "" {
-		runMigrations(cfg.DatabaseURL, *migrateFlag)
-		return
+		return runMigrations(cfg.DatabaseURL, *migrateFlag)
 	}
 
 	redisClient, err := redis.New(cfg.RedisAddr)
 	if err != nil {
-		slog.Error("failed to connect to redis", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to connect to redis: %w", err)
 	}
 	defer redisClient.Close()
 
@@ -132,30 +134,28 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+	return nil
 }
 
-func runMigrations(databaseURL, direction string) {
+func runMigrations(databaseURL, direction string) error {
 	m, err := migrate.New("file://migration", databaseURL)
 	if err != nil {
-		slog.Error("failed to create migrate instance", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
 
 	switch direction {
 	case "up":
 		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			slog.Error("failed to run migrations up", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to run migrations up: %w", err)
 		}
 		slog.Info("migrations applied successfully")
 	case "down":
 		if err := m.Down(); err != nil && err != migrate.ErrNoChange {
-			slog.Error("failed to run migrations down", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to run migrations down: %w", err)
 		}
 		slog.Info("migrations rolled back successfully")
 	default:
-		fmt.Println("Usage: -migrate up | -migrate down")
-		os.Exit(1)
+		return fmt.Errorf("usage: -migrate up | -migrate down")
 	}
+	return nil
 }

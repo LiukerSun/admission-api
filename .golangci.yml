@@ -1,0 +1,55 @@
+version: "2"
+run:
+  go: "1.25"
+linters:
+  enable:
+    - bodyclose
+    - gocritic
+    - misspell
+    - prealloc
+    - revive
+    - unconvert
+  settings:
+    gocritic:
+      disabled-checks:
+        - wrapperFunc
+        - dupImport
+      enabled-tags:
+        - performance
+        - style
+        - experimental
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - checkPrivateReceivers
+            - sayRepetitiveInsteadOfStutters
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+      - linters:
+          - all
+        path: docs/docs\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

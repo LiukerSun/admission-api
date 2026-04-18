@@ -45,7 +45,8 @@ func (c *Client) Exists(ctx context.Context, keys ...string) (int64, error) {
 }
 
 func (c *Client) SetNX(ctx context.Context, key string, value any, ttl time.Duration) (bool, error) {
-	return c.rdb.SetNX(ctx, key, value, ttl).Result()
+	result, err := c.rdb.SetArgs(ctx, key, value, redis.SetArgs{Mode: "NX", TTL: ttl}).Result()
+	return result == "OK", err
 }
 
 func (c *Client) HSet(ctx context.Context, key string, values ...any) error {

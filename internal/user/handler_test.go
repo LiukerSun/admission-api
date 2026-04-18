@@ -87,7 +87,7 @@ func TestHandler_Me_Unauthorized(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	h.Me(rec, req)

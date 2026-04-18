@@ -16,6 +16,6 @@ func (h *BaseHandler) RespondJSON(w http.ResponseWriter, status int, data any) {
 }
 
 // RespondError writes a standardized error response.
-func (h *BaseHandler) RespondError(w http.ResponseWriter, status int, code int, message string) {
+func (h *BaseHandler) RespondError(w http.ResponseWriter, status, code int, message string) {
 	h.RespondJSON(w, status, ErrorResponse(code, message))
 }

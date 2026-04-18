@@ -6,6 +6,7 @@ import (
 
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -19,16 +20,16 @@ type Service interface {
 
 // AuthService implements Service.
 type AuthService struct {
-	store         Store
-	tokenManager  *redis.RefreshTokenManager
-	jwtConfig     *middleware.JWTConfig
+	store        Store
+	tokenManager *redis.RefreshTokenManager
+	jwtConfig    *middleware.JWTConfig
 }
 
 func NewAuthService(store Store, tokenManager *redis.RefreshTokenManager, jwtConfig *middleware.JWTConfig) *AuthService {
 	return &AuthService{
-		store:         store,
-		tokenManager:  tokenManager,
-		jwtConfig:     jwtConfig,
+		store:        store,
+		tokenManager: tokenManager,
+		jwtConfig:    jwtConfig,
 	}
 }
 
