@@ -78,6 +78,41 @@ make build   # 构建 Docker 镜像
 
 ---
 
+## 提交规范
+
+本项目使用 [Conventional Commits](https://www.conventionalcommits.org/)，**提交前必须配置 git hooks**：
+
+```bash
+make setup    # 配置 commit-msg hook，自动验证提交信息
+```
+
+提交信息格式：`<type>(<scope>): <description>`
+
+| Type | 说明 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | 修复 bug |
+| `docs` | 仅文档更新 |
+| `style` | 代码格式（不影响逻辑） |
+| `refactor` | 重构（非 bug 修复、非新功能） |
+| `perf` | 性能优化 |
+| `test` | 添加/修改测试 |
+| `build` | 构建系统或依赖变更 |
+| `ci` | CI 配置变更 |
+| `chore` | 其他不影响源码和测试的变更 |
+| `revert` | 回退之前的提交 |
+
+示例：
+```
+feat(auth): add JWT refresh token rotation
+fix(api): resolve nil pointer in login handler
+docs(readme): update deployment instructions
+```
+
+> 不规范的提交会被本地 hook 拦截，PR 中的不规范提交也会导致 CI 失败。
+
+---
+
 ## 配置
 
 所有配置通过 `.env` 文件管理。首次运行 `make db` 或 `make dev` 时会自动从 `.env.example` 创建。

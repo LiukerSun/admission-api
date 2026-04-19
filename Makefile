@@ -1,4 +1,4 @@
-.PHONY: dev run down logs build db
+.PHONY: dev run down logs build db setup
 
 db:
 	@if [ ! -f .env ]; then \
@@ -61,3 +61,7 @@ logs:
 
 build:
 	docker build -t admission-api .
+
+setup:
+	git config core.hooksPath .githooks
+	@echo "Git hooks configured. All commits will be validated."
