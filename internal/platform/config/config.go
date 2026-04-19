@@ -27,8 +27,8 @@ func Load() *Config {
 
 	cfg := &Config{
 		Port:                getEnv("PORT", "8080"),
-		DatabaseURL:         requireEnv("DATABASE_URL"),
-		RedisAddr:           getEnv("REDIS_ADDR", "localhost:6379"),
+		DatabaseURL:         buildDatabaseURL(),
+		RedisAddr:           buildRedisAddr(),
 		JWTSecret:           requireEnv("JWT_SECRET"),
 		JWTAccessTTLMinutes: getIntEnv("JWT_ACCESS_TTL_MINUTES", 15),
 		JWTRefreshTTLHours:  getIntEnv("JWT_REFRESH_TTL_HOURS", 168),
@@ -36,6 +36,25 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+func buildDatabaseURL() string {
+	if url := os.Getenv("DATABASE_URL"); url != "" {
+		return url
+	}
+	user := getEnv("POSTGRES_USER", "app")
+	password := getEnv("POSTGRES_PASSWORD", "app")
+	db := getEnv("POSTGRES_DB", "admission")
+	port := getEnv("POSTGRES_PORT", "5432")
+	return fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable", user, password, port, db)
+}
+
+func buildRedisAddr() string {
+	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
+		return addr
+	}
+	port := getEnv("REDIS_PORT", "6379")
+	return fmt.Sprintf("localhost:%s", port)
 }
 
 func getEnv(key, fallback string) string {

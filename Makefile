@@ -1,41 +1,63 @@
-.PHONY: build run dev db up migrate-up migrate-down test test-cover lint tidy swagger
-
-build:
-	$(MAKE) swagger
-	go build -o api ./cmd/api
-
-run:
-	go run ./cmd/api
-
-dev:
-	docker-compose up -d
+.PHONY: dev run down logs build db
 
 db:
-	docker-compose up -d db redis
+	@if [ ! -f .env ]; then \
+		echo "Creating .env from .env.example..."; \
+		cp .env.example .env; \
+	fi
+	@echo "Ensuring component variables in .env..."
+	@POSTGRES_PORT=$$(grep '^POSTGRES_PORT=' .env 2>/dev/null | cut -d= -f2); \
+	POSTGRES_PORT=$${POSTGRES_PORT:-5432}; \
+	REDIS_PORT=$$(grep '^REDIS_PORT=' .env 2>/dev/null | cut -d= -f2); \
+	REDIS_PORT=$${REDIS_PORT:-6379}; \
+	if grep -q "^POSTGRES_PORT=" .env; then \
+		sed -i.bak "s|^POSTGRES_PORT=.*|POSTGRES_PORT=$${POSTGRES_PORT}|" .env && rm -f .env.bak; \
+	else \
+		echo "POSTGRES_PORT=$${POSTGRES_PORT}" >> .env; \
+	fi; \
+	if grep -q "^REDIS_PORT=" .env; then \
+		sed -i.bak "s|^REDIS_PORT=.*|REDIS_PORT=$${REDIS_PORT}|" .env && rm -f .env.bak; \
+	else \
+		echo "REDIS_PORT=$${REDIS_PORT}" >> .env; \
+	fi
+	@echo "Starting infrastructure containers..."
+	@docker-compose up -d db redis
+	@echo "Waiting for database to be ready..."
+	@until docker-compose exec -T db pg_isready -U app -d admission > /dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "Waiting for redis to be ready..."
+	@until docker-compose exec -T redis redis-cli ping | grep -q PONG; do \
+		sleep 1; \
+	done
+	@echo "Running database migrations..."
+	@go run ./cmd/api -migrate up
+	@echo "Database initialized successfully!"
 
-up: dev
-	@echo "Waiting for services to be ready..."
+dev:
+	@if [ ! -f .env ]; then \
+		echo "Creating .env from .env.example..."; \
+		cp .env.example .env; \
+	fi
+	@if [ ! -f docs/docs.go ]; then \
+		echo "Generating swagger docs..."; \
+		go run github.com/swaggo/swag/cmd/swag@v1.8.12 init -g cmd/api/main.go; \
+	fi
+	docker-compose up -d
+	@echo "Waiting for db..."
 	@sleep 3
-	$(MAKE) migrate-up
-	$(MAKE) run
-
-migrate-up:
 	go run ./cmd/api -migrate up
+	go run ./cmd/api
 
-migrate-down:
-	go run ./cmd/api -migrate down
+run:
+	docker-compose -f docker-compose.prod.yml up --build -d
 
-test:
-	go test ./...
+down:
+	docker-compose down
+	docker-compose -f docker-compose.prod.yml down
 
-test-cover:
-	go test -cover ./...
+logs:
+	docker-compose -f docker-compose.prod.yml logs -f app
 
-lint:
-	golangci-lint run ./...
-
-tidy:
-	go mod tidy
-
-swagger:
-	swag init -g cmd/api/main.go
+build:
+	docker build -t admission-api .

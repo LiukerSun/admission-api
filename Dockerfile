@@ -34,6 +34,10 @@ RUN apk --no-cache add ca-certificates
 COPY --from=builder /app/api .
 COPY --from=builder /app/migration ./migration
 
+# Copy and set up entrypoint
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Expose application port
 EXPOSE 8080
 
@@ -41,4 +45,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD wget --quiet --tries=1 --spider http://localhost:8080/health || exit 1
 
-ENTRYPOINT ["./api"]
+ENTRYPOINT ["/app/entrypoint.sh"]
