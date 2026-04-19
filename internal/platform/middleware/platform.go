@@ -1,18 +1,12 @@
 package middleware
 
-import (
-	"context"
-	"net/http"
-)
+import "github.com/gin-gonic/gin"
 
-func Platform(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		platform := r.Header.Get("X-Platform")
-		if platform == "" {
-			platform = "web"
-		}
-
-		ctx := context.WithValue(r.Context(), ContextPlatformKey, platform)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+func Platform(c *gin.Context) {
+	platform := c.GetHeader("X-Platform")
+	if platform == "" {
+		platform = "web"
+	}
+	c.Set(ContextPlatformKey, platform)
+	c.Next()
 }

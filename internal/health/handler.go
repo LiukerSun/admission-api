@@ -1,7 +1,7 @@
 package health
 
 import (
-	"net/http"
+	"github.com/gin-gonic/gin"
 
 	"admission-api/internal/platform/db"
 	"admission-api/internal/platform/web"
@@ -26,13 +26,13 @@ func NewHandler(database *db.DB) *Handler {
 // @Success      200  {object}  web.Response{data=map[string]string}
 // @Failure      503  {object}  web.Response
 // @Router       /health [get]
-func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.HealthCheck(r.Context()); err != nil {
-		h.RespondJSON(w, http.StatusServiceUnavailable, web.ErrorResponse(web.ErrCodeInternal, "database unavailable"))
+func (h *Handler) Check(c *gin.Context) {
+	if err := h.db.HealthCheck(c.Request.Context()); err != nil {
+		h.RespondError(c, 503, 5000, "database unavailable")
 		return
 	}
 
-	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(map[string]string{
+	h.RespondJSON(c, 200, web.SuccessResponse(map[string]string{
 		"status": "healthy",
 	}))
 }

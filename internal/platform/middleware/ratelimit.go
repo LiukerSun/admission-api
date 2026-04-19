@@ -2,46 +2,47 @@ package middleware
 
 import (
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"net/http"
+
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
 
-func RateLimitMiddleware(rdb *redis.Client, limit int, window time.Duration) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := extractIP(r)
-			key := "ratelimit:" + ip
-			ctx := r.Context()
+func RateLimitMiddleware(rdb *redis.Client, limit int, window time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := extractIP(c.Request)
+		key := "ratelimit:" + ip
+		ctx := c.Request.Context()
 
-			count, err := rdb.Incr(ctx, key).Result()
-			if err != nil {
-				next.ServeHTTP(w, r)
-				return
-			}
+		count, err := rdb.Incr(ctx, key).Result()
+		if err != nil {
+			c.Next()
+			return
+		}
 
-			if count == 1 {
-				_ = rdb.Expire(ctx, key, window).Err()
-			}
+		if count == 1 {
+			_ = rdb.Expire(ctx, key, window).Err()
+		}
 
-			remaining := int64(limit) - count
-			if remaining < 0 {
-				remaining = 0
-			}
+		remaining := int64(limit) - count
+		if remaining < 0 {
+			remaining = 0
+		}
 
-			w.Header().Add("X-RateLimit-Limit", strconv.Itoa(limit))
-			w.Header().Add("X-RateLimit-Remaining", strconv.FormatInt(remaining, 10))
+		c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
+		c.Header("X-RateLimit-Remaining", strconv.FormatInt(remaining, 10))
 
-			if count > int64(limit) {
-				http.Error(w, `{"code":1001,"message":"too many requests"}`, http.StatusTooManyRequests)
-				return
-			}
+		if count > int64(limit) {
+			c.JSON(429, gin.H{"code": 1001, "message": "too many requests"})
+			c.Abort()
+			return
+		}
 
-			next.ServeHTTP(w, r)
-		})
+		c.Next()
 	}
 }
 

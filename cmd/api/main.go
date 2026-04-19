@@ -21,11 +21,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	httpSwagger "github.com/swaggo/http-swagger"
+	"github.com/swaggo/gin-swagger"
+	"github.com/swaggo/gin-swagger/swaggerFiles"
 
 	_ "admission-api/docs"
 	"admission-api/internal/health"
@@ -81,28 +82,29 @@ func run() error {
 
 	healthHandler := health.NewHandler(database)
 
-	r := chi.NewRouter()
+	if cfg.Env == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
-	r.Use(middleware.Recover)
+	r := gin.New()
+	r.Use(gin.Recovery())
 	r.Use(middleware.Logger)
 	r.Use(middleware.CORS)
 	r.Use(middleware.Platform)
 
-	rateMiddleware := middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute)
+	r.GET("/health", healthHandler.Check)
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	r.Get("/health", healthHandler.Check)
-	r.Get("/swagger/*", httpSwagger.WrapHandler)
+	api := r.Group("/api/v1")
+	{
+		api.POST("/auth/register", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Register)
+		api.POST("/auth/login", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Login)
+		api.POST("/auth/refresh", userHandler.Refresh)
 
-	r.Route("/api/v1", func(r chi.Router) {
-		r.With(rateMiddleware).Post("/auth/register", userHandler.Register)
-		r.With(rateMiddleware).Post("/auth/login", userHandler.Login)
-		r.Post("/auth/refresh", userHandler.Refresh)
-
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.JWTMiddleware(jwtConfig))
-			r.Get("/me", userHandler.Me)
-		})
-	})
+		authorized := api.Group("")
+		authorized.Use(middleware.JWTMiddleware(jwtConfig))
+		authorized.GET("/me", userHandler.Me)
+	}
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

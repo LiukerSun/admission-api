@@ -11,9 +11,17 @@ import (
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/web"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func setupTest() (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	return c, w
+}
 
 type mockService struct {
 	mock.Mock
@@ -59,15 +67,16 @@ func TestHandler_Register(t *testing.T) {
 		Return(&User{ID: 1, Email: "new@example.com", Role: "user"}, nil)
 
 	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
-	rec := httptest.NewRecorder()
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
 
-	h.Register(rec, req)
+	h.Register(c)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp web.Response
-	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.Equal(t, 0, resp.Code)
 }
 
@@ -75,22 +84,23 @@ func TestHandler_Register_InvalidBody(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader([]byte("invalid")))
-	rec := httptest.NewRecorder()
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader([]byte("invalid")))
+	c.Request.Header.Set("Content-Type", "application/json")
 
-	h.Register(rec, req)
+	h.Register(c)
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestHandler_Me_Unauthorized(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", http.NoBody)
-	rec := httptest.NewRecorder()
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/me", http.NoBody)
 
-	h.Me(rec, req)
+	h.Me(c)
 
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

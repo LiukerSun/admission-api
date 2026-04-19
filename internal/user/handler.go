@@ -1,11 +1,11 @@
 package user
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
 	"admission-api/internal/platform/middleware"
@@ -67,29 +67,29 @@ func NewHandler(service Service, jwtConfig *middleware.JWTConfig) *Handler {
 // @Failure      400   {object}  web.Response
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/auth/register [post]
-func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Register(c *gin.Context) {
 	var req RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.RespondError(w, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
 		return
 	}
 
 	if err := h.validate.Struct(req); err != nil {
-		h.RespondError(w, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
 		return
 	}
 
-	u, err := h.service.Register(r.Context(), req.Email, req.Password)
+	u, err := h.service.Register(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		if strings.Contains(err.Error(), "email already exists") {
-			h.RespondError(w, http.StatusConflict, web.ErrCodeConflict, "email already exists")
+			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "email already exists")
 			return
 		}
-		h.RespondError(w, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
 		return
 	}
 
-	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(Response{
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      u.Role,
@@ -108,27 +108,32 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 // @Failure      400   {object}  web.Response
 // @Failure      401   {object}  web.Response
 // @Router       /api/v1/auth/login [post]
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Login(c *gin.Context) {
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.RespondError(w, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
 		return
 	}
 
 	if err := h.validate.Struct(req); err != nil {
-		h.RespondError(w, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
 		return
 	}
 
-	platform := middleware.PlatformFromContext(r.Context())
+	platform := "web"
+	if p, ok := c.Get(middleware.ContextPlatformKey); ok {
+		if ps, ok := p.(string); ok {
+			platform = ps
+		}
+	}
 
-	tokens, err := h.service.Login(r.Context(), req.Email, req.Password, platform)
+	tokens, err := h.service.Login(c.Request.Context(), req.Email, req.Password, platform)
 	if err != nil {
-		h.RespondError(w, http.StatusUnauthorized, web.ErrCodeUnauthorized, "invalid credentials")
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "invalid credentials")
 		return
 	}
 
-	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(TokenResponse{
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(TokenResponse{
 		AccessToken:  tokens.AccessToken,
 		RefreshToken: tokens.RefreshToken,
 		ExpiresIn:    tokens.ExpiresIn,
@@ -146,25 +151,25 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 // @Success      200   {object}  web.Response{data=TokenResponse}
 // @Failure      401   {object}  web.Response
 // @Router       /api/v1/auth/refresh [post]
-func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Refresh(c *gin.Context) {
 	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.RespondError(w, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
 		return
 	}
 
 	if err := h.validate.Struct(req); err != nil {
-		h.RespondError(w, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
 		return
 	}
 
-	tokens, err := h.service.Refresh(r.Context(), req.RefreshToken)
+	tokens, err := h.service.Refresh(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		h.RespondError(w, http.StatusUnauthorized, web.ErrCodeUnauthorized, "invalid or expired refresh token")
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "invalid or expired refresh token")
 		return
 	}
 
-	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(TokenResponse{
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(TokenResponse{
 		AccessToken:  tokens.AccessToken,
 		RefreshToken: tokens.RefreshToken,
 		ExpiresIn:    tokens.ExpiresIn,
@@ -181,20 +186,26 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  web.Response{data=Response}
 // @Failure      401  {object}  web.Response
 // @Router       /api/v1/me [get]
-func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	userID, _, ok := middleware.UserFromContext(r.Context())
+func (h *Handler) Me(c *gin.Context) {
+	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
+	if !exists {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	userID, ok := userIDRaw.(int64)
 	if !ok {
-		h.RespondError(w, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
 	}
 
-	u, err := h.service.Me(r.Context(), userID)
+	u, err := h.service.Me(c.Request.Context(), userID)
 	if err != nil {
-		h.RespondError(w, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
 		return
 	}
 
-	h.RespondJSON(w, http.StatusOK, web.SuccessResponse(Response{
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      u.Role,

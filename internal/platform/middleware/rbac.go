@@ -3,23 +3,26 @@ package middleware
 import (
 	"net/http"
 	"slices"
+
+	"github.com/gin-gonic/gin"
 )
 
-func RequireRole(roles ...string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, role, ok := UserFromContext(r.Context())
-			if !ok {
-				http.Error(w, `{"code":1002,"message":"unauthorized"}`, http.StatusUnauthorized)
-				return
-			}
+func RequireRole(roles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get(ContextRoleKey)
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": 1002, "message": "unauthorized"})
+			c.Abort()
+			return
+		}
 
-			if !slices.Contains(roles, role) {
-				http.Error(w, `{"code":1003,"message":"forbidden"}`, http.StatusForbidden)
-				return
-			}
+		roleStr, ok := role.(string)
+		if !ok || !slices.Contains(roles, roleStr) {
+			c.JSON(http.StatusForbidden, gin.H{"code": 1003, "message": "forbidden"})
+			c.Abort()
+			return
+		}
 
-			next.ServeHTTP(w, r)
-		})
+		c.Next()
 	}
 }
