@@ -25,7 +25,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/swaggo/files"
+	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "admission-api/docs"
@@ -93,7 +93,7 @@ func run() error {
 	r.Use(middleware.Platform)
 
 	r.GET("/health", healthHandler.Check)
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(files.Handler))
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	api := r.Group("/api/v1")
 	{
