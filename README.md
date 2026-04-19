@@ -1,6 +1,6 @@
 # Admission API
 
-志愿报考分析平台后端 API。基于 Go + Chi + PostgreSQL + Redis 的模块化单体架构模板，内置用户认证、JWT 双 Token、RBAC、限流、健康检查等基础设施。
+志愿报考分析平台后端 API。基于 Go + Gin + PostgreSQL + Redis 的模块化单体架构模板，内置用户认证、JWT 双 Token、RBAC、限流、健康检查等基础设施。
 
 ---
 
@@ -9,7 +9,7 @@
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | 语言 | Go 1.25 | 编译快、并发性能好 |
-| 路由 | chi | 标准库兼容、中间件链清晰 |
+| 路由 | gin | 高性能、中间件丰富、生态成熟 |
 | 数据库 | PostgreSQL 15 + pgx | 高性能连接池 |
 | 缓存 | Redis 7 | Refresh Token 存储、限流计数 |
 | 迁移 | golang-migrate | 数据库版本管理 |
@@ -180,10 +180,9 @@ REDIS_PORT=6379
    schoolService := school.NewService(schoolStore)
    schoolHandler := school.NewHandler(schoolService)
 
-   r.Route("/api/v1", func(r chi.Router) {
-       r.Use(middleware.JWTMiddleware(jwtConfig))
-       r.Get("/schools", schoolHandler.List)
-   })
+   api := r.Group("/api/v1")
+   api.Use(middleware.JWTMiddleware(jwtConfig))
+   api.GET("/schools", schoolHandler.List)
    ```
 
 3. **编写数据库迁移**
@@ -245,7 +244,7 @@ go run github.com/swaggo/swag/cmd/swag@v1.8.12 init -g cmd/api/main.go
 // @Param        body  body  RegisterRequest  true  "注册信息"
 // @Success      200  {object}  web.Response{data=user.Response}
 // @Router       /api/v1/auth/register [post]
-func (h *Handler) Register(w http.ResponseWriter, r *http.Request) { ... }
+func (h *Handler) Register(c *gin.Context) { ... }
 ```
 
 ---
@@ -314,7 +313,7 @@ make run
 └────────────────────┬────────────────────────────────────┘
                      │ HTTP
 ┌────────────────────▼────────────────────────────────────┐
-│                    Chi Router                            │
+│                    Gin Router                            │
 │  ┌──────────┬──────────┬──────────┬──────────┐         │
 │  │  CORS    │  Logger  │ Recover  │Platform  │         │
 │  └──────────┴──────────┴──────────┴──────────┘         │
