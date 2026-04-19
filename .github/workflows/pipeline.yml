@@ -59,6 +59,8 @@ jobs:
         run: swag init -g cmd/api/main.go
 
       - name: Run unit tests with coverage
+        env:
+          JWT_SECRET: ci-test-secret-key-unit
         run: go test -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codecov
@@ -118,17 +120,24 @@ jobs:
 
       - name: Run database migrations
         env:
-          DATABASE_URL: postgres://app:app@localhost:5432/admission_test?sslmode=disable
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: admission_test
+          POSTGRES_PORT: 5432
+          REDIS_PORT: 6379
           JWT_SECRET: ci-test-secret-key-integration
         run: go run ./cmd/api -migrate up
 
       - name: Run integration tests
         env:
-          DATABASE_URL: postgres://app:app@localhost:5432/admission_test?sslmode=disable
-          REDIS_ADDR: localhost:6379
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: admission_test
+          POSTGRES_PORT: 5432
+          REDIS_PORT: 6379
           JWT_SECRET: ci-test-secret-key-integration
           PORT: 8080
-        run: go test -v -tags=integration ./tests/integration/... || true
+        run: go test -v -tags=integration ./tests/integration/...
 
   security:
     name: Security Scan
