@@ -80,11 +80,7 @@ make build   # 构建 Docker 镜像
 
 ## 提交规范
 
-本项目使用 [Conventional Commits](https://www.conventionalcommits.org/)，**提交前必须配置 git hooks**：
-
-```bash
-make setup    # 配置 commit-msg hook，自动验证提交信息
-```
+本项目使用 [Conventional Commits](https://www.conventionalcommits.org/)。git hooks 会在首次运行 `make db` 或 `make dev` 时自动配置，无需手动操作。
 
 提交信息格式：`<type>(<scope>): <description>`
 

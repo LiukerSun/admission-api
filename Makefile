@@ -1,6 +1,8 @@
 .PHONY: dev run down logs build db setup
 
 db:
+	@# Auto-configure git hooks if not already done
+	@git config core.hooksPath .githooks 2>/dev/null || true
 	@if [ ! -f .env ]; then \
 		echo "Creating .env from .env.example..."; \
 		cp .env.example .env; \
@@ -35,6 +37,8 @@ db:
 	@echo "Database initialized successfully!"
 
 dev:
+	@# Auto-configure git hooks if not already done
+	@git config core.hooksPath .githooks 2>/dev/null || true
 	@if [ ! -f .env ]; then \
 		echo "Creating .env from .env.example..."; \
 		cp .env.example .env; \
