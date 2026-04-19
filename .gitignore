@@ -45,3 +45,6 @@ docs/swagger.yaml
 .claude/settings.local.json
 .claude
 DESIGN.md
+
+# OpenSpec
+openspec/
