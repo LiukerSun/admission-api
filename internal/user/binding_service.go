@@ -14,15 +14,15 @@ type BindingService interface {
 
 // BindingListResult represents the binding query result with user perspective.
 type BindingListResult struct {
-	UserType string            `json:"user_type"`
+	UserType string             `json:"user_type"`
 	Bindings []*BindingWithUser `json:"bindings"`
 }
 
 // BindingWithUser augments a binding with the associated user info.
 type BindingWithUser struct {
-	ID        int64      `json:"id"`
-	User      SafeUser   `json:"user"`
-	CreatedAt string     `json:"created_at"`
+	ID        int64    `json:"id"`
+	User      SafeUser `json:"user"`
+	CreatedAt string   `json:"created_at"`
 }
 
 // SafeUser is a minimal user representation for binding responses.

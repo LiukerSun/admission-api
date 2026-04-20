@@ -28,9 +28,9 @@ type BindingListResponse struct {
 }
 
 type BindingWithUserDetail struct {
-	ID        int64         `json:"id"`
-	User      SafeUser      `json:"user"`
-	CreatedAt string        `json:"created_at"`
+	ID        int64    `json:"id"`
+	User      SafeUser `json:"user"`
+	CreatedAt string   `json:"created_at"`
 }
 
 type BindingHandler struct {
