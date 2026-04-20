@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -80,7 +83,8 @@ func GenerateTokenPair(cfg *JWTConfig, userID int64, role, platform string) (*To
 }
 
 func HashRefreshToken(token string) string {
-	return token
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
 }
 
 func JWTMiddleware(cfg *JWTConfig) gin.HandlerFunc {
@@ -148,5 +152,9 @@ func extractBearerToken(auth string) string {
 }
 
 func generateRandomToken() (string, error) {
-	return "random-token-placeholder", nil
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate random token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

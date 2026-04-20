@@ -57,12 +57,12 @@ func (s *AuthService) Login(ctx context.Context, email, password, platform strin
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	tokens, rawRefresh, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, platform)
+	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
-	refreshHash := middleware.HashRefreshToken(rawRefresh)
+	refreshHash := middleware.HashRefreshToken(tokens.RefreshToken)
 	if err := s.tokenManager.Save(ctx, refreshHash, u.ID, platform); err != nil {
 		return nil, fmt.Errorf("save refresh token: %w", err)
 	}
@@ -82,12 +82,12 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*middle
 		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
-	tokens, rawRefresh, err := middleware.GenerateTokenPair(s.jwtConfig, claims.UserID, claims.Role, claims.Platform)
+	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, claims.UserID, claims.Role, claims.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
-	newHash := middleware.HashRefreshToken(rawRefresh)
+	newHash := middleware.HashRefreshToken(tokens.RefreshToken)
 	if err := s.tokenManager.Rotate(ctx, oldHash, newHash, claims.UserID, claims.Platform); err != nil {
 		return nil, fmt.Errorf("rotate refresh token: %w", err)
 	}
