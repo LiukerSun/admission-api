@@ -12,7 +12,7 @@ import (
 
 // Service defines the authentication business logic interface.
 type Service interface {
-	Register(ctx context.Context, email, password string) (*User, error)
+	Register(ctx context.Context, email, password, userType string) (*User, error)
 	Login(ctx context.Context, email, password, platform string) (*middleware.TokenPair, error)
 	Refresh(ctx context.Context, refreshToken string) (*middleware.TokenPair, error)
 	Me(ctx context.Context, userID int64) (*User, error)
@@ -33,13 +33,17 @@ func NewAuthService(store Store, tokenManager *redis.RefreshTokenManager, jwtCon
 	}
 }
 
-func (s *AuthService) Register(ctx context.Context, email, password string) (*User, error) {
+func (s *AuthService) Register(ctx context.Context, email, password, userType string) (*User, error) {
+	if userType != "parent" && userType != "student" {
+		return nil, fmt.Errorf("invalid user type: must be 'parent' or 'student'")
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
-	u, err := s.store.Create(ctx, email, string(hash), "user")
+	u, err := s.store.Create(ctx, email, string(hash), "user", userType)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +61,7 @@ func (s *AuthService) Login(ctx context.Context, email, password, platform strin
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, platform)
+	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, u.UserType, platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
@@ -82,7 +86,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*middle
 		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
-	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, claims.UserID, claims.Role, claims.Platform)
+	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, claims.UserID, claims.Role, claims.UserType, claims.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}

@@ -8,6 +8,7 @@ type User struct {
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
 	Role         string    `json:"role"`
+	UserType     string    `json:"user_type"`
 	ProvinceCode string    `json:"province_code"`
 	SubjectType  string    `json:"subject_type"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -20,6 +21,7 @@ func (u *User) SafeUser() User {
 		ID:           u.ID,
 		Email:        u.Email,
 		Role:         u.Role,
+		UserType:     u.UserType,
 		ProvinceCode: u.ProvinceCode,
 		SubjectType:  u.SubjectType,
 		CreatedAt:    u.CreatedAt,

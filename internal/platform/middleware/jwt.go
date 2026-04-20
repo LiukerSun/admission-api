@@ -29,17 +29,19 @@ type TokenPair struct {
 type Claims struct {
 	UserID   int64  `json:"sub"`
 	Role     string `json:"role"`
+	UserType string `json:"user_type"`
 	Platform string `json:"platform"`
 	Type     string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
-func GenerateTokenPair(cfg *JWTConfig, userID int64, role, platform string) (*TokenPair, string, error) {
+func GenerateTokenPair(cfg *JWTConfig, userID int64, role, userType, platform string) (*TokenPair, string, error) {
 	now := time.Now()
 
 	accessClaims := Claims{
 		UserID:   userID,
 		Role:     role,
+		UserType: userType,
 		Platform: platform,
 		Type:     "access",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -61,6 +63,7 @@ func GenerateTokenPair(cfg *JWTConfig, userID int64, role, platform string) (*To
 	refreshClaims := Claims{
 		UserID:   userID,
 		Role:     role,
+		UserType: userType,
 		Platform: platform,
 		Type:     "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -117,6 +120,7 @@ func JWTMiddleware(cfg *JWTConfig) gin.HandlerFunc {
 
 		c.Set(ContextUserIDKey, claims.UserID)
 		c.Set(ContextRoleKey, claims.Role)
+		c.Set(ContextUserTypeKey, claims.UserType)
 		c.Set(ContextPlatformKey, claims.Platform)
 
 		c.Next()

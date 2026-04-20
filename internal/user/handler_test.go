@@ -27,8 +27,8 @@ type mockService struct {
 	mock.Mock
 }
 
-func (m *mockService) Register(ctx context.Context, email, password string) (*User, error) {
-	args := m.Called(ctx, email, password)
+func (m *mockService) Register(ctx context.Context, email, password, userType string) (*User, error) {
+	args := m.Called(ctx, email, password, userType)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -63,10 +63,10 @@ func TestHandler_Register(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, nil)
 
-	svc.On("Register", mock.Anything, "new@example.com", "password123").
-		Return(&User{ID: 1, Email: "new@example.com", Role: "user"}, nil)
+	svc.On("Register", mock.Anything, "new@example.com", "password123", "student").
+		Return(&User{ID: 1, Email: "new@example.com", Role: "user", UserType: "student"}, nil)
 
-	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
+	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123", UserType: "student"})
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")

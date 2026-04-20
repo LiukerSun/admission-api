@@ -12,9 +12,10 @@ import (
 
 // Store defines the data access interface for users.
 type Store interface {
-	Create(ctx context.Context, email, passwordHash, role string) (*User, error)
+	Create(ctx context.Context, email, passwordHash, role, userType string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByID(ctx context.Context, id int64) (*User, error)
+	GetByEmailAndType(ctx context.Context, email, userType string) (*User, error)
 }
 
 // store implements Store using pgx.
@@ -26,20 +27,20 @@ func NewStore(pool *pgxpool.Pool) *store {
 	return &store{pool: pool}
 }
 
-func (s *store) Create(ctx context.Context, email, passwordHash, role string) (*User, error) {
+func (s *store) Create(ctx context.Context, email, passwordHash, role, userType string) (*User, error) {
 	if role == "" {
 		role = "user"
 	}
 
 	query := `
-		INSERT INTO users (email, password_hash, role)
-		VALUES ($1, $2, $3)
-		RETURNING id, email, password_hash, role, created_at, updated_at
+		INSERT INTO users (email, password_hash, role, user_type)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, email, password_hash, role, user_type, created_at, updated_at
 	`
 
 	var u User
-	err := s.pool.QueryRow(ctx, query, email, passwordHash, role).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt,
+	err := s.pool.QueryRow(ctx, query, email, passwordHash, role, userType).Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.UserType, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -54,14 +55,14 @@ func (s *store) Create(ctx context.Context, email, passwordHash, role string) (*
 
 func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 	query := `
-		SELECT id, email, password_hash, role, created_at, updated_at
+		SELECT id, email, password_hash, role, user_type, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
 
 	var u User
 	err := s.pool.QueryRow(ctx, query, email).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.UserType, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -75,20 +76,41 @@ func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 
 func (s *store) GetByID(ctx context.Context, id int64) (*User, error) {
 	query := `
-		SELECT id, email, password_hash, role, created_at, updated_at
+		SELECT id, email, password_hash, role, user_type, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
 
 	var u User
 	err := s.pool.QueryRow(ctx, query, id).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.UserType, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("user not found")
 		}
 		return nil, fmt.Errorf("get user by id: %w", err)
+	}
+
+	return &u, nil
+}
+
+func (s *store) GetByEmailAndType(ctx context.Context, email, userType string) (*User, error) {
+	query := `
+		SELECT id, email, password_hash, role, user_type, created_at, updated_at
+		FROM users
+		WHERE email = $1 AND user_type = $2
+	`
+
+	var u User
+	err := s.pool.QueryRow(ctx, query, email, userType).Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.UserType, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("get user by email and type: %w", err)
 	}
 
 	return &u, nil

@@ -80,6 +80,10 @@ func run() error {
 	userService := user.NewAuthService(userStore, tokenManager, jwtConfig)
 	userHandler := user.NewHandler(userService, jwtConfig)
 
+	bindingStore := user.NewBindingStore(database.Pool())
+	bindingService := user.NewBindingService(userStore, bindingStore)
+	bindingHandler := user.NewBindingHandler(bindingService)
+
 	healthHandler := health.NewHandler(database)
 
 	if cfg.Env == "production" {
@@ -104,6 +108,12 @@ func run() error {
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
 		authorized.GET("/me", userHandler.Me)
+		authorized.POST("/bindings", bindingHandler.CreateBinding)
+		authorized.GET("/bindings", bindingHandler.GetMyBindings)
+
+		admin := authorized.Group("/admin")
+		admin.Use(middleware.RequireRole("admin"))
+		admin.DELETE("/bindings/:id", bindingHandler.DeleteBinding)
 	}
 
 	server := &http.Server{

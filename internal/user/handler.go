@@ -17,6 +17,7 @@ import (
 type RegisterRequest struct {
 	Email    string `json:"email" validate:"required,email" example:"user@example.com"`
 	Password string `json:"password" validate:"required,min=8,alphanum" example:"pass1234"`
+	UserType string `json:"user_type" validate:"required,oneof=parent student" example:"parent"`
 }
 
 type LoginRequest struct {
@@ -32,6 +33,7 @@ type Response struct {
 	ID        int64     `json:"id" example:"1"`
 	Email     string    `json:"email" example:"user@example.com"`
 	Role      string    `json:"role" example:"user"`
+	UserType  string    `json:"user_type" example:"parent"`
 	CreatedAt time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
 }
 
@@ -79,7 +81,7 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	u, err := h.service.Register(c.Request.Context(), req.Email, req.Password)
+	u, err := h.service.Register(c.Request.Context(), req.Email, req.Password, req.UserType)
 	if err != nil {
 		if strings.Contains(err.Error(), "email already exists") {
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "email already exists")
@@ -93,6 +95,7 @@ func (h *Handler) Register(c *gin.Context) {
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      u.Role,
+		UserType:  u.UserType,
 		CreatedAt: u.CreatedAt,
 	}))
 }
@@ -209,6 +212,7 @@ func (h *Handler) Me(c *gin.Context) {
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      u.Role,
+		UserType:  u.UserType,
 		CreatedAt: u.CreatedAt,
 	}))
 }
