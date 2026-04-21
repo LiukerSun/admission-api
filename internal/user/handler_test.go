@@ -59,6 +59,11 @@ func (m *mockService) Me(ctx context.Context, userID int64) (*User, error) {
 	return args.Get(0).(*User), args.Error(1)
 }
 
+func (m *mockService) ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error {
+	args := m.Called(ctx, userID, currentPassword, newPassword)
+	return args.Error(0)
+}
+
 func TestHandler_Register(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, nil)
@@ -103,4 +108,24 @@ func TestHandler_Me_Unauthorized(t *testing.T) {
 	h.Me(c)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestHandler_ChangePassword(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, nil)
+
+	svc.On("ChangePassword", mock.Anything, int64(1), "oldpass123", "newpass123").Return(nil)
+
+	body, _ := json.Marshal(ChangePasswordRequest{
+		CurrentPassword: "oldpass123",
+		NewPassword:     "newpass123",
+	})
+	c, w := setupTest()
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/me/password", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ChangePassword(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
 }

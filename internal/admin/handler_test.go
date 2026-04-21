@@ -56,6 +56,11 @@ func (m *mockService) UpdateUser(ctx context.Context, id int64, req UpdateUserRe
 	return args.Get(0).(*UserResponse), args.Error(1)
 }
 
+func (m *mockService) ResetPassword(ctx context.Context, id int64, newPassword string) error {
+	args := m.Called(ctx, id, newPassword)
+	return args.Error(0)
+}
+
 func (m *mockService) DisableUser(ctx context.Context, id int64) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
@@ -169,4 +174,21 @@ func TestHandler_UpdateUser(t *testing.T) {
 	var resp web.Response
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.Equal(t, 0, resp.Code)
+}
+
+func TestHandler_ResetPassword(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	svc.On("ResetPassword", mock.Anything, int64(7), "newpass123").Return(nil)
+
+	body, _ := json.Marshal(ResetPasswordRequest{NewPassword: "newpass123"})
+	c, w := setupTest()
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/7/password", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ResetPassword(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
 }

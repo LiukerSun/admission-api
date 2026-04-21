@@ -196,6 +196,56 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "role updated"}))
 }
 
+// ResetPassword godoc
+// @Summary      管理员重置用户密码
+// @Description  管理员为指定用户重置密码，重置后用户需重新登录
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                   true  "用户 ID"
+// @Param        body  body      ResetPasswordRequest  true  "新密码"
+// @Success      200   {object}  web.Response{data=map[string]string}
+// @Failure      400   {object}  web.Response
+// @Failure      401   {object}  web.Response
+// @Failure      403   {object}  web.Response
+// @Failure      404   {object}  web.Response
+// @Router       /api/v1/admin/users/{id}/password [put]
+func (h *Handler) ResetPassword(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid user id")
+		return
+	}
+
+	var req ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+
+	if err := h.service.ResetPassword(c.Request.Context(), id, req.NewPassword); err != nil {
+		if err.Error() == "user not found" {
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "user not found")
+			return
+		}
+		if strings.Contains(err.Error(), "invalid password") {
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid password")
+			return
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		return
+	}
+
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "password reset"}))
+}
+
 // DisableUser godoc
 // @Summary      管理员禁用用户
 // @Description  禁用指定用户，清除其所有 refresh token

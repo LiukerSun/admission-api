@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/go-playground/validator/v10"
+	"golang.org/x/crypto/bcrypt"
 
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
@@ -17,6 +18,7 @@ type Service interface {
 	GetUser(ctx context.Context, id int64) (*UserResponse, error)
 	UpdateRole(ctx context.Context, id int64, role string) error
 	UpdateUser(ctx context.Context, id int64, req UpdateUserRequest) (*UserResponse, error)
+	ResetPassword(ctx context.Context, id int64, newPassword string) error
 	DisableUser(ctx context.Context, id int64) error
 	EnableUser(ctx context.Context, id int64) error
 	ListBindings(ctx context.Context, page, pageSize int) (*BindingListResponse, error)
@@ -163,6 +165,34 @@ func (s *service) UpdateUser(ctx context.Context, id int64, req UpdateUserReques
 	}
 
 	return toUserResponse(updatedUser), nil
+}
+
+func (s *service) ResetPassword(ctx context.Context, id int64, newPassword string) error {
+	if err := s.validate.Var(newPassword, "required,min=8,alphanum"); err != nil {
+		return fmt.Errorf("invalid password: %w", err)
+	}
+
+	if _, err := s.userStore.GetByID(ctx, id); err != nil {
+		if err.Error() == "user not found" {
+			return err
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := s.userStore.UpdatePassword(ctx, id, string(hash)); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	if err := s.clearUserTokens(ctx, id); err != nil {
+		return fmt.Errorf("clear user tokens: %w", err)
+	}
+
+	return nil
 }
 
 func (s *service) DisableUser(ctx context.Context, id int64) error {

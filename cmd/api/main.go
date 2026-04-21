@@ -123,6 +123,7 @@ func run() error {
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
 		authorized.Use(middleware.AuthStatusMiddleware(redisClient))
 		authorized.GET("/me", userHandler.Me)
+		authorized.PUT("/me/password", userHandler.ChangePassword)
 		authorized.POST("/bindings", bindingHandler.CreateBinding)
 		authorized.GET("/bindings", bindingHandler.GetMyBindings)
 
@@ -132,6 +133,7 @@ func run() error {
 		adminRoutes.GET("/users", adminHandler.ListUsers)
 		adminRoutes.PUT("/users/:id", adminHandler.UpdateUser)
 		adminRoutes.PUT("/users/:id/role", adminHandler.UpdateRole)
+		adminRoutes.PUT("/users/:id/password", adminHandler.ResetPassword)
 		adminRoutes.POST("/users/:id/disable", adminHandler.DisableUser)
 		adminRoutes.POST("/users/:id/enable", adminHandler.EnableUser)
 		adminRoutes.GET("/bindings", adminHandler.ListBindings)

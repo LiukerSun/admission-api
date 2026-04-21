@@ -29,6 +29,15 @@ definitions:
         example: 100
         type: integer
     type: object
+  admin.ResetPasswordRequest:
+    properties:
+      new_password:
+        example: newpass123
+        minLength: 8
+        type: string
+    required:
+    - new_password
+    type: object
   admin.SafeUserInfo:
     properties:
       email:
@@ -260,6 +269,20 @@ definitions:
         type: integer
       user:
         $ref: '#/definitions/user.SafeUser'
+    type: object
+  user.ChangePasswordRequest:
+    properties:
+      current_password:
+        example: oldpass123
+        minLength: 8
+        type: string
+      new_password:
+        example: newpass123
+        minLength: 8
+        type: string
+    required:
+    - current_password
+    - new_password
     type: object
   user.CreateBindingRequest:
     properties:
@@ -718,6 +741,58 @@ paths:
       summary: 管理员启用用户
       tags:
       - admin
+  /api/v1/admin/users/{id}/password:
+    put:
+      consumes:
+      - application/json
+      description: 管理员为指定用户重置密码，重置后用户需重新登录
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 新密码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/admin.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员重置用户密码
+      tags:
+      - admin
   /api/v1/admin/users/{id}/role:
     put:
       consumes:
@@ -1024,6 +1099,45 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取当前用户信息
+      tags:
+      - user
+  /api/v1/me/password:
+    put:
+      consumes:
+      - application/json
+      description: 当前登录用户通过旧密码校验后修改自己的密码
+      parameters:
+      - description: 密码信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 用户修改自己的密码
       tags:
       - user
   /health:

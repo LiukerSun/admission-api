@@ -22,6 +22,7 @@ type Service interface {
 	Login(ctx context.Context, email, password, platform string) (*middleware.TokenPair, error)
 	Refresh(ctx context.Context, refreshToken string) (*middleware.TokenPair, error)
 	Me(ctx context.Context, userID int64) (*User, error)
+	ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error
 }
 
 // AuthService implements Service.
@@ -111,4 +112,26 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*middle
 
 func (s *AuthService) Me(ctx context.Context, userID int64) (*User, error) {
 	return s.store.GetByID(ctx, userID)
+}
+
+func (s *AuthService) ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error {
+	u, err := s.store.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(currentPassword)); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := s.store.UpdatePassword(ctx, userID, string(hash)); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	return nil
 }

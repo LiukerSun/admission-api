@@ -38,6 +38,11 @@ type UpdateRoleRequest struct {
 	Role string `json:"role" validate:"required,oneof=user premium admin" example:"premium"`
 }
 
+// ResetPasswordRequest is the request body for admin password reset.
+type ResetPasswordRequest struct {
+	NewPassword string `json:"new_password" validate:"required,min=8,alphanum" example:"newpass123"`
+}
+
 // UpdateUserRequest is the request body for updating a user by admin.
 type UpdateUserRequest struct {
 	Email    *string `json:"email" validate:"omitempty,email" example:"user@example.com"`

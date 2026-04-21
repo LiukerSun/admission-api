@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type mockStore struct {
@@ -70,6 +71,11 @@ func (m *mockStore) UpdateStatus(ctx context.Context, id int64, status string) e
 	return args.Error(0)
 }
 
+func (m *mockStore) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {
+	args := m.Called(ctx, id, passwordHash)
+	return args.Error(0)
+}
+
 func (m *mockStore) UpdateUser(ctx context.Context, id int64, fields UpdateUserFields) error {
 	args := m.Called(ctx, id, fields)
 	return args.Error(0)
@@ -112,5 +118,23 @@ func TestAuthService_Me(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), u.ID)
 	assert.Equal(t, "parent", u.UserType)
+	store.AssertExpectations(t)
+}
+
+func TestAuthService_ChangePassword(t *testing.T) {
+	store := new(mockStore)
+	svc := NewAuthService(store, nil, nil)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("oldpass123"), bcrypt.DefaultCost)
+	assert.NoError(t, err)
+
+	store.On("GetByID", mock.Anything, int64(1)).
+		Return(&User{ID: 1, Email: "test@example.com", PasswordHash: string(hash)}, nil)
+	store.On("UpdatePassword", mock.Anything, int64(1), mock.AnythingOfType("string")).
+		Return(nil)
+
+	err = svc.ChangePassword(context.Background(), 1, "oldpass123", "newpass123")
+
+	assert.NoError(t, err)
 	store.AssertExpectations(t)
 }

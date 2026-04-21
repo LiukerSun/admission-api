@@ -167,6 +167,7 @@ REDIS_PORT=6379
 | GET | `/api/v1/admin/users/:id` | 获取单个用户详情，用于前端编辑表单回填 |
 | PUT | `/api/v1/admin/users/:id` | 修改指定用户的 `email`、`username`、`role`、`user_type`、`status` |
 | PUT | `/api/v1/admin/users/:id/role` | 单独修改指定用户角色 |
+| PUT | `/api/v1/admin/users/:id/password` | 管理员重置指定用户密码，重置后用户需重新登录 |
 | POST | `/api/v1/admin/users/:id/disable` | 禁用指定用户 |
 | POST | `/api/v1/admin/users/:id/enable` | 启用指定用户 |
 | GET | `/api/v1/admin/bindings` | 分页获取所有家长-学生绑定关系 |

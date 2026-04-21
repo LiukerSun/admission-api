@@ -31,6 +31,11 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 }
 
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required,min=8,alphanum" example:"oldpass123"`
+	NewPassword     string `json:"new_password" validate:"required,min=8,alphanum" example:"newpass123"`
+}
+
 type Response struct {
 	ID        int64     `json:"id" example:"1"`
 	Email     string    `json:"email" example:"user@example.com"`
@@ -238,4 +243,57 @@ func (h *Handler) Me(c *gin.Context) {
 		Status:    u.Status,
 		CreatedAt: u.CreatedAt,
 	}))
+}
+
+// ChangePassword godoc
+// @Summary      用户修改自己的密码
+// @Description  当前登录用户通过旧密码校验后修改自己的密码
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      ChangePasswordRequest  true  "密码信息"
+// @Success      200   {object}  web.Response{data=map[string]string}
+// @Failure      400   {object}  web.Response
+// @Failure      401   {object}  web.Response
+// @Router       /api/v1/me/password [put]
+func (h *Handler) ChangePassword(c *gin.Context) {
+	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
+	if !exists {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	userID, ok := userIDRaw.(int64)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+
+	if req.CurrentPassword == req.NewPassword {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "new password must be different from current password")
+		return
+	}
+
+	if err := h.service.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "current password is incorrect")
+			return
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		return
+	}
+
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "password changed"}))
 }

@@ -30,6 +30,7 @@ type Store interface {
 	ListUsers(ctx context.Context, filter Filter, page, pageSize int) ([]*User, int64, error)
 	UpdateRole(ctx context.Context, id int64, role string) error
 	UpdateStatus(ctx context.Context, id int64, status string) error
+	UpdatePassword(ctx context.Context, id int64, passwordHash string) error
 	UpdateUser(ctx context.Context, id int64, fields UpdateUserFields) error
 }
 
@@ -247,6 +248,18 @@ func (s *store) UpdateStatus(ctx context.Context, id int64, status string) error
 	result, err := s.pool.Exec(ctx, query, status, id)
 	if err != nil {
 		return fmt.Errorf("update status: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
+func (s *store) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {
+	query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+	result, err := s.pool.Exec(ctx, query, passwordHash, id)
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
 	}
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("user not found")
