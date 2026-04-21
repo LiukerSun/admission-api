@@ -2,12 +2,18 @@ package user
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
 
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrAccountBanned      = errors.New("account has been banned")
 )
 
 // Service defines the authentication business logic interface.
@@ -54,11 +60,15 @@ func (s *AuthService) Register(ctx context.Context, email, password, userType st
 func (s *AuthService) Login(ctx context.Context, email, password, platform string) (*middleware.TokenPair, error) {
 	u, err := s.store.GetByEmail(ctx, email)
 	if err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
+	}
+
+	if u.Status == "banned" {
+		return nil, ErrAccountBanned
 	}
 
 	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, u.UserType, platform)

@@ -163,6 +163,14 @@ REDIS_PORT=6379
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/api/v1/admin/users` | 分页获取用户列表，支持按 `email`、`username`、`role`、`status` 过滤 |
+| GET | `/api/v1/admin/users/:id` | 获取单个用户详情，用于前端编辑表单回填 |
+| PUT | `/api/v1/admin/users/:id` | 修改指定用户的 `email`、`username`、`role`、`user_type`、`status` |
+| PUT | `/api/v1/admin/users/:id/role` | 单独修改指定用户角色 |
+| POST | `/api/v1/admin/users/:id/disable` | 禁用指定用户 |
+| POST | `/api/v1/admin/users/:id/enable` | 启用指定用户 |
+| GET | `/api/v1/admin/bindings` | 分页获取所有家长-学生绑定关系 |
+| GET | `/api/v1/admin/stats` | 获取系统统计数据，包括用户总数、角色分布、绑定总数等 |
 | DELETE | `/api/v1/admin/bindings/:id` | 解除家长-学生绑定（仅 `role=admin`） |
 
 ### 请求头

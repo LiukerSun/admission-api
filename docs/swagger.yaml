@@ -1,5 +1,171 @@
 basePath: /
 definitions:
+  admin.BindingListItem:
+    properties:
+      created_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      id:
+        example: 1
+        type: integer
+      parent:
+        $ref: '#/definitions/admin.SafeUserInfo'
+      student:
+        $ref: '#/definitions/admin.SafeUserInfo'
+    type: object
+  admin.BindingListResponse:
+    properties:
+      bindings:
+        items:
+          $ref: '#/definitions/admin.BindingListItem'
+        type: array
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 20
+        type: integer
+      total:
+        example: 100
+        type: integer
+    type: object
+  admin.SafeUserInfo:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 1
+        type: integer
+    type: object
+  admin.StatsResponse:
+    properties:
+      active_users:
+        example: 950
+        type: integer
+      banned_users:
+        example: 50
+        type: integer
+      total_bindings:
+        example: 500
+        type: integer
+      total_users:
+        example: 1000
+        type: integer
+      users_by_role:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
+  admin.UpdateRoleRequest:
+    properties:
+      role:
+        enum:
+        - user
+        - premium
+        - admin
+        example: premium
+        type: string
+    required:
+    - role
+    type: object
+  admin.UpdateUserRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      role:
+        enum:
+        - user
+        - premium
+        - admin
+        example: premium
+        type: string
+      status:
+        enum:
+        - active
+        - banned
+        example: active
+        type: string
+      user_type:
+        enum:
+        - parent
+        - student
+        example: student
+        type: string
+      username:
+        example: johndoe
+        maxLength: 50
+        minLength: 1
+        type: string
+    type: object
+  admin.UserListItem:
+    properties:
+      created_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 1
+        type: integer
+      role:
+        example: user
+        type: string
+      status:
+        example: active
+        type: string
+      user_type:
+        example: student
+        type: string
+      username:
+        example: johndoe
+        type: string
+    type: object
+  admin.UserListResponse:
+    properties:
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 20
+        type: integer
+      total:
+        example: 100
+        type: integer
+      users:
+        items:
+          $ref: '#/definitions/admin.UserListItem'
+        type: array
+    type: object
+  admin.UserResponse:
+    properties:
+      created_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 1
+        type: integer
+      role:
+        example: user
+        type: string
+      status:
+        example: active
+        type: string
+      updated_at:
+        example: "2024-01-01T00:00:00Z"
+        type: string
+      user_type:
+        example: student
+        type: string
+      username:
+        example: johndoe
+        type: string
+    type: object
   analysis.EnrollmentPlan:
     properties:
       actual_count:
@@ -158,8 +324,14 @@ definitions:
       role:
         example: user
         type: string
+      status:
+        example: active
+        type: string
       user_type:
         example: parent
+        type: string
+      username:
+        example: johndoe
         type: string
     type: object
   user.SafeUser:
@@ -195,6 +367,47 @@ info:
   title: Admission API
   version: "1.0"
 paths:
+  /api/v1/admin/bindings:
+    get:
+      consumes:
+      - application/json
+      description: 分页获取所有家长-学生绑定关系
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.BindingListResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员查看所有绑定关系
+      tags:
+      - admin
   /api/v1/admin/bindings/{id}:
     delete:
       consumes:
@@ -235,6 +448,326 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员解除绑定
+      tags:
+      - admin
+  /api/v1/admin/stats:
+    get:
+      consumes:
+      - application/json
+      description: 获取用户总数、绑定总数等运营数据
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.StatsResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员查看系统统计
+      tags:
+      - admin
+  /api/v1/admin/users:
+    get:
+      consumes:
+      - application/json
+      description: 分页获取所有用户信息，支持按 email、username、role、status 过滤
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      - description: email 模糊搜索
+        in: query
+        name: email
+        type: string
+      - description: username 模糊搜索
+        in: query
+        name: username
+        type: string
+      - description: 角色过滤 (user/premium/admin)
+        in: query
+        name: role
+        type: string
+      - description: 状态过滤 (active/banned)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.UserListResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员获取用户列表
+      tags:
+      - admin
+  /api/v1/admin/users/{id}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定用户的完整信息，用于前端编辑表单回填
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.UserResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员获取用户详情
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: 修改指定用户的 email、username、role、user_type、status
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 用户信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.UserResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员修改用户信息
+      tags:
+      - admin
+  /api/v1/admin/users/{id}/disable:
+    post:
+      consumes:
+      - application/json
+      description: 禁用指定用户，清除其所有 refresh token
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员禁用用户
+      tags:
+      - admin
+  /api/v1/admin/users/{id}/enable:
+    post:
+      consumes:
+      - application/json
+      description: 解除对指定用户的禁用状态
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员启用用户
+      tags:
+      - admin
+  /api/v1/admin/users/{id}/role:
+    put:
+      consumes:
+      - application/json
+      description: 修改指定用户的角色
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 角色信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员修改用户角色
       tags:
       - admin
   /api/v1/analysis/enrollment-plans:

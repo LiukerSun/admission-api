@@ -29,6 +29,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "admission-api/docs"
+	"admission-api/internal/admin"
 	"admission-api/internal/analysis"
 	"admission-api/internal/health"
 	"admission-api/internal/platform/config"
@@ -92,6 +93,11 @@ func run() error {
 
 	healthHandler := health.NewHandler(database)
 
+	// Initialize admin module
+	adminStore := admin.NewStore(database.Pool())
+	adminService := admin.NewService(adminStore, userStore, tokenManager, redisClient)
+	adminHandler := admin.NewHandler(adminService)
+
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -115,13 +121,22 @@ func run() error {
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
+		authorized.Use(middleware.AuthStatusMiddleware(redisClient))
 		authorized.GET("/me", userHandler.Me)
 		authorized.POST("/bindings", bindingHandler.CreateBinding)
 		authorized.GET("/bindings", bindingHandler.GetMyBindings)
 
-		admin := authorized.Group("/admin")
-		admin.Use(middleware.RequireRole("admin"))
-		admin.DELETE("/bindings/:id", bindingHandler.DeleteBinding)
+		adminRoutes := authorized.Group("/admin")
+		adminRoutes.Use(middleware.RequireRole("admin"))
+		adminRoutes.GET("/users/:id", adminHandler.GetUser)
+		adminRoutes.GET("/users", adminHandler.ListUsers)
+		adminRoutes.PUT("/users/:id", adminHandler.UpdateUser)
+		adminRoutes.PUT("/users/:id/role", adminHandler.UpdateRole)
+		adminRoutes.POST("/users/:id/disable", adminHandler.DisableUser)
+		adminRoutes.POST("/users/:id/enable", adminHandler.EnableUser)
+		adminRoutes.GET("/bindings", adminHandler.ListBindings)
+		adminRoutes.GET("/stats", adminHandler.GetStats)
+		adminRoutes.DELETE("/bindings/:id", bindingHandler.DeleteBinding)
 	}
 
 	server := &http.Server{

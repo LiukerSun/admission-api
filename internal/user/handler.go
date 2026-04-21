@@ -1,6 +1,8 @@
 package user
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -32,8 +34,10 @@ type RefreshRequest struct {
 type Response struct {
 	ID        int64     `json:"id" example:"1"`
 	Email     string    `json:"email" example:"user@example.com"`
+	Username  string    `json:"username" example:"johndoe"`
 	Role      string    `json:"role" example:"user"`
 	UserType  string    `json:"user_type" example:"parent"`
+	Status    string    `json:"status" example:"active"`
 	CreatedAt time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
 }
 
@@ -69,6 +73,13 @@ func NewHandler(service Service, jwtConfig *middleware.JWTConfig) *Handler {
 // @Failure      400   {object}  web.Response
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/auth/register [post]
+func stringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func (h *Handler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -94,8 +105,10 @@ func (h *Handler) Register(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
 		ID:        u.ID,
 		Email:     u.Email,
+		Username:  stringValue(u.Username),
 		Role:      u.Role,
 		UserType:  u.UserType,
+		Status:    u.Status,
 		CreatedAt: u.CreatedAt,
 	}))
 }
@@ -132,7 +145,15 @@ func (h *Handler) Login(c *gin.Context) {
 
 	tokens, err := h.service.Login(c.Request.Context(), req.Email, req.Password, platform)
 	if err != nil {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "invalid credentials")
+		slog.Warn("login failed", "email", req.Email, "error", err.Error())
+		switch {
+		case errors.Is(err, ErrAccountBanned):
+			h.RespondError(c, http.StatusForbidden, web.ErrCodeForbidden, "account has been banned")
+		case errors.Is(err, ErrInvalidCredentials):
+			h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "invalid credentials")
+		default:
+			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		}
 		return
 	}
 
@@ -211,8 +232,10 @@ func (h *Handler) Me(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
 		ID:        u.ID,
 		Email:     u.Email,
+		Username:  stringValue(u.Username),
 		Role:      u.Role,
 		UserType:  u.UserType,
+		Status:    u.Status,
 		CreatedAt: u.CreatedAt,
 	}))
 }

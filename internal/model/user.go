@@ -6,11 +6,11 @@ import "time"
 type User struct {
 	ID           int64     `json:"id"`
 	Email        string    `json:"email"`
+	Username     *string   `json:"username"`
 	PasswordHash string    `json:"-"`
 	Role         string    `json:"role"`
 	UserType     string    `json:"user_type"`
-	ProvinceCode string    `json:"province_code"`
-	SubjectType  string    `json:"subject_type"`
+	Status       string    `json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -18,13 +18,13 @@ type User struct {
 // SafeUser returns a user without sensitive fields.
 func (u *User) SafeUser() User {
 	return User{
-		ID:           u.ID,
-		Email:        u.Email,
-		Role:         u.Role,
-		UserType:     u.UserType,
-		ProvinceCode: u.ProvinceCode,
-		SubjectType:  u.SubjectType,
-		CreatedAt:    u.CreatedAt,
-		UpdatedAt:    u.UpdatedAt,
+		ID:        u.ID,
+		Email:     u.Email,
+		Username:  u.Username,
+		Role:      u.Role,
+		UserType:  u.UserType,
+		Status:    u.Status,
+		CreatedAt: u.CreatedAt,
+		UpdatedAt: u.UpdatedAt,
 	}
 }

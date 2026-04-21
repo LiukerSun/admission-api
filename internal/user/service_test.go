@@ -44,6 +44,37 @@ func (m *mockStore) GetByID(ctx context.Context, id int64) (*User, error) {
 	return args.Get(0).(*User), args.Error(1)
 }
 
+func (m *mockStore) GetByUsername(ctx context.Context, username string) (*User, error) {
+	args := m.Called(ctx, username)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*User), args.Error(1)
+}
+
+func (m *mockStore) ListUsers(ctx context.Context, filter Filter, page, pageSize int) ([]*User, int64, error) {
+	args := m.Called(ctx, filter, page, pageSize)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]*User), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *mockStore) UpdateRole(ctx context.Context, id int64, role string) error {
+	args := m.Called(ctx, id, role)
+	return args.Error(0)
+}
+
+func (m *mockStore) UpdateStatus(ctx context.Context, id int64, status string) error {
+	args := m.Called(ctx, id, status)
+	return args.Error(0)
+}
+
+func (m *mockStore) UpdateUser(ctx context.Context, id int64, fields UpdateUserFields) error {
+	args := m.Called(ctx, id, fields)
+	return args.Error(0)
+}
+
 func TestAuthService_Register(t *testing.T) {
 	store := new(mockStore)
 	svc := NewAuthService(store, nil, nil)
