@@ -62,7 +62,8 @@ func (s *MockStore) GetEnrollmentPlans(ctx context.Context, query *EnrollmentPla
 func (s *MockStore) filterData(query *EnrollmentPlanQuery) []EnrollmentPlan {
 	var filtered []EnrollmentPlan
 
-	for _, plan := range s.mockData {
+	for i := range s.mockData {
+		plan := &s.mockData[i]
 		// 学校名称过滤
 		if query.SchoolName != "" && !strings.Contains(strings.ToLower(plan.SchoolName), strings.ToLower(query.SchoolName)) {
 			continue
@@ -88,7 +89,7 @@ func (s *MockStore) filterData(query *EnrollmentPlanQuery) []EnrollmentPlan {
 			continue
 		}
 
-		filtered = append(filtered, plan)
+		filtered = append(filtered, *plan)
 	}
 
 	return filtered

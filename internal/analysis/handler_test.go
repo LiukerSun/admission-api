@@ -63,7 +63,7 @@ func TestHandler_GetEnrollmentPlans_Success(t *testing.T) {
 	svc.On("GetEnrollmentPlans", mock.Anything, mock.Anything).Return(mockResponse, nil)
 
 	c, w := setupTest()
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans?page=1&per_page=10", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans?page=1&per_page=10", http.NoBody)
 
 	h.GetEnrollmentPlans(c)
 
@@ -106,7 +106,7 @@ func TestHandler_GetEnrollmentPlans_WithFilter(t *testing.T) {
 	})).Return(mockResponse, nil)
 
 	c, w := setupTest()
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans?school_name=清华&province=北京", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans?school_name=清华&province=北京", http.NoBody)
 
 	h.GetEnrollmentPlans(c)
 
@@ -124,7 +124,7 @@ func TestHandler_GetEnrollmentPlans_ServiceError(t *testing.T) {
 	svc.On("GetEnrollmentPlans", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
 	c, w := setupTest()
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans", http.NoBody)
 
 	h.GetEnrollmentPlans(c)
 
@@ -151,7 +151,7 @@ func TestHandler_GetEnrollmentPlans_DefaultPagination(t *testing.T) {
 	})).Return(mockResponse, nil)
 
 	c, w := setupTest()
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans", http.NoBody)
 
 	h.GetEnrollmentPlans(c)
 

@@ -40,20 +40,20 @@ func NewHandler(service Service) *Handler {
 // @Router       /api/v1/analysis/enrollment-plans [get]
 func (h *Handler) GetEnrollmentPlans(c *gin.Context) {
 	var query EnrollmentPlanQuery
-	
+
 	// 绑定查询参数
 	if err := c.ShouldBindQuery(&query); err != nil {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "无效的查询参数")
 		return
 	}
-	
+
 	// 调用服务获取数据
 	response, err := h.service.GetEnrollmentPlans(c.Request.Context(), &query)
 	if err != nil {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "获取数据失败")
 		return
 	}
-	
+
 	// 返回成功响应
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(response))
 }

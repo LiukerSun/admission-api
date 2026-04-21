@@ -1,5 +1,66 @@
 basePath: /
 definitions:
+  analysis.EnrollmentPlan:
+    properties:
+      actual_count:
+        description: 实际招生人数
+        type: integer
+      average_score:
+        description: 平均分数线
+        type: integer
+      batch:
+        description: 批次（一本、二本等）
+        type: string
+      id:
+        type: integer
+      major_code:
+        description: 专业代码
+        type: string
+      major_name:
+        description: 专业名称
+        type: string
+      max_score:
+        description: 最高分数线
+        type: integer
+      min_score:
+        description: 最低分数线
+        type: integer
+      plan_count:
+        description: 计划招生人数
+        type: integer
+      province:
+        description: 省份
+        type: string
+      school_code:
+        description: 学校代码
+        type: string
+      school_name:
+        description: 学校名称
+        type: string
+      subject_require:
+        description: 科目要求
+        type: string
+      year:
+        description: 年份
+        type: integer
+    type: object
+  analysis.EnrollmentPlanResponse:
+    properties:
+      page:
+        description: 当前页码
+        type: integer
+      per_page:
+        description: 每页数量
+        type: integer
+      plans:
+        description: 招生计划列表
+        items:
+          $ref: '#/definitions/analysis.EnrollmentPlan'
+        type: array
+      total:
+        description: 总数据量
+        type: integer
+    type: object
   user.BindingListResponse:
     properties:
       bindings:
@@ -176,6 +237,63 @@ paths:
       summary: 管理员解除绑定
       tags:
       - admin
+  /api/v1/analysis/enrollment-plans:
+    get:
+      consumes:
+      - application/json
+      description: 获取模拟的招生计划数据，支持分页和筛选
+      parameters:
+      - description: 学校名称
+        in: query
+        name: school_name
+        type: string
+      - description: 专业名称
+        in: query
+        name: major_name
+        type: string
+      - description: 省份
+        in: query
+        name: province
+        type: string
+      - description: 年份
+        in: query
+        name: year
+        type: integer
+      - description: 批次
+        in: query
+        name: batch
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认10
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.EnrollmentPlanResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 获取招生计划数据
+      tags:
+      - analysis
   /api/v1/auth/login:
     post:
       consumes:

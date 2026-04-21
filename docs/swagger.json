@@ -81,6 +81,97 @@
                 }
             }
         },
+        "/api/v1/analysis/enrollment-plans": {
+            "get": {
+                "description": "获取模拟的招生计划数据，支持分页和筛选",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "获取招生计划数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "学校名称",
+                        "name": "school_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业名称",
+                        "name": "major_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "批次",
+                        "name": "batch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认10",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.EnrollmentPlanResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/login": {
             "post": {
                 "description": "使用邮箱和密码登录，获取 Access Token 和 Refresh Token",
@@ -465,6 +556,90 @@
         }
     },
     "definitions": {
+        "analysis.EnrollmentPlan": {
+            "type": "object",
+            "properties": {
+                "actual_count": {
+                    "description": "实际招生人数",
+                    "type": "integer"
+                },
+                "average_score": {
+                    "description": "平均分数线",
+                    "type": "integer"
+                },
+                "batch": {
+                    "description": "批次（一本、二本等）",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "major_code": {
+                    "description": "专业代码",
+                    "type": "string"
+                },
+                "major_name": {
+                    "description": "专业名称",
+                    "type": "string"
+                },
+                "max_score": {
+                    "description": "最高分数线",
+                    "type": "integer"
+                },
+                "min_score": {
+                    "description": "最低分数线",
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "description": "计划招生人数",
+                    "type": "integer"
+                },
+                "province": {
+                    "description": "省份",
+                    "type": "string"
+                },
+                "school_code": {
+                    "description": "学校代码",
+                    "type": "string"
+                },
+                "school_name": {
+                    "description": "学校名称",
+                    "type": "string"
+                },
+                "subject_require": {
+                    "description": "科目要求",
+                    "type": "string"
+                },
+                "year": {
+                    "description": "年份",
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.EnrollmentPlanResponse": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "当前页码",
+                    "type": "integer"
+                },
+                "per_page": {
+                    "description": "每页数量",
+                    "type": "integer"
+                },
+                "plans": {
+                    "description": "招生计划列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.EnrollmentPlan"
+                    }
+                },
+                "total": {
+                    "description": "总数据量",
+                    "type": "integer"
+                }
+            }
+        },
         "user.BindingListResponse": {
             "type": "object",
             "properties": {
