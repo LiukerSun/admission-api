@@ -29,6 +29,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	_ "admission-api/docs"
+	"admission-api/internal/analysis"
 	"admission-api/internal/health"
 	"admission-api/internal/platform/config"
 	"admission-api/internal/platform/db"
@@ -84,6 +85,11 @@ func run() error {
 	bindingService := user.NewBindingService(userStore, bindingStore)
 	bindingHandler := user.NewBindingHandler(bindingService)
 
+	// 初始化数据分析模块
+	analysisStore := analysis.NewStore()
+	analysisService := analysis.NewService(analysisStore)
+	analysisHandler := analysis.NewHandler(analysisService)
+
 	healthHandler := health.NewHandler(database)
 
 	if cfg.Env == "production" {
@@ -104,6 +110,8 @@ func run() error {
 		api.POST("/auth/register", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Register)
 		api.POST("/auth/login", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Login)
 		api.POST("/auth/refresh", userHandler.Refresh)
+
+		api.GET("/analysis/enrollment-plans", analysisHandler.GetEnrollmentPlans)
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
