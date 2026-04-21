@@ -81,9 +81,9 @@ func run() error {
 
 	userStore := user.NewStore(database.Pool())
 	userService := user.NewAuthService(userStore, tokenManager, jwtConfig)
-	var smsClient sms.Client = sms.NewMockClient()
+	smsClient := sms.NewMockClient()
 	if cfg.AliyunSMSAccessKeyID != "" && cfg.AliyunSMSAccessKeySecret != "" && cfg.AliyunSMSSignName != "" && cfg.AliyunSMSTemplateCode != "" {
-		aliyunClient, err := sms.NewAliyunClient(sms.AliyunConfig{
+		aliyunClient, err := sms.NewAliyunClient(&sms.AliyunConfig{
 			AccessKeyID:     cfg.AliyunSMSAccessKeyID,
 			AccessKeySecret: cfg.AliyunSMSAccessKeySecret,
 			Endpoint:        cfg.AliyunSMSEndpoint,

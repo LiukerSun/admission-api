@@ -24,7 +24,7 @@ type AliyunClient struct {
 	templateCode string
 }
 
-func NewAliyunClient(cfg AliyunConfig) (Client, error) {
+func NewAliyunClient(cfg *AliyunConfig) (Client, error) {
 	if cfg.AccessKeyID == "" || cfg.AccessKeySecret == "" || cfg.SignName == "" || cfg.TemplateCode == "" {
 		return nil, fmt.Errorf("aliyun sms config is incomplete")
 	}
@@ -47,12 +47,12 @@ func NewAliyunClient(cfg AliyunConfig) (Client, error) {
 	}, nil
 }
 
-func (c *AliyunClient) SendVerificationCode(ctx context.Context, phone string, code string) error {
+func (c *AliyunClient) SendVerificationCode(ctx context.Context, phone, code string) error {
 	req := &dysmsapi.SendSmsRequest{
 		PhoneNumbers:  tea.String(phone),
 		SignName:      tea.String(c.signName),
 		TemplateCode:  tea.String(c.templateCode),
-		TemplateParam: tea.String(fmt.Sprintf(`{"code":"%s"}`, code)),
+		TemplateParam: tea.String(fmt.Sprintf(`{"code":%q}`, code)),
 	}
 
 	resp, err := c.client.SendSmsWithOptions(req, &dara.RuntimeOptions{})

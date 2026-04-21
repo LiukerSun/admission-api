@@ -9,6 +9,6 @@ func NewMockClient() Client {
 	return &MockClient{}
 }
 
-func (c *MockClient) SendVerificationCode(ctx context.Context, phone string, code string) error {
+func (c *MockClient) SendVerificationCode(ctx context.Context, phone, code string) error {
 	return nil
 }
