@@ -4,25 +4,29 @@ import "time"
 
 // UserResponse represents a single user detail payload for admin operations.
 type UserResponse struct {
-	ID        int64     `json:"id" example:"1"`
-	Email     string    `json:"email" example:"user@example.com"`
-	Username  string    `json:"username" example:"johndoe"`
-	Role      string    `json:"role" example:"user"`
-	UserType  string    `json:"user_type" example:"student"`
-	Status    string    `json:"status" example:"active"`
-	CreatedAt time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
-	UpdatedAt time.Time `json:"updated_at" example:"2024-01-01T00:00:00Z"`
+	ID            int64     `json:"id" example:"1"`
+	Email         string    `json:"email" example:"user@example.com"`
+	Username      string    `json:"username" example:"johndoe"`
+	Phone         string    `json:"phone" example:"13800138000"`
+	PhoneVerified bool      `json:"phone_verified" example:"true"`
+	Role          string    `json:"role" example:"user"`
+	UserType      string    `json:"user_type" example:"student"`
+	Status        string    `json:"status" example:"active"`
+	CreatedAt     time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
+	UpdatedAt     time.Time `json:"updated_at" example:"2024-01-01T00:00:00Z"`
 }
 
 // UserListItem represents a user in the admin list response.
 type UserListItem struct {
-	ID        int64     `json:"id" example:"1"`
-	Email     string    `json:"email" example:"user@example.com"`
-	Username  string    `json:"username" example:"johndoe"`
-	Role      string    `json:"role" example:"user"`
-	UserType  string    `json:"user_type" example:"student"`
-	Status    string    `json:"status" example:"active"`
-	CreatedAt time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
+	ID            int64     `json:"id" example:"1"`
+	Email         string    `json:"email" example:"user@example.com"`
+	Username      string    `json:"username" example:"johndoe"`
+	Phone         string    `json:"phone" example:"13800138000"`
+	PhoneVerified bool      `json:"phone_verified" example:"true"`
+	Role          string    `json:"role" example:"user"`
+	UserType      string    `json:"user_type" example:"student"`
+	Status        string    `json:"status" example:"active"`
+	CreatedAt     time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
 }
 
 // UserListResponse is the response for listing users.

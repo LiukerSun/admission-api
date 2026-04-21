@@ -36,14 +36,25 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" validate:"required,min=8,alphanum" example:"newpass123"`
 }
 
+type SendPhoneCodeRequest struct {
+	Phone string `json:"phone" validate:"required" example:"13800138000"`
+}
+
+type VerifyPhoneRequest struct {
+	Phone string `json:"phone" validate:"required" example:"13800138000"`
+	Code  string `json:"code" validate:"required,len=6,numeric" example:"123456"`
+}
+
 type Response struct {
-	ID        int64     `json:"id" example:"1"`
-	Email     string    `json:"email" example:"user@example.com"`
-	Username  string    `json:"username" example:"johndoe"`
-	Role      string    `json:"role" example:"user"`
-	UserType  string    `json:"user_type" example:"parent"`
-	Status    string    `json:"status" example:"active"`
-	CreatedAt time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
+	ID            int64     `json:"id" example:"1"`
+	Email         string    `json:"email" example:"user@example.com"`
+	Username      string    `json:"username" example:"johndoe"`
+	Phone         string    `json:"phone" example:"13800138000"`
+	PhoneVerified bool      `json:"phone_verified" example:"true"`
+	Role          string    `json:"role" example:"user"`
+	UserType      string    `json:"user_type" example:"parent"`
+	Status        string    `json:"status" example:"active"`
+	CreatedAt     time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
 }
 
 type TokenResponse struct {
@@ -54,16 +65,18 @@ type TokenResponse struct {
 
 type Handler struct {
 	web.BaseHandler
-	service   Service
-	jwtConfig *middleware.JWTConfig
-	validate  *validator.Validate
+	service                  Service
+	phoneVerificationService PhoneVerificationService
+	jwtConfig                *middleware.JWTConfig
+	validate                 *validator.Validate
 }
 
-func NewHandler(service Service, jwtConfig *middleware.JWTConfig) *Handler {
+func NewHandler(service Service, phoneVerificationService PhoneVerificationService, jwtConfig *middleware.JWTConfig) *Handler {
 	return &Handler{
-		service:   service,
-		jwtConfig: jwtConfig,
-		validate:  validator.New(),
+		service:                  service,
+		phoneVerificationService: phoneVerificationService,
+		jwtConfig:                jwtConfig,
+		validate:                 validator.New(),
 	}
 }
 
@@ -108,13 +121,15 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
-		ID:        u.ID,
-		Email:     u.Email,
-		Username:  stringValue(u.Username),
-		Role:      u.Role,
-		UserType:  u.UserType,
-		Status:    u.Status,
-		CreatedAt: u.CreatedAt,
+		ID:            u.ID,
+		Email:         u.Email,
+		Username:      stringValue(u.Username),
+		Phone:         stringValue(u.Phone),
+		PhoneVerified: u.PhoneVerifiedAt != nil,
+		Role:          u.Role,
+		UserType:      u.UserType,
+		Status:        u.Status,
+		CreatedAt:     u.CreatedAt,
 	}))
 }
 
@@ -235,13 +250,15 @@ func (h *Handler) Me(c *gin.Context) {
 	}
 
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
-		ID:        u.ID,
-		Email:     u.Email,
-		Username:  stringValue(u.Username),
-		Role:      u.Role,
-		UserType:  u.UserType,
-		Status:    u.Status,
-		CreatedAt: u.CreatedAt,
+		ID:            u.ID,
+		Email:         u.Email,
+		Username:      stringValue(u.Username),
+		Phone:         stringValue(u.Phone),
+		PhoneVerified: u.PhoneVerifiedAt != nil,
+		Role:          u.Role,
+		UserType:      u.UserType,
+		Status:        u.Status,
+		CreatedAt:     u.CreatedAt,
 	}))
 }
 
@@ -296,4 +313,110 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "password changed"}))
+}
+
+// SendPhoneVerificationCode godoc
+// @Summary      发送手机号验证码
+// @Description  当前登录用户向指定手机号发送验证码，用于绑定手机号
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      SendPhoneCodeRequest  true  "手机号"
+// @Success      200   {object}  web.Response{data=map[string]string}
+// @Failure      400   {object}  web.Response
+// @Failure      401   {object}  web.Response
+// @Failure      409   {object}  web.Response
+// @Router       /api/v1/me/phone/send-code [post]
+func (h *Handler) SendPhoneVerificationCode(c *gin.Context) {
+	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
+	if !exists {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	userID, ok := userIDRaw.(int64)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req SendPhoneCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+
+	if err := h.phoneVerificationService.SendPhoneVerificationCode(c.Request.Context(), userID, req.Phone); err != nil {
+		switch {
+		case strings.Contains(err.Error(), "invalid phone number"),
+			strings.Contains(err.Error(), "too frequently"):
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		case strings.Contains(err.Error(), "phone already exists"):
+			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "phone already exists")
+		default:
+			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		}
+		return
+	}
+
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "verification code sent"}))
+}
+
+// VerifyPhone godoc
+// @Summary      校验手机号验证码
+// @Description  当前登录用户校验验证码并完成手机号绑定
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      VerifyPhoneRequest  true  "手机号与验证码"
+// @Success      200   {object}  web.Response{data=map[string]string}
+// @Failure      400   {object}  web.Response
+// @Failure      401   {object}  web.Response
+// @Failure      409   {object}  web.Response
+// @Router       /api/v1/me/phone/verify [post]
+func (h *Handler) VerifyPhone(c *gin.Context) {
+	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
+	if !exists {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	userID, ok := userIDRaw.(int64)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var req VerifyPhoneRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+
+	if err := h.phoneVerificationService.VerifyPhoneCode(c.Request.Context(), userID, req.Phone, req.Code); err != nil {
+		switch {
+		case strings.Contains(err.Error(), "invalid phone number"),
+			strings.Contains(err.Error(), "invalid verification code"),
+			strings.Contains(err.Error(), "expired"),
+			strings.Contains(err.Error(), "attempts exceeded"):
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		case strings.Contains(err.Error(), "phone already exists"):
+			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "phone already exists")
+		default:
+			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		}
+		return
+	}
+
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "phone verified"}))
 }

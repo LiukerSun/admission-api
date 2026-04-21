@@ -32,6 +32,10 @@ func (c *Client) Get(ctx context.Context, key string) (string, error) {
 	return c.rdb.Get(ctx, key).Result()
 }
 
+func (c *Client) TTL(ctx context.Context, key string) (time.Duration, error) {
+	return c.rdb.TTL(ctx, key).Result()
+}
+
 func (c *Client) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	return c.rdb.Set(ctx, key, value, ttl).Err()
 }
@@ -67,6 +71,14 @@ func (c *Client) SRem(ctx context.Context, key string, members ...any) error {
 
 func (c *Client) SMembers(ctx context.Context, key string) ([]string, error) {
 	return c.rdb.SMembers(ctx, key).Result()
+}
+
+func (c *Client) Incr(ctx context.Context, key string) (int64, error) {
+	return c.rdb.Incr(ctx, key).Result()
+}
+
+func (c *Client) Expire(ctx context.Context, key string, ttl time.Duration) error {
+	return c.rdb.Expire(ctx, key, ttl).Err()
 }
 
 func (c *Client) RDB() *redis.Client {

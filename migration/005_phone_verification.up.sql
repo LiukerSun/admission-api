@@ -1,0 +1,9 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone
+    ON users(phone)
+    WHERE phone IS NOT NULL;

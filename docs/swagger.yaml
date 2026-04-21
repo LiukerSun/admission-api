@@ -344,6 +344,12 @@ definitions:
       id:
         example: 1
         type: integer
+      phone:
+        example: "13800138000"
+        type: string
+      phone_verified:
+        example: true
+        type: boolean
       role:
         example: user
         type: string
@@ -364,6 +370,14 @@ definitions:
       id:
         type: integer
     type: object
+  user.SendPhoneCodeRequest:
+    properties:
+      phone:
+        example: "13800138000"
+        type: string
+    required:
+    - phone
+    type: object
   user.TokenResponse:
     properties:
       access_token:
@@ -375,6 +389,18 @@ definitions:
       refresh_token:
         example: abc123...
         type: string
+    type: object
+  user.VerifyPhoneRequest:
+    properties:
+      code:
+        example: "123456"
+        type: string
+      phone:
+        example: "13800138000"
+        type: string
+    required:
+    - code
+    - phone
     type: object
   web.Response:
     properties:
@@ -1138,6 +1164,92 @@ paths:
       security:
       - BearerAuth: []
       summary: 用户修改自己的密码
+      tags:
+      - user
+  /api/v1/me/phone/send-code:
+    post:
+      consumes:
+      - application/json
+      description: 当前登录用户向指定手机号发送验证码，用于绑定手机号
+      parameters:
+      - description: 手机号
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.SendPhoneCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 发送手机号验证码
+      tags:
+      - user
+  /api/v1/me/phone/verify:
+    post:
+      consumes:
+      - application/json
+      description: 当前登录用户校验验证码并完成手机号绑定
+      parameters:
+      - description: 手机号与验证码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.VerifyPhoneRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 校验手机号验证码
       tags:
       - user
   /health:

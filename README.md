@@ -133,6 +133,18 @@ POSTGRES_PORT=5432
 
 # Redis
 REDIS_PORT=6379
+
+# Alibaba Cloud SMS
+ALIYUN_SMS_ACCESS_KEY_ID=
+ALIYUN_SMS_ACCESS_KEY_SECRET=
+ALIYUN_SMS_ENDPOINT=dysmsapi.aliyuncs.com
+ALIYUN_SMS_SIGN_NAME=
+ALIYUN_SMS_TEMPLATE_CODE=
+
+# SMS verification
+SMS_CODE_TTL_MINUTES=5
+SMS_SEND_COOLDOWN_SECONDS=60
+SMS_MAX_VERIFY_ATTEMPTS=5
 ```
 
 > 注意：`DATABASE_URL` 和 `REDIS_ADDR` 由应用根据 `POSTGRES_*` 和 `REDIS_PORT` 自动构建，无需手动配置。
@@ -156,6 +168,9 @@ REDIS_PORT=6379
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/v1/me` | 获取当前用户信息 |
+| PUT | `/api/v1/me/password` | 当前用户修改自己的密码 |
+| POST | `/api/v1/me/phone/send-code` | 当前用户向手机号发送短信验证码 |
+| POST | `/api/v1/me/phone/verify` | 当前用户校验短信验证码并绑定手机号 |
 | POST | `/api/v1/bindings` | 家长发起绑定学生（仅 `user_type=parent`） |
 | GET | `/api/v1/bindings` | 查询我的绑定关系 |
 

@@ -27,10 +27,12 @@ type Store interface {
 	GetByID(ctx context.Context, id int64) (*User, error)
 	GetByEmailAndType(ctx context.Context, email, userType string) (*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
+	GetByPhone(ctx context.Context, phone string) (*User, error)
 	ListUsers(ctx context.Context, filter Filter, page, pageSize int) ([]*User, int64, error)
 	UpdateRole(ctx context.Context, id int64, role string) error
 	UpdateStatus(ctx context.Context, id int64, status string) error
 	UpdatePassword(ctx context.Context, id int64, passwordHash string) error
+	UpdatePhone(ctx context.Context, id int64, phone string) error
 	UpdateUser(ctx context.Context, id int64, fields UpdateUserFields) error
 }
 
@@ -54,7 +56,7 @@ func NewStore(pool *pgxpool.Pool) Store {
 func (s *store) scanUser(row pgx.Row) (*User, error) {
 	var u User
 	err := row.Scan(
-		&u.ID, &u.Email, &u.Username, &u.PasswordHash, &u.Role, &u.UserType, &u.Status, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.Username, &u.Phone, &u.PhoneVerifiedAt, &u.PasswordHash, &u.Role, &u.UserType, &u.Status, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -70,7 +72,7 @@ func (s *store) Create(ctx context.Context, email, passwordHash, role, userType 
 	query := `
 		INSERT INTO users (email, password_hash, role, user_type, status)
 		VALUES ($1, $2, $3, $4, 'active')
-		RETURNING id, email, username, password_hash, role, user_type, status, created_at, updated_at
+		RETURNING id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
 	`
 
 	u, err := s.scanUser(s.pool.QueryRow(ctx, query, email, passwordHash, role, userType))
@@ -87,7 +89,7 @@ func (s *store) Create(ctx context.Context, email, passwordHash, role, userType 
 
 func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 	query := `
-		SELECT id, email, username, password_hash, role, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -105,7 +107,7 @@ func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 
 func (s *store) GetByID(ctx context.Context, id int64) (*User, error) {
 	query := `
-		SELECT id, email, username, password_hash, role, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -123,7 +125,7 @@ func (s *store) GetByID(ctx context.Context, id int64) (*User, error) {
 
 func (s *store) GetByEmailAndType(ctx context.Context, email, userType string) (*User, error) {
 	query := `
-		SELECT id, email, username, password_hash, role, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
 		FROM users
 		WHERE email = $1 AND user_type = $2
 	`
@@ -141,7 +143,7 @@ func (s *store) GetByEmailAndType(ctx context.Context, email, userType string) (
 
 func (s *store) GetByUsername(ctx context.Context, username string) (*User, error) {
 	query := `
-		SELECT id, email, username, password_hash, role, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
 		FROM users
 		WHERE username = $1
 	`
@@ -152,6 +154,24 @@ func (s *store) GetByUsername(ctx context.Context, username string) (*User, erro
 			return nil, fmt.Errorf("user not found")
 		}
 		return nil, fmt.Errorf("get user by username: %w", err)
+	}
+
+	return u, nil
+}
+
+func (s *store) GetByPhone(ctx context.Context, phone string) (*User, error) {
+	query := `
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
+		FROM users
+		WHERE phone = $1
+	`
+
+	u, err := s.scanUser(s.pool.QueryRow(ctx, query, phone))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("get user by phone: %w", err)
 	}
 
 	return u, nil
@@ -201,7 +221,7 @@ func (s *store) ListUsers(ctx context.Context, filter Filter, page, pageSize int
 
 	// Query users
 	query := fmt.Sprintf(`
-		SELECT id, email, username, password_hash, role, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
 		FROM users
 		WHERE %s
 		ORDER BY created_at DESC
@@ -260,6 +280,26 @@ func (s *store) UpdatePassword(ctx context.Context, id int64, passwordHash strin
 	result, err := s.pool.Exec(ctx, query, passwordHash, id)
 	if err != nil {
 		return fmt.Errorf("update password: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
+func (s *store) UpdatePhone(ctx context.Context, id int64, phone string) error {
+	query := `
+		UPDATE users
+		SET phone = $1, phone_verified_at = NOW(), updated_at = NOW()
+		WHERE id = $2
+	`
+	result, err := s.pool.Exec(ctx, query, phone, id)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("phone already exists")
+		}
+		return fmt.Errorf("update phone: %w", err)
 	}
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("user not found")

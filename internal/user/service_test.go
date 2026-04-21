@@ -53,6 +53,14 @@ func (m *mockStore) GetByUsername(ctx context.Context, username string) (*User, 
 	return args.Get(0).(*User), args.Error(1)
 }
 
+func (m *mockStore) GetByPhone(ctx context.Context, phone string) (*User, error) {
+	args := m.Called(ctx, phone)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*User), args.Error(1)
+}
+
 func (m *mockStore) ListUsers(ctx context.Context, filter Filter, page, pageSize int) ([]*User, int64, error) {
 	args := m.Called(ctx, filter, page, pageSize)
 	if args.Get(0) == nil {
@@ -73,6 +81,11 @@ func (m *mockStore) UpdateStatus(ctx context.Context, id int64, status string) e
 
 func (m *mockStore) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {
 	args := m.Called(ctx, id, passwordHash)
+	return args.Error(0)
+}
+
+func (m *mockStore) UpdatePhone(ctx context.Context, id int64, phone string) error {
+	args := m.Called(ctx, id, phone)
 	return args.Error(0)
 }
 

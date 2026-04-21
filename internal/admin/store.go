@@ -70,7 +70,7 @@ func (s *store) ListUsers(ctx context.Context, filter ListUsersFilter, page, pag
 
 	// Query users
 	query := fmt.Sprintf(`
-		SELECT id, email, username, password_hash, role, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, user_type, status, created_at, updated_at
 		FROM users
 		WHERE %s
 		ORDER BY created_at DESC
@@ -88,7 +88,7 @@ func (s *store) ListUsers(ctx context.Context, filter ListUsersFilter, page, pag
 	for rows.Next() {
 		var u user.User
 		err := rows.Scan(
-			&u.ID, &u.Email, &u.Username, &u.PasswordHash, &u.Role, &u.UserType, &u.Status, &u.CreatedAt, &u.UpdatedAt,
+			&u.ID, &u.Email, &u.Username, &u.Phone, &u.PhoneVerifiedAt, &u.PasswordHash, &u.Role, &u.UserType, &u.Status, &u.CreatedAt, &u.UpdatedAt,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan user: %w", err)

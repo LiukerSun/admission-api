@@ -53,14 +53,16 @@ func stringValue(s *string) string {
 
 func toUserResponse(u *user.User) *UserResponse {
 	return &UserResponse{
-		ID:        u.ID,
-		Email:     u.Email,
-		Username:  stringValue(u.Username),
-		Role:      u.Role,
-		UserType:  u.UserType,
-		Status:    u.Status,
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+		ID:            u.ID,
+		Email:         u.Email,
+		Username:      stringValue(u.Username),
+		Phone:         stringValue(u.Phone),
+		PhoneVerified: u.PhoneVerifiedAt != nil,
+		Role:          u.Role,
+		UserType:      u.UserType,
+		Status:        u.Status,
+		CreatedAt:     u.CreatedAt,
+		UpdatedAt:     u.UpdatedAt,
 	}
 }
 
@@ -73,13 +75,15 @@ func (s *service) ListUsers(ctx context.Context, filter ListUsersFilter, page, p
 	items := make([]*UserListItem, 0, len(users))
 	for _, u := range users {
 		items = append(items, &UserListItem{
-			ID:        u.ID,
-			Email:     u.Email,
-			Username:  stringValue(u.Username),
-			Role:      u.Role,
-			UserType:  u.UserType,
-			Status:    u.Status,
-			CreatedAt: u.CreatedAt,
+			ID:            u.ID,
+			Email:         u.Email,
+			Username:      stringValue(u.Username),
+			Phone:         stringValue(u.Phone),
+			PhoneVerified: u.PhoneVerifiedAt != nil,
+			Role:          u.Role,
+			UserType:      u.UserType,
+			Status:        u.Status,
+			CreatedAt:     u.CreatedAt,
 		})
 	}
 

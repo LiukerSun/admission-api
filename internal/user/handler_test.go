@@ -64,9 +64,23 @@ func (m *mockService) ChangePassword(ctx context.Context, userID int64, currentP
 	return args.Error(0)
 }
 
+type mockPhoneVerificationService struct {
+	mock.Mock
+}
+
+func (m *mockPhoneVerificationService) SendPhoneVerificationCode(ctx context.Context, userID int64, phone string) error {
+	args := m.Called(ctx, userID, phone)
+	return args.Error(0)
+}
+
+func (m *mockPhoneVerificationService) VerifyPhoneCode(ctx context.Context, userID int64, phone, code string) error {
+	args := m.Called(ctx, userID, phone, code)
+	return args.Error(0)
+}
+
 func TestHandler_Register(t *testing.T) {
 	svc := new(mockService)
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
 	svc.On("Register", mock.Anything, "new@example.com", "password123", "student").
 		Return(&User{ID: 1, Email: "new@example.com", Role: "user", UserType: "student"}, nil)
@@ -87,7 +101,7 @@ func TestHandler_Register(t *testing.T) {
 
 func TestHandler_Register_InvalidBody(t *testing.T) {
 	svc := new(mockService)
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader([]byte("invalid")))
@@ -100,7 +114,7 @@ func TestHandler_Register_InvalidBody(t *testing.T) {
 
 func TestHandler_Me_Unauthorized(t *testing.T) {
 	svc := new(mockService)
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/me", http.NoBody)
@@ -112,7 +126,7 @@ func TestHandler_Me_Unauthorized(t *testing.T) {
 
 func TestHandler_ChangePassword(t *testing.T) {
 	svc := new(mockService)
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
 	svc.On("ChangePassword", mock.Anything, int64(1), "oldpass123", "newpass123").Return(nil)
 
@@ -126,6 +140,42 @@ func TestHandler_ChangePassword(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	h.ChangePassword(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_SendPhoneVerificationCode(t *testing.T) {
+	svc := new(mockService)
+	phoneSvc := new(mockPhoneVerificationService)
+	h := NewHandler(svc, phoneSvc, nil)
+
+	phoneSvc.On("SendPhoneVerificationCode", mock.Anything, int64(1), "13800138000").Return(nil)
+
+	body, _ := json.Marshal(SendPhoneCodeRequest{Phone: "13800138000"})
+	c, w := setupTest()
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/me/phone/send-code", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.SendPhoneVerificationCode(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_VerifyPhone(t *testing.T) {
+	svc := new(mockService)
+	phoneSvc := new(mockPhoneVerificationService)
+	h := NewHandler(svc, phoneSvc, nil)
+
+	phoneSvc.On("VerifyPhoneCode", mock.Anything, int64(1), "13800138000", "123456").Return(nil)
+
+	body, _ := json.Marshal(VerifyPhoneRequest{Phone: "13800138000", Code: "123456"})
+	c, w := setupTest()
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/me/phone/verify", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.VerifyPhone(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }

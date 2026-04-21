@@ -36,6 +36,7 @@ import (
 	"admission-api/internal/platform/db"
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
+	"admission-api/internal/platform/sms"
 	"admission-api/internal/user"
 )
 
@@ -80,7 +81,26 @@ func run() error {
 
 	userStore := user.NewStore(database.Pool())
 	userService := user.NewAuthService(userStore, tokenManager, jwtConfig)
-	userHandler := user.NewHandler(userService, jwtConfig)
+	var smsClient sms.Client = sms.NewMockClient()
+	if cfg.AliyunSMSAccessKeyID != "" && cfg.AliyunSMSAccessKeySecret != "" && cfg.AliyunSMSSignName != "" && cfg.AliyunSMSTemplateCode != "" {
+		aliyunClient, err := sms.NewAliyunClient(sms.AliyunConfig{
+			AccessKeyID:     cfg.AliyunSMSAccessKeyID,
+			AccessKeySecret: cfg.AliyunSMSAccessKeySecret,
+			Endpoint:        cfg.AliyunSMSEndpoint,
+			SignName:        cfg.AliyunSMSSignName,
+			TemplateCode:    cfg.AliyunSMSTemplateCode,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to initialize aliyun sms client: %w", err)
+		}
+		smsClient = aliyunClient
+	}
+	phoneVerificationService := user.NewPhoneVerificationService(userStore, redisClient, smsClient, user.PhoneVerificationConfig{
+		CodeTTL:      time.Duration(cfg.SMSCodeTTLMinutes) * time.Minute,
+		SendCooldown: time.Duration(cfg.SMSSendCooldownSeconds) * time.Second,
+		MaxAttempts:  cfg.SMSMaxVerifyAttempts,
+	})
+	userHandler := user.NewHandler(userService, phoneVerificationService, jwtConfig)
 
 	bindingStore := user.NewBindingStore(database.Pool())
 	bindingService := user.NewBindingService(userStore, bindingStore)
@@ -124,6 +144,8 @@ func run() error {
 		authorized.Use(middleware.AuthStatusMiddleware(redisClient))
 		authorized.GET("/me", userHandler.Me)
 		authorized.PUT("/me/password", userHandler.ChangePassword)
+		authorized.POST("/me/phone/send-code", userHandler.SendPhoneVerificationCode)
+		authorized.POST("/me/phone/verify", userHandler.VerifyPhone)
 		authorized.POST("/bindings", bindingHandler.CreateBinding)
 		authorized.GET("/bindings", bindingHandler.GetMyBindings)
 

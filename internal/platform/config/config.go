@@ -10,13 +10,21 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Port                string
-	DatabaseURL         string
-	RedisAddr           string
-	JWTSecret           string
-	JWTAccessTTLMinutes int
-	JWTRefreshTTLHours  int
-	Env                 string
+	Port                     string
+	DatabaseURL              string
+	RedisAddr                string
+	JWTSecret                string
+	JWTAccessTTLMinutes      int
+	JWTRefreshTTLHours       int
+	Env                      string
+	AliyunSMSAccessKeyID     string
+	AliyunSMSAccessKeySecret string
+	AliyunSMSEndpoint        string
+	AliyunSMSSignName        string
+	AliyunSMSTemplateCode    string
+	SMSCodeTTLMinutes        int
+	SMSSendCooldownSeconds   int
+	SMSMaxVerifyAttempts     int
 }
 
 // Load reads configuration from environment variables.
@@ -26,13 +34,21 @@ func Load() *Config {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:                getEnv("PORT", "8080"),
-		DatabaseURL:         buildDatabaseURL(),
-		RedisAddr:           buildRedisAddr(),
-		JWTSecret:           requireEnv("JWT_SECRET"),
-		JWTAccessTTLMinutes: getIntEnv("JWT_ACCESS_TTL_MINUTES", 15),
-		JWTRefreshTTLHours:  getIntEnv("JWT_REFRESH_TTL_HOURS", 168),
-		Env:                 getEnv("ENV", "development"),
+		Port:                     getEnv("PORT", "8080"),
+		DatabaseURL:              buildDatabaseURL(),
+		RedisAddr:                buildRedisAddr(),
+		JWTSecret:                requireEnv("JWT_SECRET"),
+		JWTAccessTTLMinutes:      getIntEnv("JWT_ACCESS_TTL_MINUTES", 15),
+		JWTRefreshTTLHours:       getIntEnv("JWT_REFRESH_TTL_HOURS", 168),
+		Env:                      getEnv("ENV", "development"),
+		AliyunSMSAccessKeyID:     getEnv("ALIYUN_SMS_ACCESS_KEY_ID", ""),
+		AliyunSMSAccessKeySecret: getEnv("ALIYUN_SMS_ACCESS_KEY_SECRET", ""),
+		AliyunSMSEndpoint:        getEnv("ALIYUN_SMS_ENDPOINT", "dysmsapi.aliyuncs.com"),
+		AliyunSMSSignName:        getEnv("ALIYUN_SMS_SIGN_NAME", ""),
+		AliyunSMSTemplateCode:    getEnv("ALIYUN_SMS_TEMPLATE_CODE", ""),
+		SMSCodeTTLMinutes:        getIntEnv("SMS_CODE_TTL_MINUTES", 5),
+		SMSSendCooldownSeconds:   getIntEnv("SMS_SEND_COOLDOWN_SECONDS", 60),
+		SMSMaxVerifyAttempts:     getIntEnv("SMS_MAX_VERIFY_ATTEMPTS", 5),
 	}
 
 	return cfg
