@@ -762,6 +762,91 @@
                 }
             }
         },
+        "/api/v1/analysis/employment-data": {
+            "get": {
+                "description": "获取模拟的专业就业情况数据，支持分页和筛选",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "获取就业情况数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "专业名称",
+                        "name": "major_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "行业",
+                        "name": "industry",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认10",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.EmploymentDataResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/analysis/enrollment-plans": {
             "get": {
                 "description": "获取模拟的招生计划数据，支持分页和筛选",
@@ -1614,6 +1699,14 @@
                     "type": "integer",
                     "example": 1
                 },
+                "phone": {
+                    "type": "string",
+                    "example": "13800138000"
+                },
+                "phone_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "role": {
                     "type": "string",
                     "example": "user"
@@ -1670,6 +1763,14 @@
                     "type": "integer",
                     "example": 1
                 },
+                "phone": {
+                    "type": "string",
+                    "example": "13800138000"
+                },
+                "phone_verified": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "role": {
                     "type": "string",
                     "example": "user"
@@ -1689,6 +1790,91 @@
                 "username": {
                     "type": "string",
                     "example": "johndoe"
+                }
+            }
+        },
+        "analysis.EmploymentData": {
+            "type": "object",
+            "properties": {
+                "average_salary": {
+                    "description": "平均薪资",
+                    "type": "number"
+                },
+                "employment_province": {
+                    "description": "就业省份",
+                    "type": "string"
+                },
+                "employment_rate": {
+                    "description": "就业率",
+                    "type": "number"
+                },
+                "further_study_rate": {
+                    "description": "深造率",
+                    "type": "number"
+                },
+                "graduates_count": {
+                    "description": "毕业生总数",
+                    "type": "integer"
+                },
+                "highest_salary": {
+                    "description": "最高薪资",
+                    "type": "number"
+                },
+                "id": {
+                    "description": "数据ID",
+                    "type": "integer"
+                },
+                "industry": {
+                    "description": "主要就业行业",
+                    "type": "string"
+                },
+                "job_title": {
+                    "description": "主要职位",
+                    "type": "string"
+                },
+                "lowest_salary": {
+                    "description": "最低薪资",
+                    "type": "number"
+                },
+                "major_code": {
+                    "description": "专业代码",
+                    "type": "string"
+                },
+                "major_name": {
+                    "description": "专业名称",
+                    "type": "string"
+                },
+                "province": {
+                    "description": "省份",
+                    "type": "string"
+                },
+                "year": {
+                    "description": "年份",
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.EmploymentDataResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "就业情况列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.EmploymentData"
+                    }
+                },
+                "page": {
+                    "description": "当前页码",
+                    "type": "integer"
+                },
+                "per_page": {
+                    "description": "每页数量",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "总数据量",
+                    "type": "integer"
                 }
             }
         },

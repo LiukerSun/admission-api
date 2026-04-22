@@ -119,6 +119,12 @@ definitions:
       id:
         example: 1
         type: integer
+      phone:
+        example: "13800138000"
+        type: string
+      phone_verified:
+        example: true
+        type: boolean
       role:
         example: user
         type: string
@@ -159,6 +165,12 @@ definitions:
       id:
         example: 1
         type: integer
+      phone:
+        example: "13800138000"
+        type: string
+      phone_verified:
+        example: true
+        type: boolean
       role:
         example: user
         type: string
@@ -174,6 +186,68 @@ definitions:
       username:
         example: johndoe
         type: string
+    type: object
+  analysis.EmploymentData:
+    properties:
+      average_salary:
+        description: 平均薪资
+        type: number
+      employment_province:
+        description: 就业省份
+        type: string
+      employment_rate:
+        description: 就业率
+        type: number
+      further_study_rate:
+        description: 深造率
+        type: number
+      graduates_count:
+        description: 毕业生总数
+        type: integer
+      highest_salary:
+        description: 最高薪资
+        type: number
+      id:
+        description: 数据ID
+        type: integer
+      industry:
+        description: 主要就业行业
+        type: string
+      job_title:
+        description: 主要职位
+        type: string
+      lowest_salary:
+        description: 最低薪资
+        type: number
+      major_code:
+        description: 专业代码
+        type: string
+      major_name:
+        description: 专业名称
+        type: string
+      province:
+        description: 省份
+        type: string
+      year:
+        description: 年份
+        type: integer
+    type: object
+  analysis.EmploymentDataResponse:
+    properties:
+      data:
+        description: 就业情况列表
+        items:
+          $ref: '#/definitions/analysis.EmploymentData'
+        type: array
+      page:
+        description: 当前页码
+        type: integer
+      per_page:
+        description: 每页数量
+        type: integer
+      total:
+        description: 总数据量
+        type: integer
     type: object
   analysis.EnrollmentPlan:
     properties:
@@ -871,6 +945,59 @@ paths:
       summary: 管理员修改用户角色
       tags:
       - admin
+  /api/v1/analysis/employment-data:
+    get:
+      consumes:
+      - application/json
+      description: 获取模拟的专业就业情况数据，支持分页和筛选
+      parameters:
+      - description: 专业名称
+        in: query
+        name: major_name
+        type: string
+      - description: 省份
+        in: query
+        name: province
+        type: string
+      - description: 年份
+        in: query
+        name: year
+        type: integer
+      - description: 行业
+        in: query
+        name: industry
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认10
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.EmploymentDataResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 获取就业情况数据
+      tags:
+      - analysis
   /api/v1/analysis/enrollment-plans:
     get:
       consumes:

@@ -7,6 +7,7 @@ import (
 // Service 数据分析服务接口
 type Service interface {
 	GetEnrollmentPlans(ctx context.Context, query *EnrollmentPlanQuery) (*EnrollmentPlanResponse, error)
+	GetEmploymentData(ctx context.Context, query *EmploymentDataQuery) (*EmploymentDataResponse, error)
 }
 
 // service 数据分析服务实现
@@ -33,6 +34,34 @@ func (s *service) GetEnrollmentPlans(ctx context.Context, query *EnrollmentPlanQ
 	response := &EnrollmentPlanResponse{
 		Total:   total,
 		Plans:   plans,
+		Page:    query.Page,
+		PerPage: query.PerPage,
+	}
+
+	// 确保分页参数有效
+	if response.Page <= 0 {
+		response.Page = 1
+	}
+
+	if response.PerPage <= 0 {
+		response.PerPage = 10
+	}
+
+	return response, nil
+}
+
+// GetEmploymentData 获取就业情况数据
+func (s *service) GetEmploymentData(ctx context.Context, query *EmploymentDataQuery) (*EmploymentDataResponse, error) {
+	// 调用store获取数据
+	data, total, err := s.store.GetEmploymentData(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// 构建响应
+	response := &EmploymentDataResponse{
+		Total:   total,
+		Data:    data,
 		Page:    query.Page,
 		PerPage: query.PerPage,
 	}

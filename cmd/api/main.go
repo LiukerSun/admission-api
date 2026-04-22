@@ -139,6 +139,7 @@ func run() error {
 		api.POST("/auth/refresh", userHandler.Refresh)
 
 		api.GET("/analysis/enrollment-plans", analysisHandler.GetEnrollmentPlans)
+		api.GET("/analysis/employment-data", analysisHandler.GetEmploymentData)
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))

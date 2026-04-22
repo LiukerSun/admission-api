@@ -33,6 +33,14 @@ func (m *mockService) GetEnrollmentPlans(ctx context.Context, query *EnrollmentP
 	return args.Get(0).(*EnrollmentPlanResponse), args.Error(1)
 }
 
+func (m *mockService) GetEmploymentData(ctx context.Context, query *EmploymentDataQuery) (*EmploymentDataResponse, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*EmploymentDataResponse), args.Error(1)
+}
+
 func TestHandler_GetEnrollmentPlans_Success(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc)
@@ -154,6 +162,132 @@ func TestHandler_GetEnrollmentPlans_DefaultPagination(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/enrollment-plans", http.NoBody)
 
 	h.GetEnrollmentPlans(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_GetEmploymentData_Success(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	mockResponse := &EmploymentDataResponse{
+		Total: 150,
+		Data: []EmploymentData{
+			{
+				ID:                 1,
+				MajorName:          "计算机科学与技术",
+				Province:           "北京",
+				Year:               2024,
+				GraduatesCount:     150,
+				EmploymentRate:     0.95,
+				AverageSalary:      12000,
+				HighestSalary:      25000,
+				LowestSalary:       6000,
+				Industry:           "互联网",
+				JobTitle:           "软件工程师",
+				FurtherStudyRate:   0.2,
+				MajorCode:          "080901",
+				EmploymentProvince: "北京",
+			},
+		},
+		Page:    1,
+		PerPage: 10,
+	}
+
+	svc.On("GetEmploymentData", mock.Anything, mock.Anything).Return(mockResponse, nil)
+
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/employment-data?page=1&per_page=10", http.NoBody)
+
+	h.GetEmploymentData(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp web.Response
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, 0, resp.Code)
+
+	// 验证返回的数据
+	data, _ := json.Marshal(resp.Data)
+	var result EmploymentDataResponse
+	_ = json.Unmarshal(data, &result)
+	assert.Equal(t, 150, result.Total)
+	assert.Equal(t, 1, len(result.Data))
+	assert.Equal(t, "计算机科学与技术", result.Data[0].MajorName)
+}
+
+func TestHandler_GetEmploymentData_WithFilter(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	mockResponse := &EmploymentDataResponse{
+		Total: 5,
+		Data: []EmploymentData{
+			{
+				ID:        1,
+				MajorName: "软件工程",
+				Province:  "上海",
+				Year:      2024,
+				Industry:  "互联网",
+			},
+		},
+		Page:    1,
+		PerPage: 10,
+	}
+
+	svc.On("GetEmploymentData", mock.Anything, mock.MatchedBy(func(q *EmploymentDataQuery) bool {
+		return q.MajorName == "软件" && q.Province == "上海" && q.Industry == "互联网"
+	})).Return(mockResponse, nil)
+
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/employment-data?major_name=软件&province=上海&industry=互联网", http.NoBody)
+
+	h.GetEmploymentData(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp web.Response
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, 0, resp.Code)
+}
+
+func TestHandler_GetEmploymentData_ServiceError(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	svc.On("GetEmploymentData", mock.Anything, mock.Anything).Return(nil, assert.AnError)
+
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/employment-data", http.NoBody)
+
+	h.GetEmploymentData(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp web.Response
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, web.ErrCodeInternal, resp.Code)
+}
+
+func TestHandler_GetEmploymentData_DefaultPagination(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	mockResponse := &EmploymentDataResponse{
+		Total:   150,
+		Data:    []EmploymentData{},
+		Page:    1,
+		PerPage: 10,
+	}
+
+	svc.On("GetEmploymentData", mock.Anything, mock.MatchedBy(func(q *EmploymentDataQuery) bool {
+		return q.Page == 0 && q.PerPage == 0 // 默认值
+	})).Return(mockResponse, nil)
+
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/analysis/employment-data", http.NoBody)
+
+	h.GetEmploymentData(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
