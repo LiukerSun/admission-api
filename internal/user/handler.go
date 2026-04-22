@@ -354,7 +354,8 @@ func (h *Handler) SendPhoneVerificationCode(c *gin.Context) {
 	if err := h.phoneVerificationService.SendPhoneVerificationCode(c.Request.Context(), userID, req.Phone); err != nil {
 		switch {
 		case strings.Contains(err.Error(), "invalid phone number"),
-			strings.Contains(err.Error(), "too frequently"):
+			strings.Contains(err.Error(), "too frequently"),
+			strings.Contains(err.Error(), "daily limit"):
 			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
 		case strings.Contains(err.Error(), "phone already exists"):
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "phone already exists")

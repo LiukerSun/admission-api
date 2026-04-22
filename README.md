@@ -144,6 +144,7 @@ ALIYUN_SMS_TEMPLATE_CODE=
 # SMS verification
 SMS_CODE_TTL_MINUTES=5
 SMS_SEND_COOLDOWN_SECONDS=60
+SMS_DAILY_LIMIT=10
 SMS_MAX_VERIFY_ATTEMPTS=5
 ```
 
@@ -188,6 +189,14 @@ SMS_MAX_VERIFY_ATTEMPTS=5
 | GET | `/api/v1/admin/bindings` | 分页获取所有家长-学生绑定关系 |
 | GET | `/api/v1/admin/stats` | 获取系统统计数据，包括用户总数、角色分布、绑定总数等 |
 | DELETE | `/api/v1/admin/bindings/:id` | 解除家长-学生绑定（仅 `role=admin`） |
+
+手机号验证能力当前行为：
+- 仅支持中国大陆 11 位手机号
+- 验证码默认有效期 `5` 分钟
+- 同一手机号默认 `60` 秒内不可重复发送
+- 同一手机号默认每天最多发送 `10` 次验证码
+- 同一验证码默认最多校验 `5` 次
+- 未配置阿里云短信凭证时，开发环境自动回退到本地 mock SMS 客户端
 
 ### 请求头
 

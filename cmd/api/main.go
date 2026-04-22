@@ -98,6 +98,7 @@ func run() error {
 	phoneVerificationService := user.NewPhoneVerificationService(userStore, redisClient, smsClient, user.PhoneVerificationConfig{
 		CodeTTL:      time.Duration(cfg.SMSCodeTTLMinutes) * time.Minute,
 		SendCooldown: time.Duration(cfg.SMSSendCooldownSeconds) * time.Second,
+		DailyLimit:   cfg.SMSDailyLimit,
 		MaxAttempts:  cfg.SMSMaxVerifyAttempts,
 	})
 	userHandler := user.NewHandler(userService, phoneVerificationService, jwtConfig)

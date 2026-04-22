@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/big"
 	"regexp"
+	"strings"
 	"time"
 
 	"admission-api/internal/platform/redis"
@@ -27,22 +28,41 @@ type PhoneVerificationService interface {
 type PhoneVerificationConfig struct {
 	CodeTTL      time.Duration
 	SendCooldown time.Duration
+	DailyLimit   int
 	MaxAttempts  int
+	Now          func() time.Time
+}
+
+type verificationRedis interface {
+	Get(ctx context.Context, key string) (string, error)
+	TTL(ctx context.Context, key string) (time.Duration, error)
+	Set(ctx context.Context, key string, value any, ttl time.Duration) error
+	Del(ctx context.Context, keys ...string) error
+	Exists(ctx context.Context, keys ...string) (int64, error)
+	Incr(ctx context.Context, key string) (int64, error)
+	Decr(ctx context.Context, key string) (int64, error)
+	Expire(ctx context.Context, key string, ttl time.Duration) error
 }
 
 type phoneVerificationService struct {
 	store  Store
-	redis  *redis.Client
+	redis  verificationRedis
 	sms    sms.Client
 	config PhoneVerificationConfig
+	now    func() time.Time
 }
 
 func NewPhoneVerificationService(store Store, redisClient *redis.Client, smsClient sms.Client, cfg PhoneVerificationConfig) PhoneVerificationService {
+	nowFn := cfg.Now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
 	return &phoneVerificationService{
 		store:  store,
 		redis:  redisClient,
 		sms:    smsClient,
 		config: cfg,
+		now:    nowFn,
 	}
 }
 
@@ -58,7 +78,20 @@ func verificationAttemptsKey(phone string) string {
 	return fmt.Sprintf("sms:attempts:%s", phone)
 }
 
+func verificationDailyLimitKey(phone string, now time.Time) string {
+	return fmt.Sprintf("sms:daily:%s:%s", phone, now.Format("20060102"))
+}
+
 func normalizePhone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	replacer := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "")
+	phone = replacer.Replace(phone)
+	if strings.HasPrefix(phone, "+86") {
+		phone = strings.TrimPrefix(phone, "+86")
+	}
+	if strings.HasPrefix(phone, "86") && len(phone) == 13 {
+		phone = strings.TrimPrefix(phone, "86")
+	}
 	return phone
 }
 
@@ -92,18 +125,30 @@ func (s *phoneVerificationService) SendPhoneVerificationCode(ctx context.Context
 		return fmt.Errorf("generate verification code: %w", err)
 	}
 
-	if err := s.sms.SendVerificationCode(ctx, phone, code); err != nil {
-		return fmt.Errorf("send verification code: %w", err)
+	releaseDailySlot, err := s.reserveDailySendSlot(ctx, phone)
+	if err != nil {
+		return err
 	}
 
 	if err := s.redis.Set(ctx, verificationCodeKey(phone), code, s.config.CodeTTL); err != nil {
+		releaseDailySlot()
 		return fmt.Errorf("save verification code: %w", err)
 	}
 	if err := s.redis.Set(ctx, verificationCooldownKey(phone), "1", s.config.SendCooldown); err != nil {
+		_ = s.redis.Del(ctx, verificationCodeKey(phone))
+		releaseDailySlot()
 		return fmt.Errorf("save verification cooldown: %w", err)
 	}
 	if err := s.redis.Del(ctx, verificationAttemptsKey(phone)); err != nil {
+		_ = s.redis.Del(ctx, verificationCodeKey(phone), verificationCooldownKey(phone))
+		releaseDailySlot()
 		return fmt.Errorf("reset verification attempts: %w", err)
+	}
+
+	if err := s.sms.SendVerificationCode(ctx, phone, code); err != nil {
+		_ = s.redis.Del(ctx, verificationCodeKey(phone), verificationCooldownKey(phone), verificationAttemptsKey(phone))
+		releaseDailySlot()
+		return fmt.Errorf("send verification code: %w", err)
 	}
 
 	slog.Info("phone verification code sent", "user_id", userID, "phone", maskPhone(phone))
@@ -168,6 +213,42 @@ func (s *phoneVerificationService) ensurePhoneAvailable(ctx context.Context, use
 		return fmt.Errorf("phone already exists")
 	}
 	return nil
+}
+
+func (s *phoneVerificationService) reserveDailySendSlot(ctx context.Context, phone string) (func(), error) {
+	if s.config.DailyLimit <= 0 {
+		return func() {}, nil
+	}
+
+	key := verificationDailyLimitKey(phone, s.now())
+	count, err := s.redis.Incr(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("record daily verification send count: %w", err)
+	}
+
+	if count == 1 {
+		if err := s.redis.Expire(ctx, key, durationUntilNextDay(s.now())); err != nil {
+			return nil, fmt.Errorf("set daily verification send count expiry: %w", err)
+		}
+	}
+
+	release := func() {
+		if _, decrErr := s.redis.Decr(ctx, key); decrErr != nil {
+			slog.Warn("failed to release sms daily limit slot", "phone", maskPhone(phone), "error", decrErr)
+		}
+	}
+
+	if count > int64(s.config.DailyLimit) {
+		release()
+		return nil, fmt.Errorf("verification code daily limit exceeded")
+	}
+
+	return release, nil
+}
+
+func durationUntilNextDay(now time.Time) time.Duration {
+	nextDay := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+	return nextDay.Sub(now)
 }
 
 func generateNumericCode(length int) (string, error) {

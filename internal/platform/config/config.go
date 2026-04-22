@@ -24,6 +24,7 @@ type Config struct {
 	AliyunSMSTemplateCode    string
 	SMSCodeTTLMinutes        int
 	SMSSendCooldownSeconds   int
+	SMSDailyLimit            int
 	SMSMaxVerifyAttempts     int
 }
 
@@ -48,6 +49,7 @@ func Load() *Config {
 		AliyunSMSTemplateCode:    getEnv("ALIYUN_SMS_TEMPLATE_CODE", ""),
 		SMSCodeTTLMinutes:        getIntEnv("SMS_CODE_TTL_MINUTES", 5),
 		SMSSendCooldownSeconds:   getIntEnv("SMS_SEND_COOLDOWN_SECONDS", 60),
+		SMSDailyLimit:            getIntEnv("SMS_DAILY_LIMIT", 10),
 		SMSMaxVerifyAttempts:     getIntEnv("SMS_MAX_VERIFY_ATTEMPTS", 5),
 	}
 
