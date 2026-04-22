@@ -21,7 +21,7 @@ type EnrollmentPlan struct {
 // EnrollmentPlanResponse 招生计划响应结构
 type EnrollmentPlanResponse struct {
 	Total   int              `json:"total"`    // 总数据量
-	Plans   []EnrollmentPlan `json:"plans"`    // 招生计划列表
+	Data   []EnrollmentPlan `json:"data"`    // 招生计划列表
 	Page    int              `json:"page"`     // 当前页码
 	PerPage int              `json:"per_page"` // 每页数量
 }

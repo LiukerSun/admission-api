@@ -33,7 +33,7 @@ func (s *service) GetEnrollmentPlans(ctx context.Context, query *EnrollmentPlanQ
 	// 构建响应
 	response := &EnrollmentPlanResponse{
 		Total:   total,
-		Plans:   plans,
+		Data:    plans,
 		Page:    query.Page,
 		PerPage: query.PerPage,
 	}

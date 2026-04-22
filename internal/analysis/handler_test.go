@@ -47,7 +47,7 @@ func TestHandler_GetEnrollmentPlans_Success(t *testing.T) {
 
 	mockResponse := &EnrollmentPlanResponse{
 		Total: 100,
-		Plans: []EnrollmentPlan{
+		Data: []EnrollmentPlan{
 			{
 				ID:           1,
 				SchoolName:   "北京大学",
@@ -86,8 +86,8 @@ func TestHandler_GetEnrollmentPlans_Success(t *testing.T) {
 	var result EnrollmentPlanResponse
 	_ = json.Unmarshal(data, &result)
 	assert.Equal(t, 100, result.Total)
-	assert.Equal(t, 1, len(result.Plans))
-	assert.Equal(t, "北京大学", result.Plans[0].SchoolName)
+	assert.Equal(t, 1, len(result.Data))
+	assert.Equal(t, "北京大学", result.Data[0].SchoolName)
 }
 
 func TestHandler_GetEnrollmentPlans_WithFilter(t *testing.T) {
@@ -96,7 +96,7 @@ func TestHandler_GetEnrollmentPlans_WithFilter(t *testing.T) {
 
 	mockResponse := &EnrollmentPlanResponse{
 		Total: 10,
-		Plans: []EnrollmentPlan{
+		Data: []EnrollmentPlan{
 			{
 				ID:         1,
 				SchoolName: "清华大学",
@@ -149,7 +149,7 @@ func TestHandler_GetEnrollmentPlans_DefaultPagination(t *testing.T) {
 
 	mockResponse := &EnrollmentPlanResponse{
 		Total:   100,
-		Plans:   []EnrollmentPlan{},
+		Data:    []EnrollmentPlan{},
 		Page:    1,
 		PerPage: 10,
 	}
