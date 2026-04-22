@@ -86,9 +86,7 @@ func normalizePhone(phone string) string {
 	phone = strings.TrimSpace(phone)
 	replacer := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "")
 	phone = replacer.Replace(phone)
-	if strings.HasPrefix(phone, "+86") {
-		phone = strings.TrimPrefix(phone, "+86")
-	}
+	phone = strings.TrimPrefix(phone, "+86")
 	if strings.HasPrefix(phone, "86") && len(phone) == 13 {
 		phone = strings.TrimPrefix(phone, "86")
 	}
