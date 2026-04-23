@@ -108,7 +108,7 @@ func run() error {
 	bindingHandler := user.NewBindingHandler(bindingService)
 
 	// 初始化数据分析模块
-	analysisStore := analysis.NewStore()
+	analysisStore := analysis.NewStore(database.Pool())
 	analysisService := analysis.NewService(analysisStore)
 	analysisHandler := analysis.NewHandler(analysisService)
 
@@ -138,7 +138,21 @@ func run() error {
 		api.POST("/auth/login", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Login)
 		api.POST("/auth/refresh", userHandler.Refresh)
 
+		api.GET("/analysis/dataset-overview", analysisHandler.GetDatasetOverview)
+		api.GET("/analysis/facets", analysisHandler.GetFacets)
+		api.GET("/analysis/schools", analysisHandler.ListSchools)
+		api.GET("/analysis/schools/compare", analysisHandler.CompareSchools)
+		api.GET("/analysis/schools/:school_id", analysisHandler.GetSchool)
+		api.GET("/analysis/schools/:school_id/majors", analysisHandler.ListSchoolMajors)
+		api.GET("/analysis/majors", analysisHandler.ListMajors)
+		api.GET("/analysis/majors/:major_id", analysisHandler.GetMajor)
 		api.GET("/analysis/enrollment-plans", analysisHandler.GetEnrollmentPlans)
+		api.GET("/analysis/province-batch-lines", analysisHandler.ListProvinceBatchLines)
+		api.GET("/analysis/province-batch-line-trends", analysisHandler.GetProvinceBatchLineTrend)
+		api.GET("/analysis/admission-scores/schools", analysisHandler.ListSchoolAdmissionScores)
+		api.GET("/analysis/admission-scores/majors", analysisHandler.ListMajorAdmissionScores)
+		api.GET("/analysis/admission-score-trends", analysisHandler.GetAdmissionScoreTrend)
+		api.GET("/analysis/score-match", analysisHandler.GetScoreMatch)
 		api.GET("/analysis/employment-data", analysisHandler.GetEmploymentData)
 
 		authorized := api.Group("")

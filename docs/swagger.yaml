@@ -187,128 +187,809 @@ definitions:
         example: johndoe
         type: string
     type: object
+  analysis.BatchLineTrendPoint:
+    properties:
+      rank_value:
+        type: integer
+      score_value:
+        type: number
+      source_system:
+        type: string
+      year:
+        type: integer
+    type: object
+  analysis.BatchLineTrendResponse:
+    properties:
+      batch:
+        type: string
+      category:
+        type: string
+      province_id:
+        type: integer
+      province_name:
+        type: string
+      section:
+        type: string
+      series:
+        items:
+          $ref: '#/definitions/analysis.BatchLineTrendPoint'
+        type: array
+    type: object
+  analysis.DataQuality:
+    properties:
+      disclaimer:
+        type: string
+      has_zero_scores:
+        type: boolean
+      missing_years:
+        items:
+          type: integer
+        type: array
+      note:
+        type: string
+    type: object
+  analysis.DatasetCoverage:
+    properties:
+      major_count:
+        type: integer
+      province_count:
+        type: integer
+      school_count:
+        type: integer
+      year_count:
+        type: integer
+      year_max:
+        type: integer
+      year_min:
+        type: integer
+    type: object
+  analysis.DatasetOverviewResponse:
+    properties:
+      coverage:
+        additionalProperties:
+          $ref: '#/definitions/analysis.DatasetCoverage'
+        type: object
+      latest_imported_at:
+        type: string
+      latest_imports:
+        items:
+          $ref: '#/definitions/analysis.ImportLogItem'
+        type: array
+      summary:
+        $ref: '#/definitions/analysis.DatasetSummary'
+      table_counts:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
+  analysis.DatasetSummary:
+    properties:
+      enrollment_plan_count:
+        type: integer
+      major_admission_score_count:
+        type: integer
+      major_count:
+        type: integer
+      major_profile_count:
+        type: integer
+      province_batch_line_count:
+        type: integer
+      province_count:
+        type: integer
+      school_admission_score_count:
+        type: integer
+      school_count:
+        type: integer
+      school_profile_count:
+        type: integer
+    type: object
   analysis.EmploymentData:
     properties:
       average_salary:
-        description: 平均薪资
         type: number
       employment_province:
-        description: 就业省份
         type: string
       employment_rate:
-        description: 就业率
         type: number
       further_study_rate:
-        description: 深造率
         type: number
       graduates_count:
-        description: 毕业生总数
         type: integer
       highest_salary:
-        description: 最高薪资
         type: number
       id:
-        description: 数据ID
         type: integer
       industry:
-        description: 主要就业行业
         type: string
       job_title:
-        description: 主要职位
         type: string
       lowest_salary:
-        description: 最低薪资
         type: number
       major_code:
-        description: 专业代码
         type: string
       major_name:
-        description: 专业名称
         type: string
       province:
-        description: 省份
         type: string
       year:
-        description: 年份
         type: integer
     type: object
   analysis.EmploymentDataResponse:
     properties:
       data:
-        description: 就业情况列表
         items:
           $ref: '#/definitions/analysis.EmploymentData'
         type: array
       page:
-        description: 当前页码
         type: integer
       per_page:
-        description: 每页数量
         type: integer
       total:
-        description: 总数据量
         type: integer
     type: object
   analysis.EnrollmentPlan:
     properties:
-      actual_count:
-        description: 实际招生人数
-        type: integer
-      average_score:
-        description: 平均分数线
-        type: integer
       batch:
-        description: 批次（一本、二本等）
         type: string
+      enrollment_plan_id:
+        type: integer
       id:
         type: integer
       major_code:
-        description: 专业代码
         type: string
+      major_id:
+        type: integer
       major_name:
-        description: 专业名称
         type: string
-      max_score:
-        description: 最高分数线
-        type: integer
-      min_score:
-        description: 最低分数线
-        type: integer
+      major_plan_code:
+        type: string
       plan_count:
-        description: 计划招生人数
+        type: integer
+      plan_year:
+        type: integer
+      policy_id:
         type: integer
       province:
-        description: 省份
+        type: string
+      province_id:
+        type: integer
+      province_name:
+        type: string
+      raw_admission_type:
+        type: string
+      raw_batch_name:
+        type: string
+      raw_elective_req:
+        type: string
+      raw_major_group_name:
+        type: string
+      raw_section_name:
         type: string
       school_code:
-        description: 学校代码
+        type: string
+      school_id:
+        type: integer
+      school_major_group_id:
+        type: integer
+      school_major_id:
+        type: integer
+      school_major_name:
         type: string
       school_name:
-        description: 学校名称
+        type: string
+      source_system:
+        type: string
+      source_table:
+        type: string
+      study_years_text:
         type: string
       subject_require:
-        description: 科目要求
         type: string
+      tags:
+        items:
+          $ref: '#/definitions/analysis.PolicyTag'
+        type: array
+      tuition_fee:
+        type: number
       year:
-        description: 年份
         type: integer
     type: object
   analysis.EnrollmentPlanResponse:
     properties:
-      page:
-        description: 当前页码
-        type: integer
-      per_page:
-        description: 每页数量
-        type: integer
-      plans:
-        description: 招生计划列表
+      data:
         items:
           $ref: '#/definitions/analysis.EnrollmentPlan'
         type: array
-      total:
-        description: 总数据量
+      facets:
+        additionalProperties: {}
+        type: object
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/analysis.EnrollmentPlan'
+        type: array
+      page:
         type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  analysis.FacetValue:
+    properties:
+      count:
+        type: integer
+      label:
+        type: string
+      value: {}
+    type: object
+  analysis.FacetsResponse:
+    properties:
+      facets:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/analysis.FacetValue'
+          type: array
+        type: object
+      scope:
+        type: string
+    type: object
+  analysis.ImportLogItem:
+    properties:
+      file_name:
+        type: string
+      imported_at:
+        type: string
+      remark:
+        type: string
+      row_count:
+        type: integer
+      source_system:
+        type: string
+      source_table:
+        type: string
+    type: object
+  analysis.ListResponse-analysis_Major:
+    properties:
+      facets:
+        additionalProperties: {}
+        type: object
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/analysis.Major'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  analysis.ListResponse-analysis_MajorAdmissionScore:
+    properties:
+      facets:
+        additionalProperties: {}
+        type: object
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/analysis.MajorAdmissionScore'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  analysis.ListResponse-analysis_ProvinceBatchLine:
+    properties:
+      facets:
+        additionalProperties: {}
+        type: object
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/analysis.ProvinceBatchLine'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  analysis.ListResponse-analysis_School:
+    properties:
+      facets:
+        additionalProperties: {}
+        type: object
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/analysis.School'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  analysis.ListResponse-analysis_SchoolAdmissionScore:
+    properties:
+      facets:
+        additionalProperties: {}
+        type: object
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/analysis.SchoolAdmissionScore'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  analysis.ListResponse-analysis_SchoolMajorItem:
+    properties:
+      facets:
+        additionalProperties: {}
+        type: object
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/analysis.SchoolMajorItem'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  analysis.Major:
+    properties:
+      degree_name:
+        type: string
+      employment:
+        $ref: '#/definitions/analysis.MajorEmployment'
+      major_category:
+        type: string
+      major_code:
+        type: string
+      major_id:
+        type: integer
+      major_name:
+        type: string
+      major_subject:
+        type: string
+      plan_summary:
+        $ref: '#/definitions/analysis.PlanSummary'
+      profile:
+        $ref: '#/definitions/analysis.MajorProfile'
+      school_summary:
+        $ref: '#/definitions/analysis.SchoolMajorSummary'
+      score_summary:
+        $ref: '#/definitions/analysis.ScoreSummary'
+      study_years_text:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/analysis.PolicyTag'
+        type: array
+    type: object
+  analysis.MajorAdmissionScore:
+    properties:
+      admission_year:
+        type: integer
+      average_score:
+        type: number
+      highest_score:
+        type: number
+      line_deviation:
+        type: number
+      lowest_rank:
+        type: integer
+      lowest_score:
+        type: number
+      major_admission_score_id:
+        type: integer
+      major_code:
+        type: string
+      major_id:
+        type: integer
+      policy_id:
+        type: integer
+      province_id:
+        type: integer
+      province_name:
+        type: string
+      raw_admission_type:
+        type: string
+      raw_batch_name:
+        type: string
+      raw_elective_req:
+        type: string
+      raw_major_group_name:
+        type: string
+      raw_section_name:
+        type: string
+      school_id:
+        type: integer
+      school_major_group_id:
+        type: integer
+      school_major_id:
+        type: integer
+      school_major_name:
+        type: string
+      school_name:
+        type: string
+      source_system:
+        type: string
+      source_table:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/analysis.PolicyTag'
+        type: array
+    type: object
+  analysis.MajorEmployment:
+    properties:
+      salary_infos: {}
+      work_areas: {}
+      work_industries: {}
+      work_jobs: {}
+    type: object
+  analysis.MajorProfile:
+    properties:
+      average_salary:
+        type: number
+      course_text:
+        type: string
+      fresh_average_salary:
+        type: number
+      intro_text:
+        type: string
+      job_text:
+        type: string
+      select_suggests:
+        type: string
+    type: object
+  analysis.PlanSummary:
+    properties:
+      available_provinces:
+        items:
+          type: string
+        type: array
+      available_years:
+        items:
+          type: integer
+        type: array
+      plan_count_total:
+        type: integer
+    type: object
+  analysis.PolicyTag:
+    properties:
+      effective_year:
+        type: integer
+      expire_year:
+        type: integer
+      tag_type:
+        type: string
+      tag_value:
+        type: string
+    type: object
+  analysis.ProvinceBatchLine:
+    properties:
+      policy_id:
+        type: integer
+      province_batch_line_id:
+        type: integer
+      province_id:
+        type: integer
+      province_name:
+        type: string
+      rank_value:
+        type: integer
+      raw_batch_name:
+        type: string
+      raw_category_name:
+        type: string
+      raw_section_name:
+        type: string
+      score_value:
+        type: number
+      score_year:
+        type: integer
+      source_system:
+        type: string
+      source_table:
+        type: string
+    type: object
+  analysis.School:
+    properties:
+      city_code:
+        type: integer
+      city_name:
+        type: string
+      logo_url:
+        type: string
+      major_summary:
+        $ref: '#/definitions/analysis.SchoolMajorSummary'
+      plan_summary:
+        $ref: '#/definitions/analysis.PlanSummary'
+      profile:
+        $ref: '#/definitions/analysis.SchoolProfile'
+      province_id:
+        type: integer
+      province_name:
+        type: string
+      rankings:
+        items:
+          $ref: '#/definitions/analysis.SchoolRanking'
+        type: array
+      school_code:
+        type: string
+      school_id:
+        type: integer
+      school_name:
+        type: string
+      score_summary:
+        $ref: '#/definitions/analysis.ScoreSummary'
+      tags:
+        items:
+          $ref: '#/definitions/analysis.PolicyTag'
+        type: array
+    type: object
+  analysis.SchoolAdmissionScore:
+    properties:
+      admission_year:
+        type: integer
+      average_score:
+        type: number
+      highest_score:
+        type: number
+      line_deviation:
+        type: number
+      lowest_rank:
+        type: integer
+      lowest_score:
+        type: number
+      policy_id:
+        type: integer
+      province_control_score:
+        type: number
+      province_id:
+        type: integer
+      province_name:
+        type: string
+      raw_admission_type:
+        type: string
+      raw_batch_name:
+        type: string
+      raw_elective_req:
+        type: string
+      raw_major_group_name:
+        type: string
+      raw_section_name:
+        type: string
+      school_admission_score_id:
+        type: integer
+      school_id:
+        type: integer
+      school_major_group_id:
+        type: integer
+      school_name:
+        type: string
+      source_system:
+        type: string
+      source_table:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/analysis.PolicyTag'
+        type: array
+    type: object
+  analysis.SchoolMajorItem:
+    properties:
+      latest_plan:
+        $ref: '#/definitions/analysis.EnrollmentPlan'
+      latest_score:
+        $ref: '#/definitions/analysis.MajorAdmissionScore'
+      major_code:
+        type: string
+      major_id:
+        type: integer
+      major_name:
+        type: string
+      major_profile:
+        $ref: '#/definitions/analysis.MajorProfile'
+      observed_year:
+        type: integer
+      school_id:
+        type: integer
+      school_major_id:
+        type: integer
+      school_major_name:
+        type: string
+      study_years_text:
+        type: string
+    type: object
+  analysis.SchoolMajorSummary:
+    properties:
+      school_count:
+        type: integer
+      top_schools:
+        items:
+          $ref: '#/definitions/analysis.School'
+        type: array
+    type: object
+  analysis.SchoolProfile:
+    properties:
+      abroad_rate:
+        type: number
+      address:
+        type: string
+      admission_site_url:
+        type: string
+      alias_name:
+        type: string
+      china_rate:
+        type: number
+      composite_score:
+        type: number
+      description:
+        type: string
+      email:
+        type: string
+      employment_index:
+        type: number
+      employment_rate:
+        type: number
+      female_ratio:
+        type: number
+      former_name:
+        type: string
+      founded_year:
+        type: integer
+      learning_index:
+        type: number
+      life_index:
+        type: number
+      male_ratio:
+        type: number
+      phone:
+        type: string
+      website_url:
+        type: string
+    type: object
+  analysis.SchoolRanking:
+    properties:
+      rank_value:
+        type: integer
+      ranking_source:
+        type: string
+      ranking_year:
+        type: integer
+    type: object
+  analysis.ScoreMatchInput:
+    properties:
+      province_name:
+        type: string
+      rank:
+        type: integer
+      score:
+        type: number
+      section:
+        type: string
+      target:
+        type: string
+      year:
+        type: integer
+    type: object
+  analysis.ScoreMatchItem:
+    properties:
+      lowest_rank:
+        type: integer
+      lowest_score:
+        type: number
+      match_distance:
+        type: number
+      reason:
+        type: string
+      risk_level:
+        type: string
+      school_id:
+        type: integer
+      school_major_name:
+        type: string
+      school_name:
+        type: string
+    type: object
+  analysis.ScoreMatchResponse:
+    properties:
+      buckets:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/analysis.ScoreMatchItem'
+          type: array
+        type: object
+      data_quality:
+        $ref: '#/definitions/analysis.DataQuality'
+      input:
+        $ref: '#/definitions/analysis.ScoreMatchInput'
+    type: object
+  analysis.ScoreSummary:
+    properties:
+      available_provinces:
+        items:
+          type: string
+        type: array
+      available_years:
+        items:
+          type: integer
+        type: array
+      data_quality:
+        $ref: '#/definitions/analysis.DataQuality'
+      lowest_rank_max:
+        type: integer
+      lowest_rank_min:
+        type: integer
+      lowest_score_max:
+        type: number
+      lowest_score_min:
+        type: number
+    type: object
+  analysis.ScoreTrendPoint:
+    properties:
+      average_score:
+        type: number
+      batch:
+        type: string
+      highest_score:
+        type: number
+      line_deviation:
+        type: number
+      lowest_rank:
+        type: integer
+      lowest_score:
+        type: number
+      section:
+        type: string
+      year:
+        type: integer
+    type: object
+  analysis.ScoreTrendResponse:
+    properties:
+      data_quality:
+        $ref: '#/definitions/analysis.DataQuality'
+      level:
+        type: string
+      major_name:
+        type: string
+      province_id:
+        type: integer
+      province_name:
+        type: string
+      school_id:
+        type: integer
+      school_name:
+        type: string
+      series:
+        items:
+          $ref: '#/definitions/analysis.ScoreTrendPoint'
+        type: array
     type: object
   user.BindingListResponse:
     properties:
@@ -945,25 +1626,434 @@ paths:
       summary: 管理员修改用户角色
       tags:
       - admin
-  /api/v1/analysis/employment-data:
+  /api/v1/analysis/admission-score-trends:
     get:
-      consumes:
-      - application/json
-      description: 获取模拟的专业就业情况数据，支持分页和筛选
+      description: 查询学校或专业层级录取分年份趋势，并返回数据质量说明
       parameters:
-      - description: 专业名称
+      - description: 趋势层级：school 或 major
         in: query
-        name: major_name
+        name: level
+        required: true
         type: string
-      - description: 省份
+      - description: 省份ID，逗号分隔
+        in: query
+        name: province_id
+        type: string
+      - description: 省份名称，逗号分隔
         in: query
         name: province
         type: string
-      - description: 年份
+      - description: 学校ID
+        in: query
+        name: school_id
+        required: true
+        type: integer
+      - description: 专业名称关键词，level=major 时可用
+        in: query
+        name: major_name
+        type: string
+      - description: 专业代码前缀，level=major 时可用
+        in: query
+        name: major_code
+        type: string
+      - description: 批次
+        in: query
+        name: batch
+        type: string
+      - description: 科类
+        in: query
+        name: section
+        type: string
+      - description: 年份最小值
+        in: query
+        name: year_min
+        type: integer
+      - description: 年份最大值
+        in: query
+        name: year_max
+        type: integer
+      - description: 指标名称，预留字段
+        in: query
+        name: metric
+        type: string
+      - description: 是否保留为0的平均分/最高分
+        in: query
+        name: include_zero_scores
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ScoreTrendResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询录取分趋势
+      tags:
+      - analysis
+  /api/v1/analysis/admission-scores/majors:
+    get:
+      description: 查询专业层级历史录取分，不要求 major_id 完整，优先匹配 school_major_name 和 major_code
+      parameters:
+      - description: 学校或专业关键词
+        in: query
+        name: q
+        type: string
+      - description: 省份ID，逗号分隔
+        in: query
+        name: province_id
+        type: string
+      - description: 省份名称，逗号分隔
+        in: query
+        name: province
+        type: string
+      - description: 年份，逗号分隔
+        in: query
+        name: year
+        type: string
+      - description: 年份最小值
+        in: query
+        name: year_min
+        type: integer
+      - description: 年份最大值
+        in: query
+        name: year_max
+        type: integer
+      - description: 学校ID，逗号分隔
+        in: query
+        name: school_id
+        type: string
+      - description: 学校名称关键词
+        in: query
+        name: school_name
+        type: string
+      - description: 学校标签，逗号分隔
+        in: query
+        name: school_tags
+        type: string
+      - description: 专业ID，逗号分隔
+        in: query
+        name: major_id
+        type: string
+      - description: 专业名称关键词
+        in: query
+        name: major_name
+        type: string
+      - description: 专业代码前缀
+        in: query
+        name: major_code
+        type: string
+      - description: 批次，逗号分隔
+        in: query
+        name: batch
+        type: string
+      - description: 科类，逗号分隔
+        in: query
+        name: section
+        type: string
+      - description: 录取类型，逗号分隔
+        in: query
+        name: admission_type
+        type: string
+      - description: 专业组名称关键词
+        in: query
+        name: major_group
+        type: string
+      - description: 选科要求关键词
+        in: query
+        name: subject_req
+        type: string
+      - description: 最低分最小值
+        in: query
+        name: score_min
+        type: number
+      - description: 最低分最大值
+        in: query
+        name: score_max
+        type: number
+      - description: 最低位次最小值
+        in: query
+        name: rank_min
+        type: integer
+      - description: 最低位次最大值
+        in: query
+        name: rank_max
+        type: integer
+      - description: 线差最小值
+        in: query
+        name: line_deviation_min
+        type: number
+      - description: 线差最大值
+        in: query
+        name: line_deviation_max
+        type: number
+      - description: 是否仅返回有位次记录
+        in: query
+        name: has_rank
+        type: boolean
+      - description: 是否仅返回有平均分记录
+        in: query
+        name: has_average_score
+        type: boolean
+      - description: 是否保留为0的平均分/最高分
+        in: query
+        name: include_zero_scores
+        type: boolean
+      - description: 扩展字段：school,major,policy,group,tags
+        in: query
+        name: include
+        type: string
+      - description: 返回 facets：province,year,batch,section,major_name,source_system
+        in: query
+        name: facets
+        type: string
+      - description: 排序：year,lowest_score,lowest_rank,line_deviation,school_name,major_name，前缀
+          - 表示降序
+        in: query
+        name: sort
+        type: string
+      - description: 来源系统
+        in: query
+        name: source_system
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20，最大100
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ListResponse-analysis_MajorAdmissionScore'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询专业录取分
+      tags:
+      - analysis
+  /api/v1/analysis/admission-scores/schools:
+    get:
+      description: 查询学校层级历史录取分，支持分数、位次、线差、学校标签、include、facets 和排序
+      parameters:
+      - description: 关键词
+        in: query
+        name: q
+        type: string
+      - description: 省份ID，逗号分隔
+        in: query
+        name: province_id
+        type: string
+      - description: 省份名称，逗号分隔
+        in: query
+        name: province
+        type: string
+      - description: 年份，逗号分隔
+        in: query
+        name: year
+        type: string
+      - description: 年份最小值
+        in: query
+        name: year_min
+        type: integer
+      - description: 年份最大值
+        in: query
+        name: year_max
+        type: integer
+      - description: 学校ID，逗号分隔
+        in: query
+        name: school_id
+        type: string
+      - description: 学校名称关键词
+        in: query
+        name: school_name
+        type: string
+      - description: 学校标签，逗号分隔
+        in: query
+        name: school_tags
+        type: string
+      - description: 批次，逗号分隔
+        in: query
+        name: batch
+        type: string
+      - description: 科类，逗号分隔
+        in: query
+        name: section
+        type: string
+      - description: 录取类型，逗号分隔
+        in: query
+        name: admission_type
+        type: string
+      - description: 专业组名称关键词
+        in: query
+        name: major_group
+        type: string
+      - description: 选科要求关键词
+        in: query
+        name: subject_req
+        type: string
+      - description: 最低分最小值
+        in: query
+        name: score_min
+        type: number
+      - description: 最低分最大值
+        in: query
+        name: score_max
+        type: number
+      - description: 最低位次最小值
+        in: query
+        name: rank_min
+        type: integer
+      - description: 最低位次最大值
+        in: query
+        name: rank_max
+        type: integer
+      - description: 线差最小值
+        in: query
+        name: line_deviation_min
+        type: number
+      - description: 线差最大值
+        in: query
+        name: line_deviation_max
+        type: number
+      - description: 是否仅返回有位次记录
+        in: query
+        name: has_rank
+        type: boolean
+      - description: 是否保留为0的平均分/最高分
+        in: query
+        name: include_zero_scores
+        type: boolean
+      - description: 扩展字段：school,policy,group,tags
+        in: query
+        name: include
+        type: string
+      - description: 返回 facets：province,year,batch,section,source_system
+        in: query
+        name: facets
+        type: string
+      - description: 排序：year,lowest_score,lowest_rank,line_deviation,school_name，前缀
+          - 表示降序
+        in: query
+        name: sort
+        type: string
+      - description: 来源系统
+        in: query
+        name: source_system
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20，最大100
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ListResponse-analysis_SchoolAdmissionScore'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询学校录取分
+      tags:
+      - analysis
+  /api/v1/analysis/dataset-overview:
+    get:
+      parameters:
+      - description: 是否返回核心表行数
+        in: query
+        name: include_tables
+        type: boolean
+      - description: 是否返回覆盖范围
+        in: query
+        name: include_coverage
+        type: boolean
+      - description: 是否返回导入日志
+        in: query
+        name: include_imports
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.DatasetOverviewResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 获取高考数据集概览
+      tags:
+      - analysis
+  /api/v1/analysis/employment-data:
+    get:
+      description: 兼容旧 employment-data 路由，当前基于 major_profile 的薪资和就业方向数据返回
+      parameters:
+      - description: 专业名称关键词
+        in: query
+        name: major_name
+        type: string
+      - description: 省份，兼容参数
+        in: query
+        name: province
+        type: string
+      - description: 年份，兼容参数
         in: query
         name: year
         type: integer
-      - description: 行业
+      - description: 行业关键词
         in: query
         name: industry
         type: string
@@ -971,7 +2061,7 @@ paths:
         in: query
         name: page
         type: integer
-      - description: 每页数量，默认10
+      - description: 每页数量，默认20，最大100
         in: query
         name: per_page
         type: integer
@@ -995,40 +2085,126 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
-      summary: 获取就业情况数据
+      summary: 获取就业兼容数据
       tags:
       - analysis
   /api/v1/analysis/enrollment-plans:
     get:
-      consumes:
-      - application/json
-      description: 获取模拟的招生计划数据，支持分页和筛选
+      description: 查询真实高考招生计划数据，支持分页和灵活筛选
       parameters:
-      - description: 学校名称
+      - description: 学校或专业关键词
         in: query
-        name: school_name
+        name: q
         type: string
-      - description: 专业名称
+      - description: 省份ID，逗号分隔
         in: query
-        name: major_name
+        name: province_id
         type: string
-      - description: 省份
+      - description: 省份名称，逗号分隔
         in: query
         name: province
         type: string
-      - description: 年份
+      - description: 年份，逗号分隔
         in: query
         name: year
+        type: string
+      - description: 年份最小值
+        in: query
+        name: year_min
         type: integer
-      - description: 批次
+      - description: 年份最大值
+        in: query
+        name: year_max
+        type: integer
+      - description: 学校ID，逗号分隔
+        in: query
+        name: school_id
+        type: string
+      - description: 学校名称关键词
+        in: query
+        name: school_name
+        type: string
+      - description: 学校标签，逗号分隔
+        in: query
+        name: school_tags
+        type: string
+      - description: 专业ID，逗号分隔
+        in: query
+        name: major_id
+        type: string
+      - description: 专业名称关键词
+        in: query
+        name: major_name
+        type: string
+      - description: 专业代码前缀
+        in: query
+        name: major_code
+        type: string
+      - description: 批次，逗号分隔
         in: query
         name: batch
+        type: string
+      - description: 科类，逗号分隔
+        in: query
+        name: section
+        type: string
+      - description: 录取类型，逗号分隔
+        in: query
+        name: admission_type
+        type: string
+      - description: 专业组名称关键词
+        in: query
+        name: major_group
+        type: string
+      - description: 选科要求关键词
+        in: query
+        name: subject_req
+        type: string
+      - description: 首选科目
+        in: query
+        name: first_subject
+        type: string
+      - description: 再选科目关键词
+        in: query
+        name: second_subjects
+        type: string
+      - description: 计划人数最小值
+        in: query
+        name: plan_count_min
+        type: integer
+      - description: 计划人数最大值
+        in: query
+        name: plan_count_max
+        type: integer
+      - description: 学费最小值
+        in: query
+        name: tuition_min
+        type: number
+      - description: 学费最大值
+        in: query
+        name: tuition_max
+        type: number
+      - description: 扩展字段：school,major,policy,group,tags
+        in: query
+        name: include
+        type: string
+      - description: 返回 facets：province,year,batch,section,source_system
+        in: query
+        name: facets
+        type: string
+      - description: 排序：year,plan_count,tuition_fee,school_name,major_name，前缀 - 表示降序
+        in: query
+        name: sort
+        type: string
+      - description: 来源系统
+        in: query
+        name: source_system
         type: string
       - description: 页码，默认1
         in: query
         name: page
         type: integer
-      - description: 每页数量，默认10
+      - description: 每页数量，默认20，最大100
         in: query
         name: per_page
         type: integer
@@ -1053,6 +2229,794 @@ paths:
           schema:
             $ref: '#/definitions/web.Response'
       summary: 获取招生计划数据
+      tags:
+      - analysis
+  /api/v1/analysis/facets:
+    get:
+      description: 按 scope 返回可用于前端筛选面板的实时枚举值
+      parameters:
+      - description: 筛选范围：schools、majors、enrollment_plans、school_scores、major_scores、batch_lines
+        in: query
+        name: scope
+        required: true
+        type: string
+      - description: 筛选字段，逗号分隔
+        in: query
+        name: fields
+        type: string
+      - description: 省份名称，逗号分隔
+        in: query
+        name: province
+        type: string
+      - description: 省份ID，逗号分隔
+        in: query
+        name: province_id
+        type: string
+      - description: 年份，逗号分隔
+        in: query
+        name: year
+        type: string
+      - description: 学校ID，逗号分隔
+        in: query
+        name: school_id
+        type: string
+      - description: 专业名称关键词
+        in: query
+        name: major_name
+        type: string
+      - description: 批次
+        in: query
+        name: batch
+        type: string
+      - description: 科类
+        in: query
+        name: section
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.FacetsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 获取分析筛选项
+      tags:
+      - analysis
+  /api/v1/analysis/majors:
+    get:
+      description: 支持分类、学位、学制、标签、薪资、就业 JSON 文本、include、facets 和排序筛选
+      parameters:
+      - description: 专业名称关键词
+        in: query
+        name: q
+        type: string
+      - description: 专业ID，逗号分隔
+        in: query
+        name: major_id
+        type: string
+      - description: 专业代码前缀
+        in: query
+        name: major_code
+        type: string
+      - description: 专业门类，逗号分隔
+        in: query
+        name: major_subject
+        type: string
+      - description: 专业类，逗号分隔
+        in: query
+        name: major_category
+        type: string
+      - description: 授予学位，逗号分隔
+        in: query
+        name: degree_name
+        type: string
+      - description: 学制，逗号分隔
+        in: query
+        name: study_years
+        type: string
+      - description: 专业标签，逗号分隔
+        in: query
+        name: tags
+        type: string
+      - description: 平均薪资最小值
+        in: query
+        name: salary_min
+        type: number
+      - description: 平均薪资最大值
+        in: query
+        name: salary_max
+        type: number
+      - description: 应届平均薪资最小值
+        in: query
+        name: fresh_salary_min
+        type: number
+      - description: 应届平均薪资最大值
+        in: query
+        name: fresh_salary_max
+        type: number
+      - description: 就业地区文本搜索
+        in: query
+        name: work_area
+        type: string
+      - description: 就业行业文本搜索
+        in: query
+        name: work_industry
+        type: string
+      - description: 就业岗位文本搜索
+        in: query
+        name: work_job
+        type: string
+      - description: 扩展字段：profile,tags,employment
+        in: query
+        name: include
+        type: string
+      - description: 返回 facets：major_subject,major_category,degree_name,study_years
+        in: query
+        name: facets
+        type: string
+      - description: 排序：major_name,major_code,average_salary,fresh_average_salary，前缀
+          - 表示降序
+        in: query
+        name: sort
+        type: string
+      - description: 来源系统
+        in: query
+        name: source_system
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20，最大100
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ListResponse-analysis_Major'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询专业列表
+      tags:
+      - analysis
+  /api/v1/analysis/majors/{major_id}:
+    get:
+      description: 返回专业基础信息，可按 include 扩展 profile、tags、schools、score_summary、plan_summary
+      parameters:
+      - description: 专业ID
+        in: path
+        name: major_id
+        required: true
+        type: integer
+      - description: 扩展字段：profile,tags,schools,score_summary,plan_summary
+        in: query
+        name: include
+        type: string
+      - description: 汇总筛选省份名称
+        in: query
+        name: province
+        type: string
+      - description: 汇总筛选省份ID
+        in: query
+        name: province_id
+        type: string
+      - description: 汇总筛选年份
+        in: query
+        name: year
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.Major'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 获取专业详情
+      tags:
+      - analysis
+  /api/v1/analysis/province-batch-line-trends:
+    get:
+      description: 按省份和批次返回升序年份序列
+      parameters:
+      - description: 省份ID，逗号分隔
+        in: query
+        name: province_id
+        type: string
+      - description: 省份名称，逗号分隔
+        in: query
+        name: province
+        type: string
+      - description: 批次
+        in: query
+        name: batch
+        required: true
+        type: string
+      - description: 类别
+        in: query
+        name: category
+        type: string
+      - description: 科类
+        in: query
+        name: section
+        type: string
+      - description: 年份最小值
+        in: query
+        name: year_min
+        type: integer
+      - description: 年份最大值
+        in: query
+        name: year_max
+        type: integer
+      - description: 来源系统
+        in: query
+        name: source_system
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.BatchLineTrendResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询省控线趋势
+      tags:
+      - analysis
+  /api/v1/analysis/province-batch-lines:
+    get:
+      description: 查询省份批次线数据，支持省份、年份、批次、科类、分数区间和 facets
+      parameters:
+      - description: 省份ID，逗号分隔
+        in: query
+        name: province_id
+        type: string
+      - description: 省份名称，逗号分隔
+        in: query
+        name: province
+        type: string
+      - description: 年份，逗号分隔
+        in: query
+        name: year
+        type: string
+      - description: 年份最小值
+        in: query
+        name: year_min
+        type: integer
+      - description: 年份最大值
+        in: query
+        name: year_max
+        type: integer
+      - description: 批次，逗号分隔
+        in: query
+        name: batch
+        type: string
+      - description: 类别，逗号分隔
+        in: query
+        name: category
+        type: string
+      - description: 科类，逗号分隔
+        in: query
+        name: section
+        type: string
+      - description: 分数最小值
+        in: query
+        name: score_min
+        type: number
+      - description: 分数最大值
+        in: query
+        name: score_max
+        type: number
+      - description: 来源系统
+        in: query
+        name: source_system
+        type: string
+      - description: 返回 facets：province,year,batch,category,section
+        in: query
+        name: facets
+        type: string
+      - description: 排序：year,province,score_value，前缀 - 表示降序
+        in: query
+        name: sort
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20，最大100
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ListResponse-analysis_ProvinceBatchLine'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询省控线列表
+      tags:
+      - analysis
+  /api/v1/analysis/schools:
+    get:
+      description: 支持地区、标签、排名、就业率、综合评分、include、facets 和排序筛选
+      parameters:
+      - description: 学校名称关键词
+        in: query
+        name: q
+        type: string
+      - description: 学校ID，逗号分隔
+        in: query
+        name: school_id
+        type: string
+      - description: 省份ID，逗号分隔
+        in: query
+        name: province_id
+        type: string
+      - description: 省份名称，逗号分隔
+        in: query
+        name: province
+        type: string
+      - description: 城市编码，逗号分隔
+        in: query
+        name: city_code
+        type: string
+      - description: 城市名称，逗号分隔
+        in: query
+        name: city
+        type: string
+      - description: 学校类型标签，逗号分隔
+        in: query
+        name: school_type
+        type: string
+      - description: 办学层次标签，逗号分隔
+        in: query
+        name: school_level
+        type: string
+      - description: 办学性质标签，逗号分隔
+        in: query
+        name: school_nature
+        type: string
+      - description: 主管部门标签，逗号分隔
+        in: query
+        name: department
+        type: string
+      - description: 学校标签，逗号分隔，例如 985,211
+        in: query
+        name: tags
+        type: string
+      - description: 排名来源
+        in: query
+        name: ranking_source
+        type: string
+      - description: 排名最小值
+        in: query
+        name: ranking_min
+        type: integer
+      - description: 排名最大值
+        in: query
+        name: ranking_max
+        type: integer
+      - description: 就业率最小值
+        in: query
+        name: employment_rate_min
+        type: number
+      - description: 就业率最大值
+        in: query
+        name: employment_rate_max
+        type: number
+      - description: 综合评分最小值
+        in: query
+        name: composite_score_min
+        type: number
+      - description: 综合评分最大值
+        in: query
+        name: composite_score_max
+        type: number
+      - description: 扩展字段：profile,tags,rankings
+        in: query
+        name: include
+        type: string
+      - description: 返回 facets：province,city,ranking_source
+        in: query
+        name: facets
+        type: string
+      - description: 排序：school_name,province,city,ranking,employment_rate,composite_score，前缀
+          - 表示降序
+        in: query
+        name: sort
+        type: string
+      - description: 来源系统
+        in: query
+        name: source_system
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20，最大100
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ListResponse-analysis_School'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询学校列表
+      tags:
+      - analysis
+  /api/v1/analysis/schools/{school_id}:
+    get:
+      description: 返回学校基础信息，可按 include 扩展 profile、tags、rankings、majors、score_summary、plan_summary
+      parameters:
+      - description: 学校ID
+        in: path
+        name: school_id
+        required: true
+        type: integer
+      - description: 扩展字段：profile,tags,rankings,majors,score_summary,plan_summary
+        in: query
+        name: include
+        type: string
+      - description: 汇总筛选省份名称
+        in: query
+        name: province
+        type: string
+      - description: 汇总筛选省份ID
+        in: query
+        name: province_id
+        type: string
+      - description: 汇总筛选年份
+        in: query
+        name: year
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.School'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 获取学校详情
+      tags:
+      - analysis
+  /api/v1/analysis/schools/{school_id}/majors:
+    get:
+      description: 查询指定学校的专业目录，可按专业名称、代码、年份、学位、门类筛选
+      parameters:
+      - description: 学校ID
+        in: path
+        name: school_id
+        required: true
+        type: integer
+      - description: 专业名称关键词
+        in: query
+        name: q
+        type: string
+      - description: 专业代码前缀
+        in: query
+        name: major_code
+        type: string
+      - description: 观测年份
+        in: query
+        name: observed_year
+        type: integer
+      - description: 授予学位
+        in: query
+        name: degree_name
+        type: string
+      - description: 专业门类
+        in: query
+        name: major_subject
+        type: string
+      - description: 省份名称，用于 latest_plan/latest_score
+        in: query
+        name: province
+        type: string
+      - description: 省份ID，用于 latest_plan/latest_score
+        in: query
+        name: province_id
+        type: string
+      - description: 年份，用于 latest_plan/latest_score
+        in: query
+        name: year
+        type: integer
+      - description: 扩展字段：major_profile,latest_plan,latest_score
+        in: query
+        name: include
+        type: string
+      - description: 排序：school_major_name,major_code,observed_year，前缀 - 表示降序
+        in: query
+        name: sort
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20，最大100
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ListResponse-analysis_SchoolMajorItem'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 查询学校开设专业
+      tags:
+      - analysis
+  /api/v1/analysis/schools/compare:
+    get:
+      description: 最多对比 10 个学校，返回结果按输入 school_ids 顺序排列
+      parameters:
+      - description: 学校ID，逗号分隔，最多10个
+        in: query
+        name: school_ids
+        required: true
+        type: string
+      - description: 汇总筛选省份名称
+        in: query
+        name: province
+        type: string
+      - description: 汇总筛选省份ID
+        in: query
+        name: province_id
+        type: string
+      - description: 汇总筛选年份
+        in: query
+        name: year
+        type: integer
+      - description: 排名来源
+        in: query
+        name: ranking_source
+        type: string
+      - description: 扩展字段：profile,tags,rankings
+        in: query
+        name: include
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 对比多个学校
+      tags:
+      - analysis
+  /api/v1/analysis/score-match:
+    get:
+      description: 基于历史录取分和位次返回冲稳保参考结果，不代表录取概率
+      parameters:
+      - description: 省份ID
+        in: query
+        name: province_id
+        type: string
+      - description: 省份名称
+        in: query
+        name: province
+        type: string
+      - description: 年份
+        in: query
+        name: year
+        required: true
+        type: integer
+      - description: 科类
+        in: query
+        name: section
+        type: string
+      - description: 分数，score 或 rank 至少传一个
+        in: query
+        name: score
+        type: number
+      - description: 位次，优先用于匹配
+        in: query
+        name: rank
+        type: integer
+      - description: 匹配目标：school 或 major，默认 major
+        in: query
+        name: target
+        type: string
+      - description: 策略：rush,stable,safe,all，默认 all
+        in: query
+        name: strategy
+        type: string
+      - description: 分数窗口，预留字段
+        in: query
+        name: score_window
+        type: integer
+      - description: 位次窗口比例，预留字段
+        in: query
+        name: rank_window_ratio
+        type: number
+      - description: 学校标签，逗号分隔
+        in: query
+        name: school_tags
+        type: string
+      - description: 院校省份过滤，预留字段
+        in: query
+        name: province_filter
+        type: string
+      - description: 专业名称关键词，target=major 时可用
+        in: query
+        name: major_name
+        type: string
+      - description: 最高学费，预留字段
+        in: query
+        name: tuition_max
+        type: number
+      - description: 扩展字段，预留字段
+        in: query
+        name: include
+        type: string
+      - description: 排序，预留字段
+        in: query
+        name: sort
+        type: string
+      - description: 页码，默认1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20，最大100
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.ScoreMatchResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 历史分数/位次匹配
       tags:
       - analysis
   /api/v1/auth/login:

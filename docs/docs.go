@@ -767,41 +767,673 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/analysis/employment-data": {
+        "/api/v1/analysis/admission-score-trends": {
             "get": {
-                "description": "获取模拟的专业就业情况数据，支持分页和筛选",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "查询学校或专业层级录取分年份趋势，并返回数据质量说明",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "analysis"
                 ],
-                "summary": "获取就业情况数据",
+                "summary": "查询录取分趋势",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "专业名称",
-                        "name": "major_name",
+                        "description": "趋势层级：school 或 major",
+                        "name": "level",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "省份",
+                        "description": "省份名称，逗号分隔",
                         "name": "province",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "年份",
+                        "description": "学校ID",
+                        "name": "school_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词，level=major 时可用",
+                        "name": "major_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业代码前缀，level=major 时可用",
+                        "name": "major_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "批次",
+                        "name": "batch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类",
+                        "name": "section",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最小值",
+                        "name": "year_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最大值",
+                        "name": "year_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "指标名称，预留字段",
+                        "name": "metric",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否保留为0的平均分/最高分",
+                        "name": "include_zero_scores",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ScoreTrendResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/admission-scores/majors": {
+            "get": {
+                "description": "查询专业层级历史录取分，不要求 major_id 完整，优先匹配 school_major_name 和 major_code",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "查询专业录取分",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "学校或专业关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，逗号分隔",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "年份，逗号分隔",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最小值",
+                        "name": "year_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最大值",
+                        "name": "year_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校ID，逗号分隔",
+                        "name": "school_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校名称关键词",
+                        "name": "school_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校标签，逗号分隔",
+                        "name": "school_tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业ID，逗号分隔",
+                        "name": "major_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词",
+                        "name": "major_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业代码前缀",
+                        "name": "major_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "批次，逗号分隔",
+                        "name": "batch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类，逗号分隔",
+                        "name": "section",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "录取类型，逗号分隔",
+                        "name": "admission_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业组名称关键词",
+                        "name": "major_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "选科要求关键词",
+                        "name": "subject_req",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "最低分最小值",
+                        "name": "score_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "最低分最大值",
+                        "name": "score_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最低位次最小值",
+                        "name": "rank_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最低位次最大值",
+                        "name": "rank_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "线差最小值",
+                        "name": "line_deviation_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "线差最大值",
+                        "name": "line_deviation_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否仅返回有位次记录",
+                        "name": "has_rank",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否仅返回有平均分记录",
+                        "name": "has_average_score",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否保留为0的平均分/最高分",
+                        "name": "include_zero_scores",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：school,major,policy,group,tags",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回 facets：province,year,batch,section,major_name,source_system",
+                        "name": "facets",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：year,lowest_score,lowest_rank,line_deviation,school_name,major_name，前缀 - 表示降序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源系统",
+                        "name": "source_system",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最大100",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ListResponse-analysis_MajorAdmissionScore"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/admission-scores/schools": {
+            "get": {
+                "description": "查询学校层级历史录取分，支持分数、位次、线差、学校标签、include、facets 和排序",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "查询学校录取分",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，逗号分隔",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "年份，逗号分隔",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最小值",
+                        "name": "year_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最大值",
+                        "name": "year_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校ID，逗号分隔",
+                        "name": "school_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校名称关键词",
+                        "name": "school_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校标签，逗号分隔",
+                        "name": "school_tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "批次，逗号分隔",
+                        "name": "batch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类，逗号分隔",
+                        "name": "section",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "录取类型，逗号分隔",
+                        "name": "admission_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业组名称关键词",
+                        "name": "major_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "选科要求关键词",
+                        "name": "subject_req",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "最低分最小值",
+                        "name": "score_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "最低分最大值",
+                        "name": "score_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最低位次最小值",
+                        "name": "rank_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "最低位次最大值",
+                        "name": "rank_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "线差最小值",
+                        "name": "line_deviation_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "线差最大值",
+                        "name": "line_deviation_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否仅返回有位次记录",
+                        "name": "has_rank",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否保留为0的平均分/最高分",
+                        "name": "include_zero_scores",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：school,policy,group,tags",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回 facets：province,year,batch,section,source_system",
+                        "name": "facets",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：year,lowest_score,lowest_rank,line_deviation,school_name，前缀 - 表示降序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源系统",
+                        "name": "source_system",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最大100",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ListResponse-analysis_SchoolAdmissionScore"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/dataset-overview": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "获取高考数据集概览",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "是否返回核心表行数",
+                        "name": "include_tables",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否返回覆盖范围",
+                        "name": "include_coverage",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否返回导入日志",
+                        "name": "include_imports",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.DatasetOverviewResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/employment-data": {
+            "get": {
+                "description": "兼容旧 employment-data 路由，当前基于 major_profile 的薪资和就业方向数据返回",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "获取就业兼容数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词",
+                        "name": "major_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份，兼容参数",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份，兼容参数",
                         "name": "year",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "行业",
+                        "description": "行业关键词",
                         "name": "industry",
                         "in": "query"
                     },
@@ -813,7 +1445,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量，默认10",
+                        "description": "每页数量，默认20，最大100",
                         "name": "per_page",
                         "in": "query"
                     }
@@ -854,10 +1486,7 @@ const docTemplate = `{
         },
         "/api/v1/analysis/enrollment-plans": {
             "get": {
-                "description": "获取模拟的招生计划数据，支持分页和筛选",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "查询真实高考招生计划数据，支持分页和灵活筛选",
                 "produces": [
                     "application/json"
                 ],
@@ -868,32 +1497,164 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "学校名称",
+                        "description": "学校或专业关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，逗号分隔",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "年份，逗号分隔",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最小值",
+                        "name": "year_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最大值",
+                        "name": "year_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校ID，逗号分隔",
+                        "name": "school_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校名称关键词",
                         "name": "school_name",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "专业名称",
+                        "description": "学校标签，逗号分隔",
+                        "name": "school_tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业ID，逗号分隔",
+                        "name": "major_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词",
                         "name": "major_name",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "省份",
-                        "name": "province",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "年份",
-                        "name": "year",
+                        "description": "专业代码前缀",
+                        "name": "major_code",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "批次",
+                        "description": "批次，逗号分隔",
                         "name": "batch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类，逗号分隔",
+                        "name": "section",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "录取类型，逗号分隔",
+                        "name": "admission_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业组名称关键词",
+                        "name": "major_group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "选科要求关键词",
+                        "name": "subject_req",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "首选科目",
+                        "name": "first_subject",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "再选科目关键词",
+                        "name": "second_subjects",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "计划人数最小值",
+                        "name": "plan_count_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "计划人数最大值",
+                        "name": "plan_count_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "学费最小值",
+                        "name": "tuition_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "学费最大值",
+                        "name": "tuition_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：school,major,policy,group,tags",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回 facets：province,year,batch,section,source_system",
+                        "name": "facets",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：year,plan_count,tuition_fee,school_name,major_name，前缀 - 表示降序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源系统",
+                        "name": "source_system",
                         "in": "query"
                     },
                     {
@@ -904,7 +1665,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "每页数量，默认10",
+                        "description": "每页数量，默认20，最大100",
                         "name": "per_page",
                         "in": "query"
                     }
@@ -922,6 +1683,1236 @@ const docTemplate = `{
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/analysis.EnrollmentPlanResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/facets": {
+            "get": {
+                "description": "按 scope 返回可用于前端筛选面板的实时枚举值",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "获取分析筛选项",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "筛选范围：schools、majors、enrollment_plans、school_scores、major_scores、batch_lines",
+                        "name": "scope",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "筛选字段，逗号分隔",
+                        "name": "fields",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，逗号分隔",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "年份，逗号分隔",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校ID，逗号分隔",
+                        "name": "school_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词",
+                        "name": "major_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "批次",
+                        "name": "batch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类",
+                        "name": "section",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.FacetsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/majors": {
+            "get": {
+                "description": "支持分类、学位、学制、标签、薪资、就业 JSON 文本、include、facets 和排序筛选",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "查询专业列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业ID，逗号分隔",
+                        "name": "major_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业代码前缀",
+                        "name": "major_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业门类，逗号分隔",
+                        "name": "major_subject",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业类，逗号分隔",
+                        "name": "major_category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "授予学位，逗号分隔",
+                        "name": "degree_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学制，逗号分隔",
+                        "name": "study_years",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业标签，逗号分隔",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "平均薪资最小值",
+                        "name": "salary_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "平均薪资最大值",
+                        "name": "salary_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "应届平均薪资最小值",
+                        "name": "fresh_salary_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "应届平均薪资最大值",
+                        "name": "fresh_salary_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "就业地区文本搜索",
+                        "name": "work_area",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "就业行业文本搜索",
+                        "name": "work_industry",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "就业岗位文本搜索",
+                        "name": "work_job",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：profile,tags,employment",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回 facets：major_subject,major_category,degree_name,study_years",
+                        "name": "facets",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：major_name,major_code,average_salary,fresh_average_salary，前缀 - 表示降序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源系统",
+                        "name": "source_system",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最大100",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ListResponse-analysis_Major"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/majors/{major_id}": {
+            "get": {
+                "description": "返回专业基础信息，可按 include 扩展 profile、tags、schools、score_summary、plan_summary",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "获取专业详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "专业ID",
+                        "name": "major_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：profile,tags,schools,score_summary,plan_summary",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "汇总筛选省份名称",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "汇总筛选省份ID",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "汇总筛选年份",
+                        "name": "year",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.Major"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/province-batch-line-trends": {
+            "get": {
+                "description": "按省份和批次返回升序年份序列",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "查询省控线趋势",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，逗号分隔",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "批次",
+                        "name": "batch",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "类别",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类",
+                        "name": "section",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最小值",
+                        "name": "year_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最大值",
+                        "name": "year_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源系统",
+                        "name": "source_system",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.BatchLineTrendResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/province-batch-lines": {
+            "get": {
+                "description": "查询省份批次线数据，支持省份、年份、批次、科类、分数区间和 facets",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "查询省控线列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，逗号分隔",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "年份，逗号分隔",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最小值",
+                        "name": "year_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份最大值",
+                        "name": "year_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "批次，逗号分隔",
+                        "name": "batch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "类别，逗号分隔",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类，逗号分隔",
+                        "name": "section",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "分数最小值",
+                        "name": "score_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "分数最大值",
+                        "name": "score_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源系统",
+                        "name": "source_system",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回 facets：province,year,batch,category,section",
+                        "name": "facets",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：year,province,score_value，前缀 - 表示降序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最大100",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ListResponse-analysis_ProvinceBatchLine"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/schools": {
+            "get": {
+                "description": "支持地区、标签、排名、就业率、综合评分、include、facets 和排序筛选",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "查询学校列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "学校名称关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校ID，逗号分隔",
+                        "name": "school_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份ID，逗号分隔",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，逗号分隔",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "城市编码，逗号分隔",
+                        "name": "city_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "城市名称，逗号分隔",
+                        "name": "city",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校类型标签，逗号分隔",
+                        "name": "school_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "办学层次标签，逗号分隔",
+                        "name": "school_level",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "办学性质标签，逗号分隔",
+                        "name": "school_nature",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "主管部门标签，逗号分隔",
+                        "name": "department",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校标签，逗号分隔，例如 985,211",
+                        "name": "tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排名来源",
+                        "name": "ranking_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "排名最小值",
+                        "name": "ranking_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "排名最大值",
+                        "name": "ranking_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "就业率最小值",
+                        "name": "employment_rate_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "就业率最大值",
+                        "name": "employment_rate_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "综合评分最小值",
+                        "name": "composite_score_min",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "综合评分最大值",
+                        "name": "composite_score_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：profile,tags,rankings",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回 facets：province,city,ranking_source",
+                        "name": "facets",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：school_name,province,city,ranking,employment_rate,composite_score，前缀 - 表示降序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源系统",
+                        "name": "source_system",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最大100",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ListResponse-analysis_School"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/schools/compare": {
+            "get": {
+                "description": "最多对比 10 个学校，返回结果按输入 school_ids 顺序排列",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "对比多个学校",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "学校ID，逗号分隔，最多10个",
+                        "name": "school_ids",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "汇总筛选省份名称",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "汇总筛选省份ID",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "汇总筛选年份",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排名来源",
+                        "name": "ranking_source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：profile,tags,rankings",
+                        "name": "include",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/schools/{school_id}": {
+            "get": {
+                "description": "返回学校基础信息，可按 include 扩展 profile、tags、rankings、majors、score_summary、plan_summary",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "获取学校详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "学校ID",
+                        "name": "school_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：profile,tags,rankings,majors,score_summary,plan_summary",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "汇总筛选省份名称",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "汇总筛选省份ID",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "汇总筛选年份",
+                        "name": "year",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.School"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/schools/{school_id}/majors": {
+            "get": {
+                "description": "查询指定学校的专业目录，可按专业名称、代码、年份、学位、门类筛选",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "查询学校开设专业",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "学校ID",
+                        "name": "school_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业代码前缀",
+                        "name": "major_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "观测年份",
+                        "name": "observed_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "授予学位",
+                        "name": "degree_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业门类",
+                        "name": "major_subject",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称，用于 latest_plan/latest_score",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份ID，用于 latest_plan/latest_score",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份，用于 latest_plan/latest_score",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段：major_profile,latest_plan,latest_score",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序：school_major_name,major_code,observed_year，前缀 - 表示降序",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最大100",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ListResponse-analysis_SchoolMajorItem"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/score-match": {
+            "get": {
+                "description": "基于历史录取分和位次返回冲稳保参考结果，不代表录取概率",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "历史分数/位次匹配",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "省份ID",
+                        "name": "province_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "省份名称",
+                        "name": "province",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "年份",
+                        "name": "year",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "科类",
+                        "name": "section",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "分数，score 或 rank 至少传一个",
+                        "name": "score",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "位次，优先用于匹配",
+                        "name": "rank",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "匹配目标：school 或 major，默认 major",
+                        "name": "target",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "策略：rush,stable,safe,all，默认 all",
+                        "name": "strategy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "分数窗口，预留字段",
+                        "name": "score_window",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "位次窗口比例，预留字段",
+                        "name": "rank_window_ratio",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "学校标签，逗号分隔",
+                        "name": "school_tags",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "院校省份过滤，预留字段",
+                        "name": "province_filter",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "专业名称关键词，target=major 时可用",
+                        "name": "major_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "最高学费，预留字段",
+                        "name": "tuition_max",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "扩展字段，预留字段",
+                        "name": "include",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序，预留字段",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最大100",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.ScoreMatchResponse"
                                         }
                                     }
                                 }
@@ -1798,63 +3789,196 @@ const docTemplate = `{
                 }
             }
         },
+        "analysis.BatchLineTrendPoint": {
+            "type": "object",
+            "properties": {
+                "rank_value": {
+                    "type": "integer"
+                },
+                "score_value": {
+                    "type": "number"
+                },
+                "source_system": {
+                    "type": "string"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.BatchLineTrendResponse": {
+            "type": "object",
+            "properties": {
+                "batch": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "province_id": {
+                    "type": "integer"
+                },
+                "province_name": {
+                    "type": "string"
+                },
+                "section": {
+                    "type": "string"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.BatchLineTrendPoint"
+                    }
+                }
+            }
+        },
+        "analysis.DataQuality": {
+            "type": "object",
+            "properties": {
+                "disclaimer": {
+                    "type": "string"
+                },
+                "has_zero_scores": {
+                    "type": "boolean"
+                },
+                "missing_years": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.DatasetCoverage": {
+            "type": "object",
+            "properties": {
+                "major_count": {
+                    "type": "integer"
+                },
+                "province_count": {
+                    "type": "integer"
+                },
+                "school_count": {
+                    "type": "integer"
+                },
+                "year_count": {
+                    "type": "integer"
+                },
+                "year_max": {
+                    "type": "integer"
+                },
+                "year_min": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.DatasetOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "coverage": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/analysis.DatasetCoverage"
+                    }
+                },
+                "latest_imported_at": {
+                    "type": "string"
+                },
+                "latest_imports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.ImportLogItem"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/analysis.DatasetSummary"
+                },
+                "table_counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "analysis.DatasetSummary": {
+            "type": "object",
+            "properties": {
+                "enrollment_plan_count": {
+                    "type": "integer"
+                },
+                "major_admission_score_count": {
+                    "type": "integer"
+                },
+                "major_count": {
+                    "type": "integer"
+                },
+                "major_profile_count": {
+                    "type": "integer"
+                },
+                "province_batch_line_count": {
+                    "type": "integer"
+                },
+                "province_count": {
+                    "type": "integer"
+                },
+                "school_admission_score_count": {
+                    "type": "integer"
+                },
+                "school_count": {
+                    "type": "integer"
+                },
+                "school_profile_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "analysis.EmploymentData": {
             "type": "object",
             "properties": {
                 "average_salary": {
-                    "description": "平均薪资",
                     "type": "number"
                 },
                 "employment_province": {
-                    "description": "就业省份",
                     "type": "string"
                 },
                 "employment_rate": {
-                    "description": "就业率",
                     "type": "number"
                 },
                 "further_study_rate": {
-                    "description": "深造率",
                     "type": "number"
                 },
                 "graduates_count": {
-                    "description": "毕业生总数",
                     "type": "integer"
                 },
                 "highest_salary": {
-                    "description": "最高薪资",
                     "type": "number"
                 },
                 "id": {
-                    "description": "数据ID",
                     "type": "integer"
                 },
                 "industry": {
-                    "description": "主要就业行业",
                     "type": "string"
                 },
                 "job_title": {
-                    "description": "主要职位",
                     "type": "string"
                 },
                 "lowest_salary": {
-                    "description": "最低薪资",
                     "type": "number"
                 },
                 "major_code": {
-                    "description": "专业代码",
                     "type": "string"
                 },
                 "major_name": {
-                    "description": "专业名称",
                     "type": "string"
                 },
                 "province": {
-                    "description": "省份",
                     "type": "string"
                 },
                 "year": {
-                    "description": "年份",
                     "type": "integer"
                 }
             }
@@ -1863,22 +3987,18 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {
-                    "description": "就业情况列表",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/analysis.EmploymentData"
                     }
                 },
                 "page": {
-                    "description": "当前页码",
                     "type": "integer"
                 },
                 "per_page": {
-                    "description": "每页数量",
                     "type": "integer"
                 },
                 "total": {
-                    "description": "总数据量",
                     "type": "integer"
                 }
             }
@@ -1886,59 +4006,100 @@ const docTemplate = `{
         "analysis.EnrollmentPlan": {
             "type": "object",
             "properties": {
-                "actual_count": {
-                    "description": "实际招生人数",
-                    "type": "integer"
-                },
-                "average_score": {
-                    "description": "平均分数线",
-                    "type": "integer"
-                },
                 "batch": {
-                    "description": "批次（一本、二本等）",
                     "type": "string"
+                },
+                "enrollment_plan_id": {
+                    "type": "integer"
                 },
                 "id": {
                     "type": "integer"
                 },
                 "major_code": {
-                    "description": "专业代码",
                     "type": "string"
+                },
+                "major_id": {
+                    "type": "integer"
                 },
                 "major_name": {
-                    "description": "专业名称",
                     "type": "string"
                 },
-                "max_score": {
-                    "description": "最高分数线",
-                    "type": "integer"
-                },
-                "min_score": {
-                    "description": "最低分数线",
-                    "type": "integer"
+                "major_plan_code": {
+                    "type": "string"
                 },
                 "plan_count": {
-                    "description": "计划招生人数",
+                    "type": "integer"
+                },
+                "plan_year": {
+                    "type": "integer"
+                },
+                "policy_id": {
                     "type": "integer"
                 },
                 "province": {
-                    "description": "省份",
+                    "type": "string"
+                },
+                "province_id": {
+                    "type": "integer"
+                },
+                "province_name": {
+                    "type": "string"
+                },
+                "raw_admission_type": {
+                    "type": "string"
+                },
+                "raw_batch_name": {
+                    "type": "string"
+                },
+                "raw_elective_req": {
+                    "type": "string"
+                },
+                "raw_major_group_name": {
+                    "type": "string"
+                },
+                "raw_section_name": {
                     "type": "string"
                 },
                 "school_code": {
-                    "description": "学校代码",
+                    "type": "string"
+                },
+                "school_id": {
+                    "type": "integer"
+                },
+                "school_major_group_id": {
+                    "type": "integer"
+                },
+                "school_major_id": {
+                    "type": "integer"
+                },
+                "school_major_name": {
                     "type": "string"
                 },
                 "school_name": {
-                    "description": "学校名称",
+                    "type": "string"
+                },
+                "source_system": {
+                    "type": "string"
+                },
+                "source_table": {
+                    "type": "string"
+                },
+                "study_years_text": {
                     "type": "string"
                 },
                 "subject_require": {
-                    "description": "科目要求",
                     "type": "string"
                 },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.PolicyTag"
+                    }
+                },
+                "tuition_fee": {
+                    "type": "number"
+                },
                 "year": {
-                    "description": "年份",
                     "type": "integer"
                 }
             }
@@ -1946,24 +4107,904 @@ const docTemplate = `{
         "analysis.EnrollmentPlanResponse": {
             "type": "object",
             "properties": {
-                "page": {
-                    "description": "当前页码",
-                    "type": "integer"
-                },
-                "per_page": {
-                    "description": "每页数量",
-                    "type": "integer"
-                },
-                "plans": {
-                    "description": "招生计划列表",
+                "data": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/analysis.EnrollmentPlan"
                     }
                 },
-                "total": {
-                    "description": "总数据量",
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.EnrollmentPlan"
+                    }
+                },
+                "page": {
                     "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.FacetValue": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "value": {}
+            }
+        },
+        "analysis.FacetsResponse": {
+            "type": "object",
+            "properties": {
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/analysis.FacetValue"
+                        }
+                    }
+                },
+                "scope": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.ImportLogItem": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "imported_at": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "source_system": {
+                    "type": "string"
+                },
+                "source_table": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.ListResponse-analysis_Major": {
+            "type": "object",
+            "properties": {
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.Major"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ListResponse-analysis_MajorAdmissionScore": {
+            "type": "object",
+            "properties": {
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.MajorAdmissionScore"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ListResponse-analysis_ProvinceBatchLine": {
+            "type": "object",
+            "properties": {
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.ProvinceBatchLine"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ListResponse-analysis_School": {
+            "type": "object",
+            "properties": {
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.School"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ListResponse-analysis_SchoolAdmissionScore": {
+            "type": "object",
+            "properties": {
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.SchoolAdmissionScore"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ListResponse-analysis_SchoolMajorItem": {
+            "type": "object",
+            "properties": {
+                "facets": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.SchoolMajorItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.Major": {
+            "type": "object",
+            "properties": {
+                "degree_name": {
+                    "type": "string"
+                },
+                "employment": {
+                    "$ref": "#/definitions/analysis.MajorEmployment"
+                },
+                "major_category": {
+                    "type": "string"
+                },
+                "major_code": {
+                    "type": "string"
+                },
+                "major_id": {
+                    "type": "integer"
+                },
+                "major_name": {
+                    "type": "string"
+                },
+                "major_subject": {
+                    "type": "string"
+                },
+                "plan_summary": {
+                    "$ref": "#/definitions/analysis.PlanSummary"
+                },
+                "profile": {
+                    "$ref": "#/definitions/analysis.MajorProfile"
+                },
+                "school_summary": {
+                    "$ref": "#/definitions/analysis.SchoolMajorSummary"
+                },
+                "score_summary": {
+                    "$ref": "#/definitions/analysis.ScoreSummary"
+                },
+                "study_years_text": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.PolicyTag"
+                    }
+                }
+            }
+        },
+        "analysis.MajorAdmissionScore": {
+            "type": "object",
+            "properties": {
+                "admission_year": {
+                    "type": "integer"
+                },
+                "average_score": {
+                    "type": "number"
+                },
+                "highest_score": {
+                    "type": "number"
+                },
+                "line_deviation": {
+                    "type": "number"
+                },
+                "lowest_rank": {
+                    "type": "integer"
+                },
+                "lowest_score": {
+                    "type": "number"
+                },
+                "major_admission_score_id": {
+                    "type": "integer"
+                },
+                "major_code": {
+                    "type": "string"
+                },
+                "major_id": {
+                    "type": "integer"
+                },
+                "policy_id": {
+                    "type": "integer"
+                },
+                "province_id": {
+                    "type": "integer"
+                },
+                "province_name": {
+                    "type": "string"
+                },
+                "raw_admission_type": {
+                    "type": "string"
+                },
+                "raw_batch_name": {
+                    "type": "string"
+                },
+                "raw_elective_req": {
+                    "type": "string"
+                },
+                "raw_major_group_name": {
+                    "type": "string"
+                },
+                "raw_section_name": {
+                    "type": "string"
+                },
+                "school_id": {
+                    "type": "integer"
+                },
+                "school_major_group_id": {
+                    "type": "integer"
+                },
+                "school_major_id": {
+                    "type": "integer"
+                },
+                "school_major_name": {
+                    "type": "string"
+                },
+                "school_name": {
+                    "type": "string"
+                },
+                "source_system": {
+                    "type": "string"
+                },
+                "source_table": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.PolicyTag"
+                    }
+                }
+            }
+        },
+        "analysis.MajorEmployment": {
+            "type": "object",
+            "properties": {
+                "salary_infos": {},
+                "work_areas": {},
+                "work_industries": {},
+                "work_jobs": {}
+            }
+        },
+        "analysis.MajorProfile": {
+            "type": "object",
+            "properties": {
+                "average_salary": {
+                    "type": "number"
+                },
+                "course_text": {
+                    "type": "string"
+                },
+                "fresh_average_salary": {
+                    "type": "number"
+                },
+                "intro_text": {
+                    "type": "string"
+                },
+                "job_text": {
+                    "type": "string"
+                },
+                "select_suggests": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.PlanSummary": {
+            "type": "object",
+            "properties": {
+                "available_provinces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "available_years": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "plan_count_total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.PolicyTag": {
+            "type": "object",
+            "properties": {
+                "effective_year": {
+                    "type": "integer"
+                },
+                "expire_year": {
+                    "type": "integer"
+                },
+                "tag_type": {
+                    "type": "string"
+                },
+                "tag_value": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.ProvinceBatchLine": {
+            "type": "object",
+            "properties": {
+                "policy_id": {
+                    "type": "integer"
+                },
+                "province_batch_line_id": {
+                    "type": "integer"
+                },
+                "province_id": {
+                    "type": "integer"
+                },
+                "province_name": {
+                    "type": "string"
+                },
+                "rank_value": {
+                    "type": "integer"
+                },
+                "raw_batch_name": {
+                    "type": "string"
+                },
+                "raw_category_name": {
+                    "type": "string"
+                },
+                "raw_section_name": {
+                    "type": "string"
+                },
+                "score_value": {
+                    "type": "number"
+                },
+                "score_year": {
+                    "type": "integer"
+                },
+                "source_system": {
+                    "type": "string"
+                },
+                "source_table": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.School": {
+            "type": "object",
+            "properties": {
+                "city_code": {
+                    "type": "integer"
+                },
+                "city_name": {
+                    "type": "string"
+                },
+                "logo_url": {
+                    "type": "string"
+                },
+                "major_summary": {
+                    "$ref": "#/definitions/analysis.SchoolMajorSummary"
+                },
+                "plan_summary": {
+                    "$ref": "#/definitions/analysis.PlanSummary"
+                },
+                "profile": {
+                    "$ref": "#/definitions/analysis.SchoolProfile"
+                },
+                "province_id": {
+                    "type": "integer"
+                },
+                "province_name": {
+                    "type": "string"
+                },
+                "rankings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.SchoolRanking"
+                    }
+                },
+                "school_code": {
+                    "type": "string"
+                },
+                "school_id": {
+                    "type": "integer"
+                },
+                "school_name": {
+                    "type": "string"
+                },
+                "score_summary": {
+                    "$ref": "#/definitions/analysis.ScoreSummary"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.PolicyTag"
+                    }
+                }
+            }
+        },
+        "analysis.SchoolAdmissionScore": {
+            "type": "object",
+            "properties": {
+                "admission_year": {
+                    "type": "integer"
+                },
+                "average_score": {
+                    "type": "number"
+                },
+                "highest_score": {
+                    "type": "number"
+                },
+                "line_deviation": {
+                    "type": "number"
+                },
+                "lowest_rank": {
+                    "type": "integer"
+                },
+                "lowest_score": {
+                    "type": "number"
+                },
+                "policy_id": {
+                    "type": "integer"
+                },
+                "province_control_score": {
+                    "type": "number"
+                },
+                "province_id": {
+                    "type": "integer"
+                },
+                "province_name": {
+                    "type": "string"
+                },
+                "raw_admission_type": {
+                    "type": "string"
+                },
+                "raw_batch_name": {
+                    "type": "string"
+                },
+                "raw_elective_req": {
+                    "type": "string"
+                },
+                "raw_major_group_name": {
+                    "type": "string"
+                },
+                "raw_section_name": {
+                    "type": "string"
+                },
+                "school_admission_score_id": {
+                    "type": "integer"
+                },
+                "school_id": {
+                    "type": "integer"
+                },
+                "school_major_group_id": {
+                    "type": "integer"
+                },
+                "school_name": {
+                    "type": "string"
+                },
+                "source_system": {
+                    "type": "string"
+                },
+                "source_table": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.PolicyTag"
+                    }
+                }
+            }
+        },
+        "analysis.SchoolMajorItem": {
+            "type": "object",
+            "properties": {
+                "latest_plan": {
+                    "$ref": "#/definitions/analysis.EnrollmentPlan"
+                },
+                "latest_score": {
+                    "$ref": "#/definitions/analysis.MajorAdmissionScore"
+                },
+                "major_code": {
+                    "type": "string"
+                },
+                "major_id": {
+                    "type": "integer"
+                },
+                "major_name": {
+                    "type": "string"
+                },
+                "major_profile": {
+                    "$ref": "#/definitions/analysis.MajorProfile"
+                },
+                "observed_year": {
+                    "type": "integer"
+                },
+                "school_id": {
+                    "type": "integer"
+                },
+                "school_major_id": {
+                    "type": "integer"
+                },
+                "school_major_name": {
+                    "type": "string"
+                },
+                "study_years_text": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.SchoolMajorSummary": {
+            "type": "object",
+            "properties": {
+                "school_count": {
+                    "type": "integer"
+                },
+                "top_schools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.School"
+                    }
+                }
+            }
+        },
+        "analysis.SchoolProfile": {
+            "type": "object",
+            "properties": {
+                "abroad_rate": {
+                    "type": "number"
+                },
+                "address": {
+                    "type": "string"
+                },
+                "admission_site_url": {
+                    "type": "string"
+                },
+                "alias_name": {
+                    "type": "string"
+                },
+                "china_rate": {
+                    "type": "number"
+                },
+                "composite_score": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "employment_index": {
+                    "type": "number"
+                },
+                "employment_rate": {
+                    "type": "number"
+                },
+                "female_ratio": {
+                    "type": "number"
+                },
+                "former_name": {
+                    "type": "string"
+                },
+                "founded_year": {
+                    "type": "integer"
+                },
+                "learning_index": {
+                    "type": "number"
+                },
+                "life_index": {
+                    "type": "number"
+                },
+                "male_ratio": {
+                    "type": "number"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "website_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.SchoolRanking": {
+            "type": "object",
+            "properties": {
+                "rank_value": {
+                    "type": "integer"
+                },
+                "ranking_source": {
+                    "type": "string"
+                },
+                "ranking_year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ScoreMatchInput": {
+            "type": "object",
+            "properties": {
+                "province_name": {
+                    "type": "string"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "section": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ScoreMatchItem": {
+            "type": "object",
+            "properties": {
+                "lowest_rank": {
+                    "type": "integer"
+                },
+                "lowest_score": {
+                    "type": "number"
+                },
+                "match_distance": {
+                    "type": "number"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "risk_level": {
+                    "type": "string"
+                },
+                "school_id": {
+                    "type": "integer"
+                },
+                "school_major_name": {
+                    "type": "string"
+                },
+                "school_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.ScoreMatchResponse": {
+            "type": "object",
+            "properties": {
+                "buckets": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/analysis.ScoreMatchItem"
+                        }
+                    }
+                },
+                "data_quality": {
+                    "$ref": "#/definitions/analysis.DataQuality"
+                },
+                "input": {
+                    "$ref": "#/definitions/analysis.ScoreMatchInput"
+                }
+            }
+        },
+        "analysis.ScoreSummary": {
+            "type": "object",
+            "properties": {
+                "available_provinces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "available_years": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "data_quality": {
+                    "$ref": "#/definitions/analysis.DataQuality"
+                },
+                "lowest_rank_max": {
+                    "type": "integer"
+                },
+                "lowest_rank_min": {
+                    "type": "integer"
+                },
+                "lowest_score_max": {
+                    "type": "number"
+                },
+                "lowest_score_min": {
+                    "type": "number"
+                }
+            }
+        },
+        "analysis.ScoreTrendPoint": {
+            "type": "object",
+            "properties": {
+                "average_score": {
+                    "type": "number"
+                },
+                "batch": {
+                    "type": "string"
+                },
+                "highest_score": {
+                    "type": "number"
+                },
+                "line_deviation": {
+                    "type": "number"
+                },
+                "lowest_rank": {
+                    "type": "integer"
+                },
+                "lowest_score": {
+                    "type": "number"
+                },
+                "section": {
+                    "type": "string"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.ScoreTrendResponse": {
+            "type": "object",
+            "properties": {
+                "data_quality": {
+                    "$ref": "#/definitions/analysis.DataQuality"
+                },
+                "level": {
+                    "type": "string"
+                },
+                "major_name": {
+                    "type": "string"
+                },
+                "province_id": {
+                    "type": "integer"
+                },
+                "province_name": {
+                    "type": "string"
+                },
+                "school_id": {
+                    "type": "integer"
+                },
+                "school_name": {
+                    "type": "string"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.ScoreTrendPoint"
+                    }
                 }
             }
         },

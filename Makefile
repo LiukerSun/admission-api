@@ -1,4 +1,4 @@
-.PHONY: dev run down logs build db setup
+.PHONY: dev run down logs build db setup gaokao-import gaokao-import-reset gaokao-import-sample gaokao-import-dev
 
 db:
 	@# Auto-configure git hooks if not already done
@@ -69,3 +69,35 @@ build:
 setup:
 	git config core.hooksPath .githooks
 	@echo "Git hooks configured. All commits will be validated."
+
+gaokao-import:
+	@if [ -z "$(DATA_DIR)" ]; then \
+		echo "Usage: make gaokao-import DATA_DIR=/absolute/path/to/csv-dir"; \
+		exit 1; \
+	fi
+	go run ./cmd/importer -data-dir "$(DATA_DIR)" $(if $(PROFILE),-profile $(PROFILE),) $(if $(SAMPLE_ROWS),-sample-rows $(SAMPLE_ROWS),)
+
+gaokao-import-reset:
+	@if [ -z "$(DATA_DIR)" ]; then \
+		echo "Usage: make gaokao-import-reset DATA_DIR=/absolute/path/to/csv-dir"; \
+		exit 1; \
+	fi
+	go run ./cmd/importer -data-dir "$(DATA_DIR)" -truncate $(if $(PROFILE),-profile $(PROFILE),) $(if $(SAMPLE_ROWS),-sample-rows $(SAMPLE_ROWS),)
+
+gaokao-import-sample:
+	@if [ -z "$(DATA_DIR)" ]; then \
+		echo "Usage: make gaokao-import-sample DATA_DIR=/absolute/path/to/csv-dir SAMPLE_ROWS=1000"; \
+		exit 1; \
+	fi
+	@if [ -z "$(SAMPLE_ROWS)" ]; then \
+		echo "Usage: make gaokao-import-sample DATA_DIR=/absolute/path/to/csv-dir SAMPLE_ROWS=1000"; \
+		exit 1; \
+	fi
+	go run ./cmd/importer -data-dir "$(DATA_DIR)" -truncate -sample-rows "$(SAMPLE_ROWS)"
+
+gaokao-import-dev:
+	@if [ -z "$(DATA_DIR)" ]; then \
+		echo "Usage: make gaokao-import-dev DATA_DIR=/absolute/path/to/csv-dir"; \
+		exit 1; \
+	fi
+	go run ./cmd/importer -data-dir "$(DATA_DIR)" -truncate -profile dev -skip-xgk -sample-rows "$${SAMPLE_ROWS:-1000}" -max-read-rows "$${MAX_READ_ROWS:-5000}"
