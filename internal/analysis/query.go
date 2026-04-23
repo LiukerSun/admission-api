@@ -18,7 +18,7 @@ func badQuery(format string, args ...any) error {
 	return &QueryError{Message: fmt.Sprintf(format, args...)}
 }
 
-func normalizePage(page, perPage int) (int, int, error) {
+func normalizePage(page, perPage int) (normalizedPage, normalizedPerPage int, err error) {
 	if page == 0 {
 		page = defaultPage
 	}
@@ -129,15 +129,15 @@ func orderBy(sort string, allowed map[string]string, fallback string) (string, e
 	return expr + " " + direction, nil
 }
 
-func ensureRangeInt(name string, min, max *int) error {
-	if min != nil && max != nil && *min > *max {
+func ensureRangeInt(name string, minValue, maxValue *int) error {
+	if minValue != nil && maxValue != nil && *minValue > *maxValue {
 		return badQuery("%s_min cannot be greater than %s_max", name, name)
 	}
 	return nil
 }
 
-func ensureRangeFloat(name string, min, max *float64) error {
-	if min != nil && max != nil && *min > *max {
+func ensureRangeFloat(name string, minValue, maxValue *float64) error {
+	if minValue != nil && maxValue != nil && *minValue > *maxValue {
 		return badQuery("%s_min cannot be greater than %s_max", name, name)
 	}
 	return nil
@@ -148,10 +148,6 @@ func stringPtrValue(v *string) string {
 		return ""
 	}
 	return *v
-}
-
-func floatPtr(v float64) *float64 {
-	return &v
 }
 
 func cleanScorePtr(v *float64, includeZero bool) *float64 {

@@ -72,13 +72,6 @@ func sqlInt64(v *int64) any {
 	return *v
 }
 
-func sqlString(v *string) any {
-	if v == nil {
-		return nil
-	}
-	return *v
-}
-
 func parseJSONBFromLooseString(s string) []byte {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -1427,7 +1420,7 @@ DO UPDATE SET
 	return i.logImport(ctx, "xyl", "xyl_province_scores", file, rows, "")
 }
 
-func (i *Importer) findSchoolMajorGroupID(ctx context.Context, schoolID int64, provinceID int, year int, groupName string, sourceTable string) (*int64, error) {
+func (i *Importer) findSchoolMajorGroupID(ctx context.Context, schoolID int64, provinceID, year int, groupName, sourceTable string) (*int64, error) {
 	groupName = strings.TrimSpace(groupName)
 	if groupName == "" {
 		return nil, nil

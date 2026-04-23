@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"admission-api/internal/gaokaoimport"
@@ -33,7 +34,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)
 	}
-	defer database.Close()
 
 	opts := gaokaoimport.Options{
 		DataDir:     *dataDir,
@@ -47,10 +47,13 @@ func main() {
 		opts.Only = strings.Split(*only, ",")
 	}
 
-	importer := gaokaoimport.New(database.Pool(), opts)
+	importer := gaokaoimport.New(database.Pool(), &opts)
 	if err := importer.Run(ctx); err != nil {
-		log.Fatalf("import failed: %v", err)
+		database.Close()
+		log.Printf("import failed: %v", err)
+		os.Exit(1)
 	}
+	database.Close()
 
 	fmt.Println("gaokao import completed")
 }

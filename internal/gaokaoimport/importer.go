@@ -45,7 +45,7 @@ type Importer struct {
 	subjectRequirementIDCache map[string]*int64
 }
 
-func New(db *pgxpool.Pool, opts Options) *Importer {
+func New(db *pgxpool.Pool, opts *Options) *Importer {
 	only := make(map[string]struct{}, len(opts.Only))
 	for _, item := range opts.Only {
 		item = strings.TrimSpace(item)
@@ -397,30 +397,6 @@ func floatStringToPtr(s string) *float64 {
 	return &v
 }
 
-func boolFromFlagString(s string) *bool {
-	s = strings.TrimSpace(strings.ToLower(s))
-	if s == "" {
-		return nil
-	}
-	if s == "1" || s == "true" || s == "b'\\x01'" {
-		v := true
-		return &v
-	}
-	if s == "0" || s == "false" || s == "b'\\x00'" {
-		v := false
-		return &v
-	}
-	return nil
-}
-
-func stringOrNil(s string) *string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 func marshalJSON(v any) []byte {
 	if v == nil {
 		return nil
@@ -430,21 +406,6 @@ func marshalJSON(v any) []byte {
 		return nil
 	}
 	return b
-}
-
-func jsonStringOrNil(s string) []byte {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	return []byte(s)
-}
-
-func schoolTagYear(row csvRow) int {
-	if v := intValue(row["year"]); v != nil {
-		return *v
-	}
-	return 2025
 }
 
 func normalizeExamModel(model string) string {
@@ -467,17 +428,6 @@ func normalizeVolunteerMode(hasMajorGroup bool, examModel string) string {
 		return "school"
 	}
 	return "school_plus_major"
-}
-
-func batchSettingsFromNames(names map[string]struct{}) []string {
-	out := make([]string, 0, len(names))
-	for name := range names {
-		if strings.TrimSpace(name) != "" {
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func sortedOnlyKeys(m map[string]struct{}) []string {
@@ -521,7 +471,7 @@ func isNewGaokaoRequirement(raw string) bool {
 	return strings.Contains(raw, "首选") || strings.Contains(raw, "再选") || strings.Contains(raw, "必选") || strings.Contains(raw, "不限") || strings.Contains(raw, "物理") || strings.Contains(raw, "历史")
 }
 
-func (i *Importer) policyID(ctx context.Context, provinceID int, year int, examModel string) (int64, error) {
+func (i *Importer) policyID(ctx context.Context, provinceID, year int, examModel string) (int64, error) {
 	cacheKey := fmt.Sprintf("%d:%d", provinceID, year)
 	if id, ok := i.policyIDCache[cacheKey]; ok {
 		return id, nil
@@ -553,7 +503,7 @@ RETURNING policy_id
 	return id, nil
 }
 
-func majorIDFromCodeOrName(code string, name string, m map[string]int64) *int64 {
+func majorIDFromCodeOrName(code, name string, m map[string]int64) *int64 {
 	code = strings.TrimSpace(code)
 	if code != "" {
 		if id, ok := m[code]; ok {

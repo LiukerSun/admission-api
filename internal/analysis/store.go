@@ -523,7 +523,8 @@ func (s *store) CompareSchools(ctx context.Context, query *SchoolCompareQuery) (
 		return nil, nil, err
 	}
 	byID := map[int64]School{}
-	for _, item := range resp.Items {
+	for idx := range resp.Items {
+		item := resp.Items[idx]
 		byID[item.SchoolID] = item
 	}
 	items := make([]School, 0, len(ids))
@@ -1093,8 +1094,8 @@ FROM `+from+builder.WhereClause()+` ORDER BY `+order+builderLimit(builder, page,
 	return &ListResponse[MajorAdmissionScore]{Items: items, Total: total, Page: page, PerPage: perPage, HasMore: int64(page*perPage) < total, Facets: facets}, nil
 }
 
-func (s *store) scoreListSetup(query *ScoreListQuery, major bool) (int, int, *sqlBuilder, string, error) {
-	page, perPage, err := normalizePage(query.Page, query.PerPage)
+func (s *store) scoreListSetup(query *ScoreListQuery, major bool) (page, perPage int, builder *sqlBuilder, order string, err error) {
+	page, perPage, err = normalizePage(query.Page, query.PerPage)
 	if err != nil {
 		return 0, 0, nil, "", err
 	}
@@ -1113,15 +1114,15 @@ func (s *store) scoreListSetup(query *ScoreListQuery, major bool) (int, int, *sq
 	if _, err := splitIncludes(query.Include, allowedScoreIncludes); err != nil {
 		return 0, 0, nil, "", err
 	}
-	order, err := orderBy(query.Sort, scoreSorts, "f.admission_year DESC, f.lowest_score DESC NULLS LAST")
+	order, err = orderBy(query.Sort, scoreSorts, "f.admission_year DESC, f.lowest_score DESC NULLS LAST")
 	if err != nil {
 		return 0, 0, nil, "", err
 	}
-	b, err := s.scoreFilters(query, major)
+	builder, err = s.scoreFilters(query, major)
 	if err != nil {
 		return 0, 0, nil, "", err
 	}
-	return page, perPage, b, order, nil
+	return page, perPage, builder, order, nil
 }
 
 func (s *store) scoreFilters(query *ScoreListQuery, major bool) (*sqlBuilder, error) {
@@ -1497,25 +1498,25 @@ func addStringCSVFilter(b *sqlBuilder, column, value, name string) {
 	}
 }
 
-func addIntRange(b *sqlBuilder, column string, min, max *int) {
-	if min != nil {
-		b.Add(column+" >= ?", *min)
+func addIntRange(b *sqlBuilder, column string, minValue, maxValue *int) {
+	if minValue != nil {
+		b.Add(column+" >= ?", *minValue)
 	}
-	if max != nil {
-		b.Add(column+" <= ?", *max)
-	}
-}
-
-func addFloatRange(b *sqlBuilder, column string, min, max *float64) {
-	if min != nil {
-		b.Add(column+" >= ?", *min)
-	}
-	if max != nil {
-		b.Add(column+" <= ?", *max)
+	if maxValue != nil {
+		b.Add(column+" <= ?", *maxValue)
 	}
 }
 
-func addSchoolTagsFilter(b *sqlBuilder, schoolColumn string, value string) {
+func addFloatRange(b *sqlBuilder, column string, minValue, maxValue *float64) {
+	if minValue != nil {
+		b.Add(column+" >= ?", *minValue)
+	}
+	if maxValue != nil {
+		b.Add(column+" <= ?", *maxValue)
+	}
+}
+
+func addSchoolTagsFilter(b *sqlBuilder, schoolColumn, value string) {
 	for _, tag := range splitCSV(value) {
 		b.Add("EXISTS (SELECT 1 FROM gaokao.school_policy_tag t WHERE t.school_id="+schoolColumn+" AND t.expire_year IS NULL AND (t.tag_type=? OR t.tag_value=?))", tag, tag)
 	}
@@ -1981,9 +1982,7 @@ func (s *store) attachPlanTags(ctx context.Context, items []EnrollmentPlan) erro
 	return nil
 }
 
-func (s *store) resolveProvince(ctx context.Context, provinceIDRaw, province string) (string, int, error) {
-	var name string
-	var id int
+func (s *store) resolveProvince(ctx context.Context, provinceIDRaw, province string) (name string, id int, err error) {
 	if provinceIDRaw != "" {
 		ids, err := splitIntCSV(provinceIDRaw, "province_id")
 		if err != nil {
@@ -1995,11 +1994,11 @@ func (s *store) resolveProvince(ctx context.Context, provinceIDRaw, province str
 		err = s.pool.QueryRow(ctx, `SELECT province_id, province_name FROM gaokao.province WHERE province_id=$1`, ids[0]).Scan(&id, &name)
 		return name, id, err
 	}
-	err := s.pool.QueryRow(ctx, `SELECT province_id, province_name FROM gaokao.province WHERE province_name=$1`, province).Scan(&id, &name)
+	err = s.pool.QueryRow(ctx, `SELECT province_id, province_name FROM gaokao.province WHERE province_name=$1`, province).Scan(&id, &name)
 	return name, id, err
 }
 
-func scoreWindow(score float64, bucket string) (float64, float64) {
+func scoreWindow(score float64, bucket string) (minScore, maxScore float64) {
 	switch bucket {
 	case "rush":
 		return score, score + 15
@@ -2010,7 +2009,7 @@ func scoreWindow(score float64, bucket string) (float64, float64) {
 	}
 }
 
-func rankWindow(rank int, bucket string) (int, int) {
+func rankWindow(rank int, bucket string) (minRank, maxRank int) {
 	r := float64(rank)
 	switch bucket {
 	case "rush":
