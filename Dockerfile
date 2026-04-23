@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apk add --no-cache git
 
 # Install swag CLI (match go.mod version)
-RUN go install github.com/swaggo/swag/cmd/swag@v1.8.1
+RUN go install github.com/swaggo/swag/cmd/swag@v1.8.12
 
 # Copy dependency files first (better layer caching)
 COPY go.mod go.sum ./
