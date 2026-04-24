@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"admission-api/internal/platform/web"
 	"admission-api/internal/user"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-
-	"admission-api/internal/platform/web"
 )
 
 // Handler handles admin HTTP requests.

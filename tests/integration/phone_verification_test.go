@@ -44,7 +44,8 @@ func TestPhoneVerificationFlow(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	cfg := config.Load()
+	cfg, err := config.Load()
+	require.NoError(t, err)
 
 	database, err := db.New(ctx, cfg.DatabaseURL)
 	require.NoError(t, err)
@@ -102,7 +103,8 @@ func TestPhoneVerificationSendCodeCooldown(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	cfg := config.Load()
+	cfg, err := config.Load()
+	require.NoError(t, err)
 
 	database, err := db.New(ctx, cfg.DatabaseURL)
 	require.NoError(t, err)
@@ -159,7 +161,13 @@ func newIntegrationRouter(t *testing.T, database *db.DB, redisClient *platformre
 	api := r.Group("/api/v1")
 	authorized := api.Group("")
 	authorized.Use(middleware.JWTMiddleware(jwtConfig))
-	authorized.Use(middleware.AuthStatusMiddleware(redisClient))
+	authorized.Use(middleware.AuthStatusMiddleware(redisClient, func(ctx context.Context, userID int64) (string, error) {
+		u, err := userStore.GetByID(ctx, userID)
+		if err != nil {
+			return "", err
+		}
+		return u.Status, nil
+	}))
 	authorized.GET("/me", userHandler.Me)
 	authorized.POST("/me/phone/send-code", userHandler.SendPhoneVerificationCode)
 	authorized.POST("/me/phone/verify", userHandler.VerifyPhone)
