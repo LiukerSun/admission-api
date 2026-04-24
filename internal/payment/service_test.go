@@ -16,7 +16,7 @@ type mockPaymentStore struct {
 	mock.Mock
 }
 
-func (m *mockPaymentStore) CreateOrder(ctx context.Context, input CreateOrderInput) (*Order, bool, error) {
+func (m *mockPaymentStore) CreateOrder(ctx context.Context, input *CreateOrderInput) (*Order, bool, error) {
 	args := m.Called(ctx, input)
 	if args.Get(0) == nil {
 		return nil, args.Bool(1), args.Error(2)
@@ -167,7 +167,7 @@ func TestCreateOrderUsesPlanSnapshot(t *testing.T) {
 	order := &Order{ID: 1, OrderNo: "MO1", UserID: 7, ProductRefID: 9, Subject: "月度会员", Amount: 990, Currency: "CNY", OrderStatus: OrderStatusAwaitingPayment, PaymentStatus: PaymentStatusUnpaid, EntitlementStatus: EntitlementStatusPending, PaymentChannel: ChannelMock, ExpiresAt: time.Now().Add(time.Minute)}
 
 	member.On("GetPurchasablePlan", mock.Anything, "monthly").Return(plan, nil)
-	store.On("CreateOrder", mock.Anything, mock.MatchedBy(func(input CreateOrderInput) bool {
+	store.On("CreateOrder", mock.Anything, mock.MatchedBy(func(input *CreateOrderInput) bool {
 		return input.UserID == 7 && input.PlanID == 9 && input.Amount == 990 && input.IdempotencyKey != nil && *input.IdempotencyKey == key
 	})).Return(order, true, nil)
 

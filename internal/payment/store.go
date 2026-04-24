@@ -25,7 +25,7 @@ var (
 )
 
 type Store interface {
-	CreateOrder(ctx context.Context, input CreateOrderInput) (*Order, bool, error)
+	CreateOrder(ctx context.Context, input *CreateOrderInput) (*Order, bool, error)
 	GetOrderForUser(ctx context.Context, userID int64, orderNo string) (*Order, string, error)
 	GetOrderByNo(ctx context.Context, orderNo string) (*Order, string, error)
 	ListOrdersForUser(ctx context.Context, userID int64, page, pageSize int) ([]*Order, int64, error)
@@ -99,7 +99,7 @@ func scanAttempt(row pgx.Row) (*Attempt, error) {
 	return &a, nil
 }
 
-func (s *store) CreateOrder(ctx context.Context, input CreateOrderInput) (*Order, bool, error) {
+func (s *store) CreateOrder(ctx context.Context, input *CreateOrderInput) (*Order, bool, error) {
 	if input.Now.IsZero() {
 		input.Now = time.Now()
 	}

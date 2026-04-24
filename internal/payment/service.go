@@ -38,7 +38,7 @@ func (s *service) CreateOrder(ctx context.Context, userID int64, req CreateOrder
 	if err != nil {
 		return nil, err
 	}
-	o, _, err := s.store.CreateOrder(ctx, CreateOrderInput{
+	o, _, err := s.store.CreateOrder(ctx, &CreateOrderInput{
 		UserID:         userID,
 		PlanID:         plan.ID,
 		PlanCode:       plan.PlanCode,
@@ -300,7 +300,7 @@ func (s *service) RedetectAdmin(ctx context.Context, orderNo string) (*OrderResp
 }
 
 func (s *service) RegrantMembership(ctx context.Context, orderNo string) (*OrderResponse, error) {
-	o, planCode, err := s.store.GetOrderByNo(ctx, orderNo)
+	o, _, err := s.store.GetOrderByNo(ctx, orderNo)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +311,7 @@ func (s *service) RegrantMembership(ctx context.Context, orderNo string) (*Order
 		_ = s.store.MarkOrderEntitlementFailed(ctx, o.ID)
 		return nil, err
 	}
-	o, planCode, err = s.store.GetOrderByNo(ctx, orderNo)
+	o, planCode, err := s.store.GetOrderByNo(ctx, orderNo)
 	if err != nil {
 		return nil, err
 	}
