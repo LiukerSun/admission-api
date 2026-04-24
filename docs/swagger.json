@@ -3477,6 +3477,457 @@
                 }
             }
         },
+        "/api/v1/membership": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前用户的 premium 会员状态和有效期",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "membership"
+                ],
+                "summary": "获取当前会员状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/membership.CurrentMembershipResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/membership/plans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前可购买的 premium 月卡、季卡、年卡套餐",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "membership"
+                ],
+                "summary": "获取会员套餐列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/membership.PlanResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/payment/callbacks/mock": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "mock 支付回调",
+                "parameters": [
+                    {
+                        "description": "mock 回调",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/payment.MockCallbackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/payment.OrderResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/payment/orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "查询我的支付订单",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/payment.OrderListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "创建会员支付订单",
+                "parameters": [
+                    {
+                        "description": "订单信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/payment.CreateOrderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/payment.OrderResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/payment/orders/{order_no}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "查询我的支付订单详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "订单号",
+                        "name": "order_no",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/payment.OrderResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/payment/orders/{order_no}/detect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "主动检测订单支付状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "订单号",
+                        "name": "order_no",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/payment.OrderResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/payment/orders/{order_no}/pay": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "mock 支付会员订单",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "订单号",
+                        "name": "order_no",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/payment.OrderResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "检查服务及数据库连接状态",
@@ -5000,6 +5451,202 @@
                     "items": {
                         "$ref": "#/definitions/analysis.ScoreTrendPoint"
                     }
+                }
+            }
+        },
+        "membership.CurrentMembershipResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "ends_at": {
+                    "type": "string",
+                    "example": "2026-05-23T10:00:00Z"
+                },
+                "membership_level": {
+                    "type": "string",
+                    "example": "premium"
+                },
+                "started_at": {
+                    "type": "string",
+                    "example": "2026-04-23T10:00:00Z"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                }
+            }
+        },
+        "membership.PlanResponse": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string",
+                    "example": "CNY"
+                },
+                "duration_days": {
+                    "type": "integer",
+                    "example": 30
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "membership_level": {
+                    "type": "string",
+                    "example": "premium"
+                },
+                "plan_code": {
+                    "type": "string",
+                    "example": "monthly"
+                },
+                "plan_name": {
+                    "type": "string",
+                    "example": "月度会员"
+                },
+                "price_amount": {
+                    "type": "integer",
+                    "example": 990
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                }
+            }
+        },
+        "payment.CreateOrderRequest": {
+            "type": "object",
+            "required": [
+                "plan_code"
+            ],
+            "properties": {
+                "idempotency_key": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "example": "checkout-123"
+                },
+                "plan_code": {
+                    "type": "string",
+                    "enum": [
+                        "monthly",
+                        "quarterly",
+                        "yearly"
+                    ],
+                    "example": "monthly"
+                }
+            }
+        },
+        "payment.MockCallbackRequest": {
+            "type": "object",
+            "required": [
+                "callback_id",
+                "channel_trade_no",
+                "order_no"
+            ],
+            "properties": {
+                "callback_id": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "example": "mock-callback-1"
+                },
+                "channel_trade_no": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "example": "MOCK202604231200000001"
+                },
+                "order_no": {
+                    "type": "string",
+                    "example": "MO202604231200000001"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "payment.OrderListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/payment.OrderResponse"
+                    }
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "page_size": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "payment.OrderResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "example": 990
+                },
+                "closed_at": {
+                    "type": "string",
+                    "example": "2026-04-23T10:15:00Z"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-04-23T10:00:00Z"
+                },
+                "currency": {
+                    "type": "string",
+                    "example": "CNY"
+                },
+                "entitlement_status": {
+                    "type": "string",
+                    "example": "pending"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2026-04-23T10:15:00Z"
+                },
+                "order_no": {
+                    "type": "string",
+                    "example": "MO202604231200000001"
+                },
+                "order_status": {
+                    "type": "string",
+                    "example": "awaiting_payment"
+                },
+                "paid_at": {
+                    "type": "string",
+                    "example": "2026-04-23T10:01:00Z"
+                },
+                "payment_channel": {
+                    "type": "string",
+                    "example": "mock"
+                },
+                "payment_status": {
+                    "type": "string",
+                    "example": "unpaid"
+                },
+                "plan_code": {
+                    "type": "string",
+                    "example": "monthly"
+                },
+                "subject": {
+                    "type": "string",
+                    "example": "月度会员"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },

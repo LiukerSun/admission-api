@@ -229,6 +229,45 @@ curl 'http://localhost:8080/api/v1/analysis/score-match?province=山东&year=202
 | POST | `/api/v1/me/phone/verify` | 当前用户校验短信验证码并绑定手机号 |
 | POST | `/api/v1/bindings` | 家长发起绑定学生（仅 `user_type=parent`） |
 | GET | `/api/v1/bindings` | 查询我的绑定关系 |
+| GET | `/api/v1/membership/plans` | 获取可购买会员套餐（月卡/季卡/年卡） |
+| GET | `/api/v1/membership` | 获取当前用户会员状态与有效期 |
+| POST | `/api/v1/payment/orders` | 创建会员支付订单，支持 `idempotency_key` 幂等 |
+| GET | `/api/v1/payment/orders` | 查询我的支付订单列表 |
+| GET | `/api/v1/payment/orders/:order_no` | 查询我的支付订单详情 |
+| POST | `/api/v1/payment/orders/:order_no/pay` | 使用 mock 渠道完成支付并发放会员 |
+| POST | `/api/v1/payment/orders/:order_no/detect` | 主动检测订单支付/权益状态 |
+
+### 会员支付接口
+
+会员支付系统当前仅售卖一个会员等级：`premium`。第一阶段提供三个套餐：`monthly`（30 天）、`quarterly`（90 天）、`yearly`（365 天），金额单位为分，币种为 `CNY`。支付渠道当前仅支持 `mock`，但订单、支付尝试、回调审计、会员权益发放已按后续真实支付渠道扩展设计。
+
+典型 mock 支付流程：
+
+```bash
+# 1. 查询套餐
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/membership/plans'
+
+# 2. 创建订单
+curl -X POST 'http://localhost:8080/api/v1/payment/orders' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"plan_code":"monthly","idempotency_key":"checkout-001"}'
+
+# 3. mock 支付并发放会员
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/payment/orders/MO20260423120000ABCD1234/pay'
+
+# 4. 查看会员状态
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/membership'
+```
+
+支付回调审计接口：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/payment/callbacks/mock` | mock 支付回调，先落库再幂等处理 |
 
 ### 管理员接口
 
@@ -244,6 +283,11 @@ curl 'http://localhost:8080/api/v1/analysis/score-match?province=山东&year=202
 | GET | `/api/v1/admin/bindings` | 分页获取所有家长-学生绑定关系 |
 | GET | `/api/v1/admin/stats` | 获取系统统计数据，包括用户总数、角色分布、绑定总数等 |
 | DELETE | `/api/v1/admin/bindings/:id` | 解除家长-学生绑定（仅 `role=admin`） |
+| GET | `/api/v1/admin/payment/orders` | 管理员查询支付订单，支持订单号、用户、套餐、渠道、状态过滤 |
+| GET | `/api/v1/admin/payment/orders/:order_no` | 管理员查看订单详情、支付尝试和回调记录 |
+| POST | `/api/v1/admin/payment/orders/:order_no/close` | 管理员关闭未支付订单 |
+| POST | `/api/v1/admin/payment/orders/:order_no/redetect` | 管理员重新检测订单支付/权益状态 |
+| POST | `/api/v1/admin/payment/orders/:order_no/regrant-membership` | 管理员补发已支付但未履约订单的会员权益 |
 
 手机号验证能力当前行为：
 - 仅支持中国大陆 11 位手机号
