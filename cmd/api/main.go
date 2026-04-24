@@ -53,7 +53,10 @@ func run() error {
 	migrateFlag := flag.String("migrate", "", "Run migrations: up or down")
 	flag.Parse()
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
 
 	ctx := context.Background()
 
@@ -115,7 +118,10 @@ func run() error {
 
 	paymentStore := payment.NewStore(database.Pool())
 	paymentService := payment.NewService(paymentStore, membershipService)
-	paymentHandler := payment.NewHandler(paymentService)
+	paymentHandler := payment.NewHandler(paymentService, payment.HandlerOptions{
+		AllowAnonymousMockCallback: cfg.Env == "development",
+		MockCallbackSecret:         cfg.MockCallbackSecret,
+	})
 
 	// 初始化数据分析模块
 	analysisStore := analysis.NewStore(database.Pool())
@@ -169,7 +175,13 @@ func run() error {
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
-		authorized.Use(middleware.AuthStatusMiddleware(redisClient))
+		authorized.Use(middleware.AuthStatusMiddleware(redisClient, func(ctx context.Context, userID int64) (string, error) {
+			u, err := userStore.GetByID(ctx, userID)
+			if err != nil {
+				return "", err
+			}
+			return u.Status, nil
+		}))
 		authorized.GET("/me", userHandler.Me)
 		authorized.PUT("/me/password", userHandler.ChangePassword)
 		authorized.POST("/me/phone/send-code", userHandler.SendPhoneVerificationCode)

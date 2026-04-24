@@ -98,7 +98,7 @@ func (s *service) ListUsers(ctx context.Context, filter ListUsersFilter, page, p
 func (s *service) GetUser(ctx context.Context, id int64) (*UserResponse, error) {
 	u, err := s.userStore.GetByID(ctx, id)
 	if err != nil {
-		if err.Error() == "user not found" {
+		if user.IsNotFound(err) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("get user: %w", err)
@@ -127,7 +127,7 @@ func (s *service) UpdateUser(ctx context.Context, id int64, req UpdateUserReques
 	// Get current user to check status change
 	currentUser, err := s.userStore.GetByID(ctx, id)
 	if err != nil {
-		if err.Error() == "user not found" {
+		if user.IsNotFound(err) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("get user: %w", err)
@@ -177,7 +177,7 @@ func (s *service) ResetPassword(ctx context.Context, id int64, newPassword strin
 	}
 
 	if _, err := s.userStore.GetByID(ctx, id); err != nil {
-		if err.Error() == "user not found" {
+		if user.IsNotFound(err) {
 			return err
 		}
 		return fmt.Errorf("get user: %w", err)
@@ -200,6 +200,13 @@ func (s *service) ResetPassword(ctx context.Context, id int64, newPassword strin
 }
 
 func (s *service) DisableUser(ctx context.Context, id int64) error {
+	if _, err := s.userStore.GetByID(ctx, id); err != nil {
+		if user.IsNotFound(err) {
+			return err
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
 	if err := s.userStore.UpdateStatus(ctx, id, "banned"); err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
@@ -218,6 +225,13 @@ func (s *service) DisableUser(ctx context.Context, id int64) error {
 }
 
 func (s *service) EnableUser(ctx context.Context, id int64) error {
+	if _, err := s.userStore.GetByID(ctx, id); err != nil {
+		if user.IsNotFound(err) {
+			return err
+		}
+		return fmt.Errorf("get user: %w", err)
+	}
+
 	if err := s.userStore.UpdateStatus(ctx, id, "active"); err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
@@ -255,22 +269,8 @@ func (s *service) GetStats(ctx context.Context) (*StatsResponse, error) {
 
 // clearUserTokens removes all refresh tokens and device records for a user.
 func (s *service) clearUserTokens(ctx context.Context, userID int64) error {
-	deviceKey := fmt.Sprintf("user:%d:devices", userID)
-	platforms, err := s.redisClient.SMembers(ctx, deviceKey)
-	if err != nil {
-		return fmt.Errorf("get user devices: %w", err)
+	if s.tokenManager == nil {
+		return nil
 	}
-
-	// Delete device set
-	if err := s.redisClient.Del(ctx, deviceKey); err != nil {
-		return fmt.Errorf("delete device set: %w", err)
-	}
-
-	// Note: individual refresh:hash keys will naturally expire.
-	// Without tracking all hashes, we cannot delete them directly.
-	// The devices set removal prevents new logins from tracking,
-	// and AuthStatusMiddleware blocks all requests for banned users.
-	_ = platforms
-
-	return nil
+	return s.tokenManager.RevokeUserSessions(ctx, userID)
 }

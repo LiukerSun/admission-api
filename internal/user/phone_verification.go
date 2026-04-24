@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -95,7 +96,7 @@ func normalizePhone(phone string) string {
 
 func validatePhone(phone string) error {
 	if !mainlandPhonePattern.MatchString(phone) {
-		return fmt.Errorf("invalid phone number")
+		return ErrPhoneInvalid
 	}
 	return nil
 }
@@ -115,7 +116,7 @@ func (s *phoneVerificationService) SendPhoneVerificationCode(ctx context.Context
 		return fmt.Errorf("check send cooldown: %w", err)
 	}
 	if cooldownExists > 0 {
-		return fmt.Errorf("verification code sent too frequently")
+		return ErrPhoneCodeTooFrequent
 	}
 
 	code, err := generateNumericCode(verificationCodeLength)
@@ -165,7 +166,7 @@ func (s *phoneVerificationService) VerifyPhoneCode(ctx context.Context, userID i
 
 	savedCode, err := s.redis.Get(ctx, verificationCodeKey(phone))
 	if err != nil {
-		return fmt.Errorf("verification code not found or expired")
+		return ErrVerificationCodeExpired
 	}
 
 	if savedCode != code {
@@ -180,13 +181,13 @@ func (s *phoneVerificationService) VerifyPhoneCode(ctx context.Context, userID i
 		}
 		if attempts >= int64(s.config.MaxAttempts) {
 			_ = s.redis.Del(ctx, verificationCodeKey(phone), verificationAttemptsKey(phone))
-			return fmt.Errorf("verification code attempts exceeded")
+			return ErrVerificationCodeExceeded
 		}
-		return fmt.Errorf("invalid verification code")
+		return ErrVerificationCodeInvalid
 	}
 
 	if err := s.store.UpdatePhone(ctx, userID, phone); err != nil {
-		if err.Error() == "phone already exists" {
+		if errors.Is(err, ErrPhoneAlreadyExists) {
 			return err
 		}
 		return fmt.Errorf("update phone: %w", err)
@@ -202,13 +203,13 @@ func (s *phoneVerificationService) VerifyPhoneCode(ctx context.Context, userID i
 func (s *phoneVerificationService) ensurePhoneAvailable(ctx context.Context, userID int64, phone string) error {
 	u, err := s.store.GetByPhone(ctx, phone)
 	if err != nil {
-		if err.Error() == "user not found" {
+		if errors.Is(err, ErrUserNotFound) {
 			return nil
 		}
 		return fmt.Errorf("check phone uniqueness: %w", err)
 	}
 	if u.ID != userID {
-		return fmt.Errorf("phone already exists")
+		return ErrPhoneAlreadyExists
 	}
 	return nil
 }
@@ -238,7 +239,7 @@ func (s *phoneVerificationService) reserveDailySendSlot(ctx context.Context, pho
 
 	if count > int64(s.config.DailyLimit) {
 		release()
-		return nil, fmt.Errorf("verification code daily limit exceeded")
+		return nil, ErrPhoneCodeDailyLimit
 	}
 
 	return release, nil

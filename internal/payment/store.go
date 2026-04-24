@@ -302,13 +302,22 @@ func (s *store) CloseOrder(ctx context.Context, orderNo string) (*Order, error) 
 	o, err := scanOrder(s.pool.QueryRow(ctx, `
 		UPDATE payment_orders
 		SET order_status = 'closed', payment_status = 'failed', closed_at = COALESCE(closed_at, NOW()), updated_at = NOW()
-		WHERE order_no = $1 AND order_status IN ('awaiting_payment', 'created')
+		WHERE order_no = $1
+		  AND order_status = 'awaiting_payment'
+		  AND payment_status = 'unpaid'
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
 			expires_at, paid_at, closed_at, created_at, updated_at
 	`, orderNo))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			exists, existsErr := s.orderExistsByNo(ctx, orderNo)
+			if existsErr != nil {
+				return nil, existsErr
+			}
+			if exists {
+				return nil, ErrOrderNotPayable
+			}
 			return nil, ErrOrderNotFound
 		}
 		return nil, fmt.Errorf("close payment order: %w", err)
@@ -318,10 +327,19 @@ func (s *store) CloseOrder(ctx context.Context, orderNo string) (*Order, error) 
 
 func (s *store) CreateAttempt(ctx context.Context, orderID int64, channel string, amount int) (*Attempt, error) {
 	return scanAttempt(s.pool.QueryRow(ctx, `
+		WITH locked_order AS (
+			SELECT id
+			FROM payment_orders
+			WHERE id = $1
+			FOR UPDATE
+		), next_attempt AS (
+			SELECT COALESCE(MAX(attempt_no), 0) + 1 AS attempt_no
+			FROM payment_attempts
+			WHERE payment_order_id = $1
+		)
 		INSERT INTO payment_attempts (payment_order_id, attempt_no, channel, channel_status, amount)
-		SELECT $1, COALESCE(MAX(attempt_no), 0) + 1, $2, 'pending', $3
-		FROM payment_attempts
-		WHERE payment_order_id = $1
+		SELECT $1, next_attempt.attempt_no, $2, 'pending', $3
+		FROM locked_order, next_attempt
 		RETURNING id, payment_order_id, attempt_no, channel, channel_trade_no, channel_status, amount,
 			callback_received_at, success_at, failed_at, created_at, updated_at
 	`, orderID, channel, amount))
@@ -347,31 +365,64 @@ func (s *store) MarkOrderPaid(ctx context.Context, orderID int64, now time.Time)
 	if now.IsZero() {
 		now = time.Now()
 	}
-	return scanOrder(s.pool.QueryRow(ctx, `
+	o, err := scanOrder(s.pool.QueryRow(ctx, `
 		UPDATE payment_orders
 		SET order_status = CASE WHEN order_status = 'fulfilled' THEN order_status ELSE 'paid' END,
 			payment_status = 'paid',
 			paid_at = COALESCE(paid_at, $2),
 			updated_at = NOW()
 		WHERE id = $1
+		  AND order_status IN ('awaiting_payment', 'paid', 'fulfilled')
+		  AND payment_status IN ('unpaid', 'paid')
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
 			expires_at, paid_at, closed_at, created_at, updated_at
 	`, orderID, now))
+	if err == nil {
+		return o, nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		exists, existsErr := s.orderExistsByID(ctx, orderID)
+		if existsErr != nil {
+			return nil, existsErr
+		}
+		if exists {
+			return nil, ErrOrderNotPayable
+		}
+		return nil, ErrOrderNotFound
+	}
+	return nil, err
 }
 
 func (s *store) MarkOrderFulfilled(ctx context.Context, orderID int64) (*Order, error) {
-	return scanOrder(s.pool.QueryRow(ctx, `
+	o, err := scanOrder(s.pool.QueryRow(ctx, `
 		UPDATE payment_orders
 		SET order_status = 'fulfilled',
 			payment_status = 'paid',
 			entitlement_status = 'granted',
 			updated_at = NOW()
 		WHERE id = $1
+		  AND payment_status = 'paid'
+		  AND order_status IN ('paid', 'fulfilled')
+		  AND entitlement_status IN ('pending', 'failed', 'granted')
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
 			expires_at, paid_at, closed_at, created_at, updated_at
 	`, orderID))
+	if err == nil {
+		return o, nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		exists, existsErr := s.orderExistsByID(ctx, orderID)
+		if existsErr != nil {
+			return nil, existsErr
+		}
+		if exists {
+			return nil, ErrOrderNotPayable
+		}
+		return nil, ErrOrderNotFound
+	}
+	return nil, err
 }
 
 func (s *store) MarkOrderEntitlementFailed(ctx context.Context, orderID int64) error {
@@ -517,4 +568,20 @@ func generateOrderNo(now time.Time) (string, error) {
 		return "", fmt.Errorf("generate order entropy: %w", err)
 	}
 	return fmt.Sprintf("MO%s%s", now.Format("20060102150405"), strings.ToUpper(hex.EncodeToString(b))), nil
+}
+
+func (s *store) orderExistsByID(ctx context.Context, orderID int64) (bool, error) {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM payment_orders WHERE id = $1)`, orderID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check payment order existence: %w", err)
+	}
+	return exists, nil
+}
+
+func (s *store) orderExistsByNo(ctx context.Context, orderNo string) (bool, error) {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM payment_orders WHERE order_no = $1)`, orderNo).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check payment order existence: %w", err)
+	}
+	return exists, nil
 }

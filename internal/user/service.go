@@ -92,19 +92,40 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*middle
 	}
 
 	oldHash := middleware.HashRefreshToken(refreshToken)
-	valid, err := s.tokenManager.Verify(ctx, oldHash, claims.UserID, claims.Platform)
-	if err != nil || !valid {
-		return nil, fmt.Errorf("invalid or expired refresh token")
-	}
-
 	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, claims.UserID, claims.Role, claims.UserType, claims.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
 	newHash := middleware.HashRefreshToken(tokens.RefreshToken)
-	if err := s.tokenManager.Rotate(ctx, oldHash, newHash, claims.UserID, claims.Platform); err != nil {
+	rotated, err := s.tokenManager.RotateSingleUse(ctx, oldHash, newHash, claims.UserID, claims.Platform, &redis.RotationReplay{
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresIn:    tokens.ExpiresIn,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	if !rotated {
+		replay, replayErr := s.tokenManager.GetRotationReplay(ctx, oldHash)
+		if replayErr != nil {
+			return nil, fmt.Errorf("load rotation replay: %w", replayErr)
+		}
+		if replay != nil {
+			return &middleware.TokenPair{
+				AccessToken:  replay.AccessToken,
+				RefreshToken: replay.RefreshToken,
+				ExpiresIn:    replay.ExpiresIn,
+			}, nil
+		}
+		wasRotated, usedErr := s.tokenManager.WasRotated(ctx, oldHash)
+		if usedErr != nil {
+			return nil, fmt.Errorf("check refresh rotation marker: %w", usedErr)
+		}
+		if wasRotated {
+			return nil, fmt.Errorf("invalid or expired refresh token")
+		}
+		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
 	return tokens, nil
@@ -131,6 +152,12 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID int64, currentP
 
 	if err := s.store.UpdatePassword(ctx, userID, string(hash)); err != nil {
 		return fmt.Errorf("update password: %w", err)
+	}
+
+	if s.tokenManager != nil {
+		if err := s.tokenManager.RevokeUserSessions(ctx, userID); err != nil {
+			return fmt.Errorf("revoke user sessions: %w", err)
+		}
 	}
 
 	return nil

@@ -79,7 +79,7 @@ func (s *store) Create(ctx context.Context, email, passwordHash, role, userType 
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, fmt.Errorf("email already exists")
+			return nil, ErrEmailAlreadyExists
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -97,7 +97,7 @@ func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 	u, err := s.scanUser(s.pool.QueryRow(ctx, query, email))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("get user by email: %w", err)
 	}
@@ -115,7 +115,7 @@ func (s *store) GetByID(ctx context.Context, id int64) (*User, error) {
 	u, err := s.scanUser(s.pool.QueryRow(ctx, query, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("get user by id: %w", err)
 	}
@@ -133,7 +133,7 @@ func (s *store) GetByEmailAndType(ctx context.Context, email, userType string) (
 	u, err := s.scanUser(s.pool.QueryRow(ctx, query, email, userType))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("get user by email and type: %w", err)
 	}
@@ -151,7 +151,7 @@ func (s *store) GetByUsername(ctx context.Context, username string) (*User, erro
 	u, err := s.scanUser(s.pool.QueryRow(ctx, query, username))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("get user by username: %w", err)
 	}
@@ -169,7 +169,7 @@ func (s *store) GetByPhone(ctx context.Context, phone string) (*User, error) {
 	u, err := s.scanUser(s.pool.QueryRow(ctx, query, phone))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("user not found")
+			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("get user by phone: %w", err)
 	}
@@ -258,7 +258,7 @@ func (s *store) UpdateRole(ctx context.Context, id int64, role string) error {
 		return fmt.Errorf("update role: %w", err)
 	}
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("user not found")
+		return ErrUserNotFound
 	}
 	return nil
 }
@@ -270,7 +270,7 @@ func (s *store) UpdateStatus(ctx context.Context, id int64, status string) error
 		return fmt.Errorf("update status: %w", err)
 	}
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("user not found")
+		return ErrUserNotFound
 	}
 	return nil
 }
@@ -282,7 +282,7 @@ func (s *store) UpdatePassword(ctx context.Context, id int64, passwordHash strin
 		return fmt.Errorf("update password: %w", err)
 	}
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("user not found")
+		return ErrUserNotFound
 	}
 	return nil
 }
@@ -297,12 +297,12 @@ func (s *store) UpdatePhone(ctx context.Context, id int64, phone string) error {
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return fmt.Errorf("phone already exists")
+			return ErrPhoneAlreadyExists
 		}
 		return fmt.Errorf("update phone: %w", err)
 	}
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("user not found")
+		return ErrUserNotFound
 	}
 	return nil
 }
@@ -349,12 +349,12 @@ func (s *store) UpdateUser(ctx context.Context, id int64, fields UpdateUserField
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return fmt.Errorf("email or username already exists")
+			return ErrEmailAlreadyExists
 		}
 		return fmt.Errorf("update user: %w", err)
 	}
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("user not found")
+		return ErrUserNotFound
 	}
 	return nil
 }

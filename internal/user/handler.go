@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -112,7 +111,7 @@ func (h *Handler) Register(c *gin.Context) {
 
 	u, err := h.service.Register(c.Request.Context(), req.Email, req.Password, req.UserType)
 	if err != nil {
-		if strings.Contains(err.Error(), "email already exists") {
+		if errors.Is(err, ErrEmailAlreadyExists) {
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "email already exists")
 			return
 		}
@@ -353,11 +352,11 @@ func (h *Handler) SendPhoneVerificationCode(c *gin.Context) {
 
 	if err := h.phoneVerificationService.SendPhoneVerificationCode(c.Request.Context(), userID, req.Phone); err != nil {
 		switch {
-		case strings.Contains(err.Error(), "invalid phone number"),
-			strings.Contains(err.Error(), "too frequently"),
-			strings.Contains(err.Error(), "daily limit"):
+		case errors.Is(err, ErrPhoneInvalid),
+			errors.Is(err, ErrPhoneCodeTooFrequent),
+			errors.Is(err, ErrPhoneCodeDailyLimit):
 			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
-		case strings.Contains(err.Error(), "phone already exists"):
+		case errors.Is(err, ErrPhoneAlreadyExists):
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "phone already exists")
 		default:
 			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
@@ -406,12 +405,12 @@ func (h *Handler) VerifyPhone(c *gin.Context) {
 
 	if err := h.phoneVerificationService.VerifyPhoneCode(c.Request.Context(), userID, req.Phone, req.Code); err != nil {
 		switch {
-		case strings.Contains(err.Error(), "invalid phone number"),
-			strings.Contains(err.Error(), "invalid verification code"),
-			strings.Contains(err.Error(), "expired"),
-			strings.Contains(err.Error(), "attempts exceeded"):
+		case errors.Is(err, ErrPhoneInvalid),
+			errors.Is(err, ErrVerificationCodeInvalid),
+			errors.Is(err, ErrVerificationCodeExpired),
+			errors.Is(err, ErrVerificationCodeExceeded):
 			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
-		case strings.Contains(err.Error(), "phone already exists"):
+		case errors.Is(err, ErrPhoneAlreadyExists):
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "phone already exists")
 		default:
 			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")

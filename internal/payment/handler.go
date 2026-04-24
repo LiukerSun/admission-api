@@ -15,12 +15,26 @@ import (
 
 type Handler struct {
 	web.BaseHandler
-	service  Service
-	validate *validator.Validate
+	service                    Service
+	validate                   *validator.Validate
+	allowAnonymousMockCallback bool
+	mockCallbackSecret         string
 }
 
-func NewHandler(service Service) *Handler {
-	return &Handler{service: service, validate: validator.New()}
+type HandlerOptions struct {
+	AllowAnonymousMockCallback bool
+	MockCallbackSecret         string
+}
+
+const MockCallbackSecretHeader = "X-Mock-Callback-Secret"
+
+func NewHandler(service Service, opts HandlerOptions) *Handler {
+	return &Handler{
+		service:                    service,
+		validate:                   validator.New(),
+		allowAnonymousMockCallback: opts.AllowAnonymousMockCallback,
+		mockCallbackSecret:         opts.MockCallbackSecret,
+	}
 }
 
 // CreateOrder godoc
@@ -162,11 +176,18 @@ func (h *Handler) Detect(c *gin.Context) {
 // @Tags         payment
 // @Accept       json
 // @Produce      json
+// @Param        X-Mock-Callback-Secret header string false "非开发环境下必填的内部 mock 回调密钥"
 // @Param        body body MockCallbackRequest true "mock 回调"
 // @Success      200 {object} web.Response{data=OrderResponse}
 // @Failure      400 {object} web.Response
+// @Failure      401 {object} web.Response
 // @Router       /api/v1/payment/callbacks/mock [post]
 func (h *Handler) MockCallback(c *gin.Context) {
+	if !h.authorizeMockCallback(c) {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized mock callback")
+		return
+	}
+
 	var req MockCallbackRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
@@ -182,6 +203,16 @@ func (h *Handler) MockCallback(c *gin.Context) {
 		return
 	}
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
+}
+
+func (h *Handler) authorizeMockCallback(c *gin.Context) bool {
+	if h.allowAnonymousMockCallback {
+		return true
+	}
+	if h.mockCallbackSecret == "" {
+		return false
+	}
+	return c.GetHeader(MockCallbackSecretHeader) == h.mockCallbackSecret
 }
 
 func (h *Handler) AdminListOrders(c *gin.Context) {

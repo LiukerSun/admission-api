@@ -2,10 +2,17 @@ package user
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
+	"admission-api/internal/platform/middleware"
+	platformredis "admission-api/internal/platform/redis"
+
+	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -136,7 +143,8 @@ func TestAuthService_Me(t *testing.T) {
 
 func TestAuthService_ChangePassword(t *testing.T) {
 	store := new(mockStore)
-	svc := NewAuthService(store, nil, nil)
+	tokenManager, _, _ := newUserTestTokenManager(t)
+	svc := NewAuthService(store, tokenManager, nil)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte("oldpass123"), bcrypt.DefaultCost)
 	assert.NoError(t, err)
@@ -150,4 +158,122 @@ func TestAuthService_ChangePassword(t *testing.T) {
 
 	assert.NoError(t, err)
 	store.AssertExpectations(t)
+}
+
+func TestAuthService_RefreshAllowsOnlySingleUseRotation(t *testing.T) {
+	tokenManager, _, _ := newUserTestTokenManager(t)
+	jwtConfig := &middleware.JWTConfig{
+		Secret:     "test-secret",
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	}
+	svc := NewAuthService(nil, tokenManager, jwtConfig)
+
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", "parent", "ios")
+	require.NoError(t, err)
+	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 7, "ios"))
+
+	results := make(chan *middleware.TokenPair, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp, refreshErr := svc.Refresh(context.Background(), tokens.RefreshToken)
+			results <- resp
+			errs <- refreshErr
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	var responses []*middleware.TokenPair
+	for resp := range results {
+		require.NotNil(t, resp)
+		responses = append(responses, resp)
+	}
+	require.Len(t, responses, 2)
+	assert.Equal(t, responses[0].AccessToken, responses[1].AccessToken)
+	assert.Equal(t, responses[0].RefreshToken, responses[1].RefreshToken)
+}
+
+func TestAuthService_RefreshReplayExpiresWithWindow(t *testing.T) {
+	tokenManager, client, server := newUserTestTokenManager(t)
+	jwtConfig := &middleware.JWTConfig{
+		Secret:     "test-secret",
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	}
+	svc := NewAuthService(nil, tokenManager, jwtConfig)
+
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", "parent", "ios")
+	require.NoError(t, err)
+	oldHash := middleware.HashRefreshToken(tokens.RefreshToken)
+	require.NoError(t, tokenManager.Save(context.Background(), oldHash, 7, "ios"))
+
+	first, err := svc.Refresh(context.Background(), tokens.RefreshToken)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	ttl, err := client.TTL(context.Background(), "refresh_rotation:"+oldHash)
+	require.NoError(t, err)
+	require.Positive(t, ttl)
+
+	server.FastForward(ttl + time.Second)
+
+	_, err = svc.Refresh(context.Background(), tokens.RefreshToken)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or expired refresh token")
+}
+
+func TestAuthService_ChangePasswordRevokesRefreshSessions(t *testing.T) {
+	store := new(mockStore)
+	tokenManager, _, _ := newUserTestTokenManager(t)
+	jwtConfig := &middleware.JWTConfig{
+		Secret:     "test-secret",
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	}
+	svc := NewAuthService(store, tokenManager, jwtConfig)
+
+	oldPasswordHash, err := bcrypt.GenerateFromPassword([]byte("oldpass123"), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 1, "user", "parent", "ios")
+	require.NoError(t, err)
+	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 1, "ios"))
+
+	store.On("GetByID", mock.Anything, int64(1)).
+		Return(&User{ID: 1, Email: "test@example.com", PasswordHash: string(oldPasswordHash)}, nil)
+	store.On("UpdatePassword", mock.Anything, int64(1), mock.AnythingOfType("string")).
+		Return(nil)
+
+	err = svc.ChangePassword(context.Background(), 1, "oldpass123", "newpass123")
+	require.NoError(t, err)
+
+	_, err = svc.Refresh(context.Background(), tokens.RefreshToken)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or expired refresh token")
+	store.AssertExpectations(t)
+}
+
+func newUserTestTokenManager(t *testing.T) (*platformredis.RefreshTokenManager, *platformredis.Client, *miniredis.Miniredis) {
+	t.Helper()
+
+	server, err := miniredis.Run()
+	require.NoError(t, err)
+	t.Cleanup(server.Close)
+
+	client, err := platformredis.New(server.Addr())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	return platformredis.NewRefreshTokenManager(client, time.Hour), client, server
 }

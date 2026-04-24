@@ -125,7 +125,7 @@ func (s *store) GetCurrentMembership(ctx context.Context, userID int64) (*UserMe
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &UserMembership{
 				UserID:          userID,
-				MembershipLevel: LevelPremium,
+				MembershipLevel: LevelNone,
 				Status:          MembershipStatusInactive,
 			}, nil
 		}
@@ -297,7 +297,7 @@ func membershipByUserTx(ctx context.Context, tx pgx.Tx, userID int64) (*UserMemb
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &UserMembership{
 				UserID:          userID,
-				MembershipLevel: LevelPremium,
+				MembershipLevel: LevelNone,
 				Status:          MembershipStatusInactive,
 			}, nil
 		}

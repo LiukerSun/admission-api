@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -178,4 +179,110 @@ func TestHandler_VerifyPhone(t *testing.T) {
 	h.VerifyPhone(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_Register_Conflict(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("Register", mock.Anything, "new@example.com", "password123", "student").
+		Return(nil, ErrEmailAlreadyExists)
+
+	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123", UserType: "student"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestHandler_SendPhoneVerificationCode_Conflict(t *testing.T) {
+	svc := new(mockService)
+	phoneSvc := new(mockPhoneVerificationService)
+	h := NewHandler(svc, phoneSvc, nil)
+
+	phoneSvc.On("SendPhoneVerificationCode", mock.Anything, int64(1), "13800138000").Return(ErrPhoneAlreadyExists)
+
+	body, _ := json.Marshal(SendPhoneCodeRequest{Phone: "13800138000"})
+	c, w := setupTest()
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/me/phone/send-code", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.SendPhoneVerificationCode(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestHandler_SendPhoneVerificationCode_BadRequest(t *testing.T) {
+	svc := new(mockService)
+	phoneSvc := new(mockPhoneVerificationService)
+	h := NewHandler(svc, phoneSvc, nil)
+
+	phoneSvc.On("SendPhoneVerificationCode", mock.Anything, int64(1), "123").Return(ErrPhoneInvalid)
+
+	body, _ := json.Marshal(SendPhoneCodeRequest{Phone: "123"})
+	c, w := setupTest()
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/me/phone/send-code", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.SendPhoneVerificationCode(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandler_VerifyPhone_Conflict(t *testing.T) {
+	svc := new(mockService)
+	phoneSvc := new(mockPhoneVerificationService)
+	h := NewHandler(svc, phoneSvc, nil)
+
+	phoneSvc.On("VerifyPhoneCode", mock.Anything, int64(1), "13800138000", "123456").Return(ErrPhoneAlreadyExists)
+
+	body, _ := json.Marshal(VerifyPhoneRequest{Phone: "13800138000", Code: "123456"})
+	c, w := setupTest()
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/me/phone/verify", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.VerifyPhone(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestHandler_VerifyPhone_BadRequest(t *testing.T) {
+	svc := new(mockService)
+	phoneSvc := new(mockPhoneVerificationService)
+	h := NewHandler(svc, phoneSvc, nil)
+
+	phoneSvc.On("VerifyPhoneCode", mock.Anything, int64(1), "13800138000", "000000").Return(ErrVerificationCodeInvalid)
+
+	body, _ := json.Marshal(VerifyPhoneRequest{Phone: "13800138000", Code: "000000"})
+	c, w := setupTest()
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/me/phone/verify", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.VerifyPhone(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandler_Register_InternalError(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("Register", mock.Anything, "new@example.com", "password123", "student").
+		Return(nil, errors.New("db down"))
+
+	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123", UserType: "student"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

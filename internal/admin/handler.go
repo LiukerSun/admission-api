@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"admission-api/internal/user"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
@@ -50,7 +52,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 
 	userResp, err := h.service.GetUser(c.Request.Context(), id)
 	if err != nil {
-		if err.Error() == "user not found" {
+		if errors.Is(err, user.ErrUserNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "user not found")
 			return
 		}
@@ -135,11 +137,11 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 
 	userResp, err := h.service.UpdateUser(c.Request.Context(), id, req)
 	if err != nil {
-		if err.Error() == "user not found" {
+		if errors.Is(err, user.ErrUserNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "user not found")
 			return
 		}
-		if strings.Contains(err.Error(), "email or username already exists") {
+		if errors.Is(err, user.ErrEmailAlreadyExists) {
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "email or username already exists")
 			return
 		}
@@ -185,7 +187,7 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 	}
 
 	if err := h.service.UpdateRole(c.Request.Context(), id, req.Role); err != nil {
-		if err.Error() == "user not found" {
+		if errors.Is(err, user.ErrUserNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "user not found")
 			return
 		}
@@ -231,11 +233,11 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 	}
 
 	if err := h.service.ResetPassword(c.Request.Context(), id, req.NewPassword); err != nil {
-		if err.Error() == "user not found" {
+		if errors.Is(err, user.ErrUserNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "user not found")
 			return
 		}
-		if strings.Contains(err.Error(), "invalid password") {
+		if isInvalidPasswordError(err) {
 			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid password")
 			return
 		}
@@ -268,7 +270,7 @@ func (h *Handler) DisableUser(c *gin.Context) {
 	}
 
 	if err := h.service.DisableUser(c.Request.Context(), id); err != nil {
-		if err.Error() == "user not found" {
+		if errors.Is(err, user.ErrUserNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "user not found")
 			return
 		}
@@ -301,7 +303,7 @@ func (h *Handler) EnableUser(c *gin.Context) {
 	}
 
 	if err := h.service.EnableUser(c.Request.Context(), id); err != nil {
-		if err.Error() == "user not found" {
+		if errors.Is(err, user.ErrUserNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "user not found")
 			return
 		}
@@ -310,6 +312,11 @@ func (h *Handler) EnableUser(c *gin.Context) {
 	}
 
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "user enabled"}))
+}
+
+func isInvalidPasswordError(err error) bool {
+	var validationErrs validator.ValidationErrors
+	return errors.As(err, &validationErrs) || strings.Contains(err.Error(), "invalid password")
 }
 
 // ListBindings godoc

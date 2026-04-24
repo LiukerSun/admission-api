@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -15,7 +16,6 @@ type BindingStore interface {
 	GetBindingsByParent(ctx context.Context, parentID int64) ([]*Binding, error)
 	GetBindingByStudent(ctx context.Context, studentID int64) (*Binding, error)
 	DeleteBinding(ctx context.Context, id int64) error
-	BindingExistsForStudent(ctx context.Context, studentID int64) (bool, error)
 }
 
 type bindingStore struct {
@@ -38,6 +38,10 @@ func (s *bindingStore) CreateBinding(ctx context.Context, parentID, studentID in
 		&b.ID, &b.ParentID, &b.StudentID, &b.CreatedAt,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrStudentAlreadyBound
+		}
 		return nil, fmt.Errorf("create binding: %w", err)
 	}
 
@@ -87,7 +91,7 @@ func (s *bindingStore) GetBindingByStudent(ctx context.Context, studentID int64)
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("binding not found")
+			return nil, ErrBindingNotFound
 		}
 		return nil, fmt.Errorf("get binding by student: %w", err)
 	}
@@ -104,19 +108,8 @@ func (s *bindingStore) DeleteBinding(ctx context.Context, id int64) error {
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("binding not found")
+		return ErrBindingNotFound
 	}
 
 	return nil
-}
-
-func (s *bindingStore) BindingExistsForStudent(ctx context.Context, studentID int64) (bool, error) {
-	query := `SELECT EXISTS (SELECT 1 FROM user_bindings WHERE student_id = $1)`
-
-	var exists bool
-	if err := s.pool.QueryRow(ctx, query, studentID).Scan(&exists); err != nil {
-		return false, fmt.Errorf("check binding exists: %w", err)
-	}
-
-	return exists, nil
 }

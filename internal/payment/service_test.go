@@ -243,6 +243,64 @@ func TestDuplicateCallbackReturnsExistingOrderWithoutGrant(t *testing.T) {
 	member.AssertNotCalled(t, "GrantFromPaidOrder", mock.Anything, mock.Anything)
 }
 
+func TestProcessMockCallbackRejectsExpiredOrderAndClosesIt(t *testing.T) {
+	store := new(mockPaymentStore)
+	member := new(mockMembershipSvc)
+	svc := NewService(store, member)
+	req := MockCallbackRequest{CallbackID: "cb-expired", OrderNo: "MO1", ChannelTradeNo: "trade-expired", Success: true}
+	expired := &Order{
+		ID:            1,
+		OrderNo:       "MO1",
+		UserID:        7,
+		Amount:        990,
+		OrderStatus:   OrderStatusAwaitingPayment,
+		PaymentStatus: PaymentStatusUnpaid,
+		ExpiresAt:     time.Now().Add(-time.Minute),
+	}
+	callback := &Callback{ID: 10, CallbackID: req.CallbackID}
+
+	store.On("SaveCallback", mock.Anything, req, mock.Anything).Return(callback, true, nil)
+	store.On("GetOrderByNo", mock.Anything, "MO1").Return(expired, "monthly", nil)
+	store.On("CloseOrder", mock.Anything, "MO1").Return(&Order{OrderNo: "MO1", OrderStatus: OrderStatusClosed}, nil)
+	store.On("MarkCallbackProcessed", mock.Anything, int64(10), mock.MatchedBy(func(processErr *string) bool {
+		return processErr != nil && *processErr == ErrOrderExpired.Error()
+	})).Return(nil)
+
+	resp, err := svc.ProcessMockCallback(context.Background(), req)
+
+	require.ErrorIs(t, err, ErrOrderExpired)
+	assert.Nil(t, resp)
+	store.AssertCalled(t, "CloseOrder", mock.Anything, "MO1")
+}
+
+func TestProcessMockCallbackRejectsClosedOrder(t *testing.T) {
+	store := new(mockPaymentStore)
+	member := new(mockMembershipSvc)
+	svc := NewService(store, member)
+	req := MockCallbackRequest{CallbackID: "cb-closed", OrderNo: "MO1", ChannelTradeNo: "trade-closed", Success: true}
+	closed := &Order{
+		ID:            1,
+		OrderNo:       "MO1",
+		UserID:        7,
+		Amount:        990,
+		OrderStatus:   OrderStatusClosed,
+		PaymentStatus: PaymentStatusFailed,
+		ExpiresAt:     time.Now().Add(time.Minute),
+	}
+	callback := &Callback{ID: 11, CallbackID: req.CallbackID}
+
+	store.On("SaveCallback", mock.Anything, req, mock.Anything).Return(callback, true, nil)
+	store.On("GetOrderByNo", mock.Anything, "MO1").Return(closed, "monthly", nil)
+	store.On("MarkCallbackProcessed", mock.Anything, int64(11), mock.MatchedBy(func(processErr *string) bool {
+		return processErr != nil && *processErr == ErrOrderNotPayable.Error()
+	})).Return(nil)
+
+	resp, err := svc.ProcessMockCallback(context.Background(), req)
+
+	require.ErrorIs(t, err, ErrOrderNotPayable)
+	assert.Nil(t, resp)
+}
+
 func TestRegrantMembershipRepairsPaidOrder(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)

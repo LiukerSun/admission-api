@@ -127,7 +127,7 @@ func TestPhoneVerificationService_SendCode_InvalidPhone(t *testing.T) {
 
 	err := svc.SendPhoneVerificationCode(context.Background(), 1, "123")
 
-	assert.EqualError(t, err, "invalid phone number")
+	assert.ErrorIs(t, err, ErrPhoneInvalid)
 	smsClient.AssertNotCalled(t, "SendVerificationCode", mock.Anything, mock.Anything, mock.Anything)
 }
 
@@ -139,11 +139,11 @@ func TestPhoneVerificationService_SendCode_Cooldown(t *testing.T) {
 
 	phone := "13800138000"
 	redisClient.exists[verificationCooldownKey(phone)] = true
-	store.On("GetByPhone", mock.Anything, phone).Return(nil, errors.New("user not found")).Once()
+	store.On("GetByPhone", mock.Anything, phone).Return(nil, ErrUserNotFound).Once()
 
 	err := svc.SendPhoneVerificationCode(context.Background(), 1, phone)
 
-	assert.EqualError(t, err, "verification code sent too frequently")
+	assert.ErrorIs(t, err, ErrPhoneCodeTooFrequent)
 	smsClient.AssertNotCalled(t, "SendVerificationCode", mock.Anything, mock.Anything, mock.Anything)
 	store.AssertExpectations(t)
 }
@@ -158,11 +158,11 @@ func TestPhoneVerificationService_SendCode_DailyLimitExceeded(t *testing.T) {
 	dailyKey := verificationDailyLimitKey(phone, svc.now())
 	redisClient.counters[dailyKey] = 2
 	redisClient.exists[dailyKey] = true
-	store.On("GetByPhone", mock.Anything, phone).Return(nil, errors.New("user not found")).Once()
+	store.On("GetByPhone", mock.Anything, phone).Return(nil, ErrUserNotFound).Once()
 
 	err := svc.SendPhoneVerificationCode(context.Background(), 1, phone)
 
-	assert.EqualError(t, err, "verification code daily limit exceeded")
+	assert.ErrorIs(t, err, ErrPhoneCodeDailyLimit)
 	assert.Equal(t, int64(2), redisClient.counters[dailyKey])
 	smsClient.AssertNotCalled(t, "SendVerificationCode", mock.Anything, mock.Anything, mock.Anything)
 	store.AssertExpectations(t)
@@ -176,7 +176,7 @@ func TestPhoneVerificationService_SendCode_Success(t *testing.T) {
 
 	rawPhone := " +86 138-0013-8000 "
 	normalizedPhone := "13800138000"
-	store.On("GetByPhone", mock.Anything, normalizedPhone).Return(nil, errors.New("user not found")).Once()
+	store.On("GetByPhone", mock.Anything, normalizedPhone).Return(nil, ErrUserNotFound).Once()
 	smsClient.On("SendVerificationCode", mock.Anything, normalizedPhone, mock.MatchedBy(func(code string) bool {
 		return len(code) == verificationCodeLength
 	})).Return(nil).Once()
@@ -200,7 +200,7 @@ func TestPhoneVerificationService_SendCode_SMSFailureRollsBackState(t *testing.T
 	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
 
 	phone := "13800138000"
-	store.On("GetByPhone", mock.Anything, phone).Return(nil, errors.New("user not found")).Once()
+	store.On("GetByPhone", mock.Anything, phone).Return(nil, ErrUserNotFound).Once()
 	smsClient.On("SendVerificationCode", mock.Anything, phone, mock.AnythingOfType("string")).
 		Return(errors.New("provider down")).Once()
 
@@ -248,11 +248,11 @@ func TestPhoneVerificationService_VerifyCode_InvalidCodeIncrementsAttempts(t *te
 	redisClient.values[verificationCodeKey(phone)] = "123456"
 	redisClient.exists[verificationCodeKey(phone)] = true
 	redisClient.ttls[verificationCodeKey(phone)] = 5 * time.Minute
-	store.On("GetByPhone", mock.Anything, phone).Return(nil, errors.New("user not found")).Once()
+	store.On("GetByPhone", mock.Anything, phone).Return(nil, ErrUserNotFound).Once()
 
 	err := svc.VerifyPhoneCode(context.Background(), 1, phone, "000000")
 
-	assert.EqualError(t, err, "invalid verification code")
+	assert.ErrorIs(t, err, ErrVerificationCodeInvalid)
 	assert.Equal(t, int64(1), redisClient.counters[verificationAttemptsKey(phone)])
 	assert.Equal(t, 5*time.Minute, redisClient.ttls[verificationAttemptsKey(phone)])
 	store.AssertExpectations(t)
@@ -269,11 +269,11 @@ func TestPhoneVerificationService_VerifyCode_AttemptsExceeded(t *testing.T) {
 	redisClient.exists[verificationCodeKey(phone)] = true
 	redisClient.counters[verificationAttemptsKey(phone)] = 2
 	redisClient.exists[verificationAttemptsKey(phone)] = true
-	store.On("GetByPhone", mock.Anything, phone).Return(nil, errors.New("user not found")).Once()
+	store.On("GetByPhone", mock.Anything, phone).Return(nil, ErrUserNotFound).Once()
 
 	err := svc.VerifyPhoneCode(context.Background(), 1, phone, "000000")
 
-	assert.EqualError(t, err, "verification code attempts exceeded")
+	assert.ErrorIs(t, err, ErrVerificationCodeExceeded)
 	_, codeErr := redisClient.Get(context.Background(), verificationCodeKey(phone))
 	assert.Error(t, codeErr)
 	store.AssertExpectations(t)
@@ -290,6 +290,6 @@ func TestPhoneVerificationService_VerifyCode_PhoneAlreadyExists(t *testing.T) {
 
 	err := svc.VerifyPhoneCode(context.Background(), 1, phone, "123456")
 
-	assert.EqualError(t, err, "phone already exists")
+	assert.ErrorIs(t, err, ErrPhoneAlreadyExists)
 	store.AssertExpectations(t)
 }

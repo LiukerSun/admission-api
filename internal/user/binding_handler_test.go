@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -85,7 +86,7 @@ func TestBindingHandler_CreateBinding_StudentNotFound(t *testing.T) {
 	h := NewBindingHandler(svc)
 
 	svc.On("BindStudent", mock.Anything, int64(1), "notfound@test.com").
-		Return(nil, assert.AnError)
+		Return(nil, ErrStudentNotFound)
 
 	body, _ := json.Marshal(CreateBindingRequest{StudentEmail: "notfound@test.com"})
 	c, w := setupTest()
@@ -96,8 +97,44 @@ func TestBindingHandler_CreateBinding_StudentNotFound(t *testing.T) {
 
 	h.CreateBinding(c)
 
-	// The handler returns NotFound for "student not found" error, but our mock returns generic error
-	// In real impl with correct error string it would be 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestBindingHandler_CreateBinding_AlreadyBound(t *testing.T) {
+	svc := new(mockBindingSvc)
+	h := NewBindingHandler(svc)
+
+	svc.On("BindStudent", mock.Anything, int64(1), "student@test.com").
+		Return(nil, ErrStudentAlreadyBound)
+
+	body, _ := json.Marshal(CreateBindingRequest{StudentEmail: "student@test.com"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/bindings", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Set(middleware.ContextUserTypeKey, "parent")
+
+	h.CreateBinding(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestBindingHandler_CreateBinding_InternalError(t *testing.T) {
+	svc := new(mockBindingSvc)
+	h := NewBindingHandler(svc)
+
+	svc.On("BindStudent", mock.Anything, int64(1), "student@test.com").
+		Return(nil, errors.New("db down"))
+
+	body, _ := json.Marshal(CreateBindingRequest{StudentEmail: "student@test.com"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/bindings", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(middleware.ContextUserIDKey, int64(1))
+	c.Set(middleware.ContextUserTypeKey, "parent")
+
+	h.CreateBinding(c)
+
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
@@ -171,4 +208,20 @@ func TestBindingHandler_DeleteBinding_NotAdmin(t *testing.T) {
 	h.DeleteBinding(c)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestBindingHandler_DeleteBinding_NotFound(t *testing.T) {
+	svc := new(mockBindingSvc)
+	h := NewBindingHandler(svc)
+
+	svc.On("RemoveBinding", mock.Anything, int64(10)).Return(ErrBindingNotFound)
+
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/bindings/10", http.NoBody)
+	c.Set(middleware.ContextRoleKey, "admin")
+	c.Params = gin.Params{{Key: "id", Value: "10"}}
+
+	h.DeleteBinding(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

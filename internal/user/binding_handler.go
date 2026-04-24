@@ -1,6 +1,7 @@
 package user
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -96,12 +97,12 @@ func (h *BindingHandler) CreateBinding(c *gin.Context) {
 
 	binding, err := h.bindingService.BindStudent(c.Request.Context(), userID, req.StudentEmail)
 	if err != nil {
-		switch err.Error() {
-		case "student not found":
+		switch {
+		case errors.Is(err, ErrStudentNotFound):
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "student not found")
-		case "cannot bind yourself":
+		case errors.Is(err, ErrCannotBindSelf):
 			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "cannot bind yourself")
-		case "student already bound to another parent":
+		case errors.Is(err, ErrStudentAlreadyBound):
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "student already bound to another parent")
 		default:
 			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
@@ -207,7 +208,7 @@ func (h *BindingHandler) DeleteBinding(c *gin.Context) {
 	}
 
 	if err := h.bindingService.RemoveBinding(c.Request.Context(), id); err != nil {
-		if err.Error() == "binding not found" {
+		if errors.Is(err, ErrBindingNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "binding not found")
 			return
 		}

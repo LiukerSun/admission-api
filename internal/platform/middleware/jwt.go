@@ -37,6 +37,10 @@ type Claims struct {
 
 func GenerateTokenPair(cfg *JWTConfig, userID int64, role, userType, platform string) (*TokenPair, string, error) {
 	now := time.Now()
+	accessTokenID, err := generateRandomToken()
+	if err != nil {
+		return nil, "", fmt.Errorf("generate access token id: %w", err)
+	}
 
 	accessClaims := Claims{
 		UserID:   userID,
@@ -46,6 +50,7 @@ func GenerateTokenPair(cfg *JWTConfig, userID int64, role, userType, platform st
 		Type:     "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   fmt.Sprintf("%d", userID),
+			ID:        accessTokenID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(cfg.AccessTTL)),
 		},
@@ -68,6 +73,7 @@ func GenerateTokenPair(cfg *JWTConfig, userID int64, role, userType, platform st
 		Type:     "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   fmt.Sprintf("%d", userID),
+			ID:        refreshTokenRaw,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(cfg.RefreshTTL)),
 		},

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"admission-api/internal/platform/web"
+	"admission-api/internal/user"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -120,7 +122,7 @@ func TestHandler_GetUser_NotFound(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc)
 
-	svc.On("GetUser", mock.Anything, int64(7)).Return(nil, assert.AnError)
+	svc.On("GetUser", mock.Anything, int64(7)).Return(nil, user.ErrUserNotFound)
 
 	c, w := setupTest()
 	c.Params = gin.Params{{Key: "id", Value: "7"}}
@@ -128,7 +130,7 @@ func TestHandler_GetUser_NotFound(t *testing.T) {
 
 	h.GetUser(c)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestHandler_UpdateUser(t *testing.T) {
@@ -191,4 +193,87 @@ func TestHandler_ResetPassword(t *testing.T) {
 	h.ResetPassword(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_UpdateUser_Conflict(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	email := "updated@example.com"
+	req := UpdateUserRequest{Email: &email}
+	svc.On("UpdateUser", mock.Anything, int64(7), req).Return(nil, user.ErrEmailAlreadyExists)
+
+	body, _ := json.Marshal(req)
+	c, w := setupTest()
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/7", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.UpdateUser(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestHandler_UpdateRole_NotFound(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	svc.On("UpdateRole", mock.Anything, int64(7), "premium").Return(user.ErrUserNotFound)
+
+	body, _ := json.Marshal(UpdateRoleRequest{Role: "premium"})
+	c, w := setupTest()
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/7/role", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.UpdateRole(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandler_ResetPassword_InvalidPassword(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	svc.On("ResetPassword", mock.Anything, int64(7), "newpass123").Return(errors.New("invalid password: validation failed"))
+
+	body, _ := json.Marshal(ResetPasswordRequest{NewPassword: "newpass123"})
+	c, w := setupTest()
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/7/password", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ResetPassword(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandler_DisableUser_NotFound(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	svc.On("DisableUser", mock.Anything, int64(7)).Return(user.ErrUserNotFound)
+
+	c, w := setupTest()
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/7/disable", http.NoBody)
+
+	h.DisableUser(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandler_EnableUser_NotFound(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc)
+
+	svc.On("EnableUser", mock.Anything, int64(7)).Return(user.ErrUserNotFound)
+
+	c, w := setupTest()
+	c.Params = gin.Params{{Key: "id", Value: "7"}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/7/enable", http.NoBody)
+
+	h.EnableUser(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

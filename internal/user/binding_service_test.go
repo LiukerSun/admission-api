@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,11 +42,6 @@ func (m *mockBindingStore) DeleteBinding(ctx context.Context, id int64) error {
 	return args.Error(0)
 }
 
-func (m *mockBindingStore) BindingExistsForStudent(ctx context.Context, studentID int64) (bool, error) {
-	args := m.Called(ctx, studentID)
-	return args.Bool(0), args.Error(1)
-}
-
 func TestBindingService_BindStudent_Success(t *testing.T) {
 	userStore := new(mockStore)
 	bindingStore := new(mockBindingStore)
@@ -53,8 +49,6 @@ func TestBindingService_BindStudent_Success(t *testing.T) {
 
 	userStore.On("GetByEmailAndType", mock.Anything, "student@test.com", "student").
 		Return(&User{ID: 5, Email: "student@test.com", UserType: "student"}, nil)
-	bindingStore.On("BindingExistsForStudent", mock.Anything, int64(5)).
-		Return(false, nil)
 	bindingStore.On("CreateBinding", mock.Anything, int64(1), int64(5)).
 		Return(&Binding{ID: 10, ParentID: 1, StudentID: 5}, nil)
 
@@ -74,12 +68,11 @@ func TestBindingService_BindStudent_StudentNotFound(t *testing.T) {
 	svc := NewBindingService(userStore, bindingStore)
 
 	userStore.On("GetByEmailAndType", mock.Anything, "notfound@test.com", "student").
-		Return(nil, assert.AnError)
+		Return(nil, ErrUserNotFound)
 
 	_, err := svc.BindStudent(context.Background(), 1, "notfound@test.com")
 
-	assert.Error(t, err)
-	assert.Equal(t, "student not found", err.Error())
+	assert.ErrorIs(t, err, ErrStudentNotFound)
 }
 
 func TestBindingService_BindStudent_AlreadyBound(t *testing.T) {
@@ -89,13 +82,25 @@ func TestBindingService_BindStudent_AlreadyBound(t *testing.T) {
 
 	userStore.On("GetByEmailAndType", mock.Anything, "student@test.com", "student").
 		Return(&User{ID: 5, Email: "student@test.com", UserType: "student"}, nil)
-	bindingStore.On("BindingExistsForStudent", mock.Anything, int64(5)).
-		Return(true, nil)
+	bindingStore.On("CreateBinding", mock.Anything, int64(1), int64(5)).
+		Return(nil, ErrStudentAlreadyBound)
 
 	_, err := svc.BindStudent(context.Background(), 1, "student@test.com")
 
-	assert.Error(t, err)
-	assert.Equal(t, "student already bound to another parent", err.Error())
+	assert.ErrorIs(t, err, ErrStudentAlreadyBound)
+}
+
+func TestBindingService_BindStudent_CannotBindSelf(t *testing.T) {
+	userStore := new(mockStore)
+	bindingStore := new(mockBindingStore)
+	svc := NewBindingService(userStore, bindingStore)
+
+	userStore.On("GetByEmailAndType", mock.Anything, "student@test.com", "student").
+		Return(&User{ID: 1, Email: "student@test.com", UserType: "student"}, nil)
+
+	_, err := svc.BindStudent(context.Background(), 1, "student@test.com")
+
+	assert.ErrorIs(t, err, ErrCannotBindSelf)
 }
 
 func TestBindingService_GetMyBindings_Parent(t *testing.T) {
@@ -147,4 +152,47 @@ func TestBindingService_RemoveBinding_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	bindingStore.AssertExpectations(t)
+}
+
+func TestBindingService_RemoveBinding_NotFound(t *testing.T) {
+	userStore := new(mockStore)
+	bindingStore := new(mockBindingStore)
+	svc := NewBindingService(userStore, bindingStore)
+
+	bindingStore.On("DeleteBinding", mock.Anything, int64(10)).Return(ErrBindingNotFound)
+
+	err := svc.RemoveBinding(context.Background(), 10)
+
+	assert.ErrorIs(t, err, ErrBindingNotFound)
+}
+
+func TestBindingService_GetMyBindings_StudentNoBinding(t *testing.T) {
+	userStore := new(mockStore)
+	bindingStore := new(mockBindingStore)
+	svc := NewBindingService(userStore, bindingStore)
+
+	bindingStore.On("GetBindingByStudent", mock.Anything, int64(5)).
+		Return(nil, ErrBindingNotFound)
+
+	result, err := svc.GetMyBindings(context.Background(), 5, "student")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "student", result.UserType)
+	assert.Empty(t, result.Bindings)
+}
+
+func TestBindingService_BindStudent_CreateErrorWrapped(t *testing.T) {
+	userStore := new(mockStore)
+	bindingStore := new(mockBindingStore)
+	svc := NewBindingService(userStore, bindingStore)
+
+	userStore.On("GetByEmailAndType", mock.Anything, "student@test.com", "student").
+		Return(&User{ID: 5, Email: "student@test.com", UserType: "student"}, nil)
+	bindingStore.On("CreateBinding", mock.Anything, int64(1), int64(5)).
+		Return(nil, errors.New("db down"))
+
+	_, err := svc.BindStudent(context.Background(), 1, "student@test.com")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "create binding")
 }

@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -46,23 +47,21 @@ func NewBindingService(userStore Store, bindingStore BindingStore) BindingServic
 func (s *bindingService) BindStudent(ctx context.Context, parentID int64, studentEmail string) (*Binding, error) {
 	student, err := s.userStore.GetByEmailAndType(ctx, studentEmail, "student")
 	if err != nil {
-		return nil, fmt.Errorf("student not found")
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, ErrStudentNotFound
+		}
+		return nil, fmt.Errorf("get student: %w", err)
 	}
 
 	if student.ID == parentID {
-		return nil, fmt.Errorf("cannot bind yourself")
-	}
-
-	exists, err := s.bindingStore.BindingExistsForStudent(ctx, student.ID)
-	if err != nil {
-		return nil, fmt.Errorf("check binding status: %w", err)
-	}
-	if exists {
-		return nil, fmt.Errorf("student already bound to another parent")
+		return nil, ErrCannotBindSelf
 	}
 
 	binding, err := s.bindingStore.CreateBinding(ctx, parentID, student.ID)
 	if err != nil {
+		if errors.Is(err, ErrStudentAlreadyBound) {
+			return nil, ErrStudentAlreadyBound
+		}
 		return nil, fmt.Errorf("create binding: %w", err)
 	}
 
@@ -97,7 +96,7 @@ func (s *bindingService) GetMyBindings(ctx context.Context, userID int64, userTy
 	} else if userType == "student" {
 		binding, err := s.bindingStore.GetBindingByStudent(ctx, userID)
 		if err != nil {
-			if err.Error() == "binding not found" {
+			if errors.Is(err, ErrBindingNotFound) {
 				return result, nil
 			}
 			return nil, fmt.Errorf("get binding: %w", err)
@@ -121,6 +120,9 @@ func (s *bindingService) GetMyBindings(ctx context.Context, userID int64, userTy
 
 func (s *bindingService) RemoveBinding(ctx context.Context, id int64) error {
 	if err := s.bindingStore.DeleteBinding(ctx, id); err != nil {
+		if errors.Is(err, ErrBindingNotFound) {
+			return ErrBindingNotFound
+		}
 		return fmt.Errorf("remove binding: %w", err)
 	}
 	return nil

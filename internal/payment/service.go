@@ -142,6 +142,17 @@ func (s *service) ProcessMockCallback(ctx context.Context, req MockCallbackReque
 		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
 		return nil, ErrOrderNotPayable
 	}
+	if o.OrderStatus != OrderStatusPaid && o.OrderStatus != OrderStatusFulfilled {
+		if err := ensurePayable(o, time.Now()); err != nil {
+			if errors.Is(err, ErrOrderExpired) {
+				_, _ = s.store.CloseOrder(ctx, req.OrderNo)
+			}
+			msg := err.Error()
+			processErr = &msg
+			_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+			return nil, err
+		}
+	}
 
 	if existingAttempt, tradeErr := s.store.GetAttemptByChannelTrade(ctx, ChannelMock, req.ChannelTradeNo); tradeErr == nil {
 		existingOrder, planCode, getErr := s.store.GetOrderByNo(ctx, req.OrderNo)
@@ -347,7 +358,7 @@ func (s *service) fulfillMembership(ctx context.Context, o *Order) error {
 }
 
 func ensurePayable(o *Order, now time.Time) error {
-	if o.OrderStatus == OrderStatusClosed || o.OrderStatus == OrderStatusFailed || o.OrderStatus == OrderStatusFulfilled {
+	if o.OrderStatus == OrderStatusClosed || o.OrderStatus == OrderStatusFailed || o.OrderStatus == OrderStatusPaid || o.OrderStatus == OrderStatusFulfilled {
 		return ErrOrderNotPayable
 	}
 	if o.ExpiresAt.Before(now) && o.PaymentStatus != PaymentStatusPaid {

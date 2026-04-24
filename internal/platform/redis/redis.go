@@ -85,6 +85,10 @@ func (c *Client) Expire(ctx context.Context, key string, ttl time.Duration) erro
 	return c.rdb.Expire(ctx, key, ttl).Err()
 }
 
+func (c *Client) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
+	return c.rdb.Eval(ctx, script, keys, args...).Result()
+}
+
 func (c *Client) RDB() *redis.Client {
 	return c.rdb
 }

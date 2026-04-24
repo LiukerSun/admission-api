@@ -27,7 +27,10 @@ func main() {
 		log.Fatal("data-dir is required")
 	}
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
 	ctx := context.Background()
 
 	database, err := db.New(ctx, cfg.DatabaseURL)

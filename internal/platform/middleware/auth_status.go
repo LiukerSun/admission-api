@@ -1,23 +1,26 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	"admission-api/internal/platform/redis"
 )
+
+type userStatusCache interface {
+	Get(ctx context.Context, key string) (string, error)
+}
 
 // UserStatusCacheKey returns the Redis key for cached user status.
 func UserStatusCacheKey(userID int64) string {
 	return fmt.Sprintf("user_status:%d", userID)
 }
 
-// AuthStatusMiddleware checks if the user is banned via Redis cache.
-// The admin service sets "banned" in Redis when disabling a user.
-// If the key does not exist, the user is assumed active.
-func AuthStatusMiddleware(rdb *redis.Client) gin.HandlerFunc {
+// AuthStatusMiddleware checks whether the authenticated user is banned.
+// Redis remains the fast path, while persistent lookup covers cache misses
+// and Redis availability issues.
+func AuthStatusMiddleware(rdb userStatusCache, lookupStatus func(context.Context, int64) (string, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDRaw, exists := c.Get(ContextUserIDKey)
 		if !exists {
@@ -33,7 +36,28 @@ func AuthStatusMiddleware(rdb *redis.Client) gin.HandlerFunc {
 		}
 
 		status, err := rdb.Get(c.Request.Context(), UserStatusCacheKey(userID))
-		if err == nil && status == "banned" {
+		if err == nil {
+			if status == "banned" {
+				c.JSON(http.StatusUnauthorized, gin.H{"code": 1002, "message": "account has been banned"})
+				c.Abort()
+				return
+			}
+			c.Next()
+			return
+		}
+
+		if lookupStatus == nil {
+			c.Next()
+			return
+		}
+
+		status, err = lookupStatus(c.Request.Context(), userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 1000, "message": "failed to verify account status"})
+			c.Abort()
+			return
+		}
+		if status == "banned" {
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 1002, "message": "account has been banned"})
 			c.Abort()
 			return

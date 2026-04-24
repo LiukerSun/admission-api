@@ -3,6 +3,7 @@ package membership
 import "time"
 
 const (
+	LevelNone    = "none"
 	LevelPremium = "premium"
 
 	PlanStatusActive   = "active"

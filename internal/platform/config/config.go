@@ -17,6 +17,7 @@ type Config struct {
 	JWTAccessTTLMinutes      int
 	JWTRefreshTTLHours       int
 	Env                      string
+	MockCallbackSecret       string
 	AliyunSMSAccessKeyID     string
 	AliyunSMSAccessKeySecret string
 	AliyunSMSEndpoint        string
@@ -30,18 +31,18 @@ type Config struct {
 
 // Load reads configuration from environment variables.
 // It attempts to load .env file if present (ignored in production).
-// Missing required fields will panic.
-func Load() *Config {
+func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
 		Port:                     getEnv("PORT", "8080"),
 		DatabaseURL:              buildDatabaseURL(),
 		RedisAddr:                buildRedisAddr(),
-		JWTSecret:                requireEnv("JWT_SECRET"),
+		JWTSecret:                getEnv("JWT_SECRET", ""),
 		JWTAccessTTLMinutes:      getIntEnv("JWT_ACCESS_TTL_MINUTES", 15),
 		JWTRefreshTTLHours:       getIntEnv("JWT_REFRESH_TTL_HOURS", 168),
 		Env:                      getEnv("ENV", "development"),
+		MockCallbackSecret:       getEnv("MOCK_CALLBACK_SECRET", ""),
 		AliyunSMSAccessKeyID:     getEnv("ALIYUN_SMS_ACCESS_KEY_ID", ""),
 		AliyunSMSAccessKeySecret: getEnv("ALIYUN_SMS_ACCESS_KEY_SECRET", ""),
 		AliyunSMSEndpoint:        getEnv("ALIYUN_SMS_ENDPOINT", "dysmsapi.aliyuncs.com"),
@@ -53,18 +54,23 @@ func Load() *Config {
 		SMSMaxVerifyAttempts:     getIntEnv("SMS_MAX_VERIFY_ATTEMPTS", 5),
 	}
 
-	return cfg
+	if cfg.JWTSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET is required")
+	}
+
+	return cfg, nil
 }
 
 func buildDatabaseURL() string {
 	if url := os.Getenv("DATABASE_URL"); url != "" {
 		return url
 	}
+	host := getEnv("POSTGRES_HOST", "localhost")
 	user := getEnv("POSTGRES_USER", "app")
 	password := getEnv("POSTGRES_PASSWORD", "app")
 	db := getEnv("POSTGRES_DB", "admission")
 	port := getEnv("POSTGRES_PORT", "5432")
-	return fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable", user, password, port, db)
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, db)
 }
 
 func buildRedisAddr() string {
@@ -80,14 +86,6 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-func requireEnv(key string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		panic(fmt.Sprintf("missing required environment variable: %s", key))
-	}
-	return v
 }
 
 func getIntEnv(key string, fallback int) int {
