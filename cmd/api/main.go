@@ -32,6 +32,8 @@ import (
 	"admission-api/internal/admin"
 	"admission-api/internal/analysis"
 	"admission-api/internal/health"
+	"admission-api/internal/membership"
+	"admission-api/internal/payment"
 	"admission-api/internal/platform/config"
 	"admission-api/internal/platform/db"
 	"admission-api/internal/platform/middleware"
@@ -107,6 +109,14 @@ func run() error {
 	bindingService := user.NewBindingService(userStore, bindingStore)
 	bindingHandler := user.NewBindingHandler(bindingService)
 
+	membershipStore := membership.NewStore(database.Pool())
+	membershipService := membership.NewService(membershipStore)
+	membershipHandler := membership.NewHandler(membershipService)
+
+	paymentStore := payment.NewStore(database.Pool())
+	paymentService := payment.NewService(paymentStore, membershipService)
+	paymentHandler := payment.NewHandler(paymentService)
+
 	// 初始化数据分析模块
 	analysisStore := analysis.NewStore(database.Pool())
 	analysisService := analysis.NewService(analysisStore)
@@ -155,6 +165,8 @@ func run() error {
 		api.GET("/analysis/score-match", analysisHandler.GetScoreMatch)
 		api.GET("/analysis/employment-data", analysisHandler.GetEmploymentData)
 
+		api.POST("/payment/callbacks/mock", paymentHandler.MockCallback)
+
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
 		authorized.Use(middleware.AuthStatusMiddleware(redisClient))
@@ -164,6 +176,13 @@ func run() error {
 		authorized.POST("/me/phone/verify", userHandler.VerifyPhone)
 		authorized.POST("/bindings", bindingHandler.CreateBinding)
 		authorized.GET("/bindings", bindingHandler.GetMyBindings)
+		authorized.GET("/membership/plans", membershipHandler.ListPlans)
+		authorized.GET("/membership", membershipHandler.GetCurrent)
+		authorized.POST("/payment/orders", paymentHandler.CreateOrder)
+		authorized.GET("/payment/orders", paymentHandler.ListMyOrders)
+		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)
+		authorized.POST("/payment/orders/:order_no/pay", paymentHandler.PayMock)
+		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireRole("admin"))
@@ -177,6 +196,11 @@ func run() error {
 		adminRoutes.GET("/bindings", adminHandler.ListBindings)
 		adminRoutes.GET("/stats", adminHandler.GetStats)
 		adminRoutes.DELETE("/bindings/:id", bindingHandler.DeleteBinding)
+		adminRoutes.GET("/payment/orders", paymentHandler.AdminListOrders)
+		adminRoutes.GET("/payment/orders/:order_no", paymentHandler.AdminGetOrder)
+		adminRoutes.POST("/payment/orders/:order_no/close", paymentHandler.AdminCloseOrder)
+		adminRoutes.POST("/payment/orders/:order_no/redetect", paymentHandler.AdminRedetect)
+		adminRoutes.POST("/payment/orders/:order_no/regrant-membership", paymentHandler.AdminRegrantMembership)
 	}
 
 	server := &http.Server{
