@@ -39,6 +39,7 @@ import (
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
+	"admission-api/internal/planner"
 	"admission-api/internal/user"
 )
 
@@ -135,6 +136,11 @@ func run() error {
 	adminService := admin.NewService(adminStore, userStore, tokenManager, redisClient)
 	adminHandler := admin.NewHandler(adminService)
 
+	// Initialize planner merchant module
+	merchantStore := planner.NewMerchantStore(database.Pool())
+	merchantService := planner.NewMerchantService(merchantStore)
+	merchantHandler := planner.NewMerchantHandler(merchantService)
+
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -196,6 +202,10 @@ func run() error {
 		authorized.POST("/payment/orders/:order_no/pay", paymentHandler.PayMock)
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
 
+		// planner merchant routes
+		authorized.GET("/planner/merchants", merchantHandler.ListMerchants)
+		authorized.GET("/planner/merchants/:id", merchantHandler.GetMerchant)
+
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireRole("admin"))
 		adminRoutes.GET("/users/:id", adminHandler.GetUser)
@@ -213,6 +223,10 @@ func run() error {
 		adminRoutes.POST("/payment/orders/:order_no/close", paymentHandler.AdminCloseOrder)
 		adminRoutes.POST("/payment/orders/:order_no/redetect", paymentHandler.AdminRedetect)
 		adminRoutes.POST("/payment/orders/:order_no/regrant-membership", paymentHandler.AdminRegrantMembership)
+
+		// planner merchant admin routes
+		adminRoutes.POST("/planner/merchants", merchantHandler.CreateMerchant)
+		adminRoutes.PUT("/planner/merchants/:id", merchantHandler.UpdateMerchant)
 	}
 
 	server := &http.Server{
