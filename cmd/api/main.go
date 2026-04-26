@@ -31,6 +31,7 @@ import (
 	_ "admission-api/docs"
 	"admission-api/internal/admin"
 	"admission-api/internal/analysis"
+	"admission-api/internal/candidate"
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
@@ -124,7 +125,7 @@ func run() error {
 		MockCallbackSecret:         cfg.MockCallbackSecret,
 	})
 
-	// 初始化数据分析模块
+	// Initialize analysis module
 	analysisStore := analysis.NewStore(database.Pool())
 	analysisService := analysis.NewService(analysisStore)
 	analysisHandler := analysis.NewHandler(analysisService)
@@ -140,6 +141,12 @@ func run() error {
 	merchantStore := planner.NewMerchantStore(database.Pool())
 	merchantService := planner.NewMerchantService(merchantStore)
 	merchantHandler := planner.NewMerchantHandler(merchantService)
+
+	// Initialize candidate activity log module
+	activityLogStore := candidate.NewActivityLogStore(database.Pool())
+	activityLogService := candidate.NewActivityLogService(activityLogStore, redisClient.RDB())
+	activityLogHandler := candidate.NewActivityLogHandler(activityLogService)
+	activityLogConsumer := candidate.NewActivityLogConsumer(activityLogStore, redisClient.RDB())
 
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -206,6 +213,9 @@ func run() error {
 		authorized.GET("/planner/merchants", merchantHandler.ListMerchants)
 		authorized.GET("/planner/merchants/:id", merchantHandler.GetMerchant)
 
+		// candidate activity log routes
+		authorized.GET("/me/activities", activityLogHandler.GetMyActivities)
+
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireRole("admin"))
 		adminRoutes.GET("/users/:id", adminHandler.GetUser)
@@ -227,7 +237,17 @@ func run() error {
 		// planner merchant admin routes
 		adminRoutes.POST("/planner/merchants", merchantHandler.CreateMerchant)
 		adminRoutes.PUT("/planner/merchants/:id", merchantHandler.UpdateMerchant)
+
+		// candidate activity log admin routes
+		adminRoutes.GET("/candidate/activities", activityLogHandler.ListActivities)
+		adminRoutes.GET("/candidate/activities/stats", activityLogHandler.GetStats)
+		adminRoutes.DELETE("/candidate/activities", activityLogHandler.DeleteByIDs)
+		adminRoutes.DELETE("/candidate/activities/before", activityLogHandler.DeleteBefore)
 	}
+
+	// Start activity log consumer
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	consumerDone := activityLogConsumer.Start(consumerCtx)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -250,6 +270,15 @@ func run() error {
 	<-quit
 
 	slog.Info("shutting down server...")
+
+	// Stop activity log consumer gracefully
+	consumerCancel()
+	select {
+	case <-consumerDone:
+		slog.Info("activity log consumer stopped")
+	case <-time.After(5 * time.Second):
+		slog.Warn("activity log consumer stop timed out")
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
