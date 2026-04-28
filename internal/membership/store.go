@@ -23,6 +23,7 @@ type Store interface {
 	GetActivePlanByCode(ctx context.Context, planCode string) (*Plan, error)
 	GetCurrentMembership(ctx context.Context, userID int64) (*UserMembership, error)
 	HasActiveMembership(ctx context.Context, userID int64, now time.Time) (bool, error)
+	HasActiveMembershipLevel(ctx context.Context, userID int64, level string, now time.Time) (bool, error)
 	GrantMembership(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error)
 }
 
@@ -135,7 +136,17 @@ func (s *store) GetCurrentMembership(ctx context.Context, userID int64) (*UserMe
 }
 
 func (s *store) HasActiveMembership(ctx context.Context, userID int64, now time.Time) (bool, error) {
+	return s.HasActiveMembershipLevel(ctx, userID, "", now)
+}
+
+func (s *store) HasActiveMembershipLevel(ctx context.Context, userID int64, level string, now time.Time) (bool, error) {
 	var exists bool
+	args := []any{userID, now}
+	levelClause := ""
+	if level != "" {
+		args = append(args, level)
+		levelClause = " AND membership_level = $3"
+	}
 	if err := s.pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
@@ -144,8 +155,9 @@ func (s *store) HasActiveMembership(ctx context.Context, userID int64, now time.
 			  AND status = 'active'
 			  AND ends_at IS NOT NULL
 			  AND ends_at > $2
+			  `+levelClause+`
 		)
-	`, userID, now).Scan(&exists); err != nil {
+	`, args...).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check active membership: %w", err)
 	}
 	if !exists {

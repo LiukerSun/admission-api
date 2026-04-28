@@ -38,7 +38,7 @@ func TestPremiumRouteRejectsExpiredPremiumTokenWithoutActiveMembership(t *testin
 		return "active", nil
 	}))
 	r.Use(RequireMinRole("premium"))
-	r.Use(RequireActiveMembership(mockMembershipChecker{active: false}))
+	r.Use(RequireActivePremiumMembership(mockMembershipChecker{active: false, level: "premium"}))
 	r.GET("/premium", func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 	})
@@ -50,7 +50,7 @@ func TestPremiumRouteRejectsExpiredPremiumTokenWithoutActiveMembership(t *testin
 	r.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	assert.Contains(t, w.Body.String(), "active membership required")
+	assert.Contains(t, w.Body.String(), "active premium membership required")
 }
 
 func TestBannedUserIsDeniedEvenWithValidToken(t *testing.T) {

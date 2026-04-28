@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
+
+const defaultJWTSecret = "your-super-secret-jwt-key-change-in-production"
 
 // Config holds all application configuration.
 type Config struct {
@@ -56,6 +59,9 @@ func Load() (*Config, error) {
 
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
+	}
+	if strings.EqualFold(cfg.Env, "production") && cfg.JWTSecret == defaultJWTSecret {
+		return nil, fmt.Errorf("JWT_SECRET must be changed in production")
 	}
 
 	return cfg, nil

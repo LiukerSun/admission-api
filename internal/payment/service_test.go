@@ -90,9 +90,9 @@ func (m *mockPaymentStore) MarkOrderFulfilled(ctx context.Context, orderID int64
 	return args.Get(0).(*Order), args.Error(1)
 }
 
-func (m *mockPaymentStore) MarkOrderEntitlementFailed(ctx context.Context, orderID int64) error {
+func (m *mockPaymentStore) MarkOrderEntitlementFailed(ctx context.Context, orderID int64) (bool, error) {
 	args := m.Called(ctx, orderID)
-	return args.Error(0)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *mockPaymentStore) SaveCallback(ctx context.Context, req MockCallbackRequest, payload []byte) (*Callback, bool, error) {
@@ -153,6 +153,16 @@ func (m *mockMembershipSvc) HasActiveMembership(ctx context.Context, userID int6
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *mockMembershipSvc) HasActiveMembershipLevel(ctx context.Context, userID int64, level string) (bool, error) {
+	args := m.Called(ctx, userID, level)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *mockMembershipSvc) HasActivePremiumMembership(ctx context.Context, userID int64) (bool, error) {
+	args := m.Called(ctx, userID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockMembershipSvc) GrantFromPaidOrder(ctx context.Context, req membership.GrantRequest) (*membership.UserMembership, *membership.Grant, bool, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).(*membership.UserMembership), args.Get(1).(*membership.Grant), args.Bool(2), args.Error(3)
@@ -168,7 +178,7 @@ func TestCreateOrderUsesPlanSnapshot(t *testing.T) {
 
 	member.On("GetPurchasablePlan", mock.Anything, "monthly").Return(plan, nil)
 	store.On("CreateOrder", mock.Anything, mock.MatchedBy(func(input *CreateOrderInput) bool {
-		return input.UserID == 7 && input.PlanID == 9 && input.Amount == 990 && input.IdempotencyKey != nil && *input.IdempotencyKey == key
+		return input.UserID == 7 && input.PlanID == 9 && input.DurationDays == 30 && input.Amount == 990 && input.IdempotencyKey != nil && *input.IdempotencyKey == key
 	})).Return(order, true, nil)
 
 	resp, err := svc.CreateOrder(context.Background(), 7, CreateOrderRequest{PlanCode: "monthly", IdempotencyKey: &key})
@@ -198,32 +208,30 @@ func TestPayMockSuccessfulFlowGrantsMembershipAndFulfillsOrder(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
 	svc := NewService(store, member)
-	order := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusAwaitingPayment, PaymentStatus: PaymentStatusUnpaid, EntitlementStatus: EntitlementStatusPending, ExpiresAt: time.Now().Add(time.Minute)}
+	order := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusAwaitingPayment, PaymentStatus: PaymentStatusUnpaid, EntitlementStatus: EntitlementStatusPending, DurationDays: 30, ExpiresAt: time.Now().Add(time.Minute)}
 	paid := *order
 	paid.OrderStatus = OrderStatusPaid
 	paid.PaymentStatus = PaymentStatusPaid
 	fulfilled := paid
 	fulfilled.OrderStatus = OrderStatusFulfilled
 	fulfilled.EntitlementStatus = EntitlementStatusGranted
-	plan := &membership.Plan{ID: 9, PlanCode: "monthly", DurationDays: 30, PriceAmount: 990, Currency: "CNY"}
 
 	store.On("GetOrderForUser", mock.Anything, int64(7), "MO1").Return(order, "monthly", nil)
 	store.On("CreateAttempt", mock.Anything, int64(1), ChannelMock, 990).Return(&Attempt{ID: 3, PaymentOrderID: 1, AttemptNo: 1}, nil)
 	store.On("MarkAttemptSuccess", mock.Anything, int64(3), "MOCKMO1-1", mock.AnythingOfType("time.Time")).Return(&Attempt{ID: 3, PaymentOrderID: 1, AttemptNo: 1, ChannelStatus: AttemptStatusSuccess}, nil)
 	store.On("MarkOrderPaid", mock.Anything, int64(1), mock.AnythingOfType("time.Time")).Return(&paid, nil)
-	store.On("GetOrderByNo", mock.Anything, "MO1").Return(&paid, "monthly", nil).Once()
-	member.On("GetPurchasablePlan", mock.Anything, "monthly").Return(plan, nil)
 	member.On("GrantFromPaidOrder", mock.Anything, mock.MatchedBy(func(req membership.GrantRequest) bool {
 		return req.UserID == 7 && req.PaymentOrderID == 1 && req.DurationDays == 30 && req.IdempotencyKey == "payment-order:1"
 	})).Return(&membership.UserMembership{UserID: 7, Status: membership.MembershipStatusActive}, &membership.Grant{PaymentOrderID: 1}, true, nil)
-	store.On("MarkOrderFulfilled", mock.Anything, int64(1)).Return(&fulfilled, nil)
 	store.On("GetOrderByNo", mock.Anything, "MO1").Return(&fulfilled, "monthly", nil).Once()
+	store.On("MarkOrderFulfilled", mock.Anything, int64(1)).Return(&fulfilled, nil)
 
 	resp, err := svc.PayMock(context.Background(), 7, "MO1")
 
 	require.NoError(t, err)
 	assert.Equal(t, OrderStatusFulfilled, resp.OrderStatus)
 	assert.Equal(t, EntitlementStatusGranted, resp.EntitlementStatus)
+	member.AssertNotCalled(t, "GetPurchasablePlan", mock.Anything, mock.Anything)
 }
 
 func TestDuplicateCallbackReturnsExistingOrderWithoutGrant(t *testing.T) {
@@ -305,16 +313,15 @@ func TestRegrantMembershipRepairsPaidOrder(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
 	svc := NewService(store, member)
-	paid := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusPaid, PaymentStatus: PaymentStatusPaid, EntitlementStatus: EntitlementStatusFailed, ExpiresAt: time.Now().Add(time.Minute)}
+	paid := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusPaid, PaymentStatus: PaymentStatusPaid, EntitlementStatus: EntitlementStatusFailed, DurationDays: 30, ExpiresAt: time.Now().Add(time.Minute)}
 	fulfilled := *paid
 	fulfilled.OrderStatus = OrderStatusFulfilled
 	fulfilled.EntitlementStatus = EntitlementStatusGranted
-	plan := &membership.Plan{ID: 9, PlanCode: "monthly", DurationDays: 30, PriceAmount: 990, Currency: "CNY"}
 
 	store.On("GetOrderByNo", mock.Anything, "MO1").Return(paid, "monthly", nil).Once()
-	store.On("GetOrderByNo", mock.Anything, "MO1").Return(paid, "monthly", nil).Once()
-	member.On("GetPurchasablePlan", mock.Anything, "monthly").Return(plan, nil)
-	member.On("GrantFromPaidOrder", mock.Anything, mock.AnythingOfType("membership.GrantRequest")).Return(&membership.UserMembership{UserID: 7, Status: membership.MembershipStatusActive}, &membership.Grant{PaymentOrderID: 1}, true, nil)
+	member.On("GrantFromPaidOrder", mock.Anything, mock.MatchedBy(func(req membership.GrantRequest) bool {
+		return req.UserID == 7 && req.PaymentOrderID == 1 && req.DurationDays == 30 && req.IdempotencyKey == "payment-order:1"
+	})).Return(&membership.UserMembership{UserID: 7, Status: membership.MembershipStatusActive}, &membership.Grant{PaymentOrderID: 1}, true, nil)
 	store.On("MarkOrderFulfilled", mock.Anything, int64(1)).Return(&fulfilled, nil)
 	store.On("GetOrderByNo", mock.Anything, "MO1").Return(&fulfilled, "monthly", nil).Once()
 
@@ -323,6 +330,47 @@ func TestRegrantMembershipRepairsPaidOrder(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, OrderStatusFulfilled, resp.OrderStatus)
 	assert.Equal(t, EntitlementStatusGranted, resp.EntitlementStatus)
+	member.AssertNotCalled(t, "GetPurchasablePlan", mock.Anything, mock.Anything)
+}
+
+func TestRegrantMembershipUsesReloadedDurationSnapshotForLegacyOrder(t *testing.T) {
+	store := new(mockPaymentStore)
+	member := new(mockMembershipSvc)
+	svc := NewService(store, member)
+	legacyPaid := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusPaid, PaymentStatus: PaymentStatusPaid, EntitlementStatus: EntitlementStatusFailed, DurationDays: 0, ExpiresAt: time.Now().Add(time.Minute)}
+	reloadedPaid := *legacyPaid
+	reloadedPaid.DurationDays = 30
+	fulfilled := reloadedPaid
+	fulfilled.OrderStatus = OrderStatusFulfilled
+	fulfilled.EntitlementStatus = EntitlementStatusGranted
+
+	store.On("GetOrderByNo", mock.Anything, "MO1").Return(legacyPaid, "monthly", nil).Once()
+	store.On("GetOrderByNo", mock.Anything, "MO1").Return(&reloadedPaid, "monthly", nil).Once()
+	member.On("GrantFromPaidOrder", mock.Anything, mock.MatchedBy(func(req membership.GrantRequest) bool {
+		return req.UserID == 7 && req.PaymentOrderID == 1 && req.DurationDays == 30 && req.IdempotencyKey == "payment-order:1"
+	})).Return(&membership.UserMembership{UserID: 7, Status: membership.MembershipStatusActive}, &membership.Grant{PaymentOrderID: 1}, true, nil)
+	store.On("MarkOrderFulfilled", mock.Anything, int64(1)).Return(&fulfilled, nil)
+	store.On("GetOrderByNo", mock.Anything, "MO1").Return(&fulfilled, "monthly", nil).Once()
+
+	resp, err := svc.RegrantMembership(context.Background(), "MO1")
+
+	require.NoError(t, err)
+	assert.Equal(t, OrderStatusFulfilled, resp.OrderStatus)
+	assert.Equal(t, EntitlementStatusGranted, resp.EntitlementStatus)
+	member.AssertNotCalled(t, "GetPurchasablePlan", mock.Anything, mock.Anything)
+}
+
+func TestMarkEntitlementFailedReportsSkippedUpdate(t *testing.T) {
+	store := new(mockPaymentStore)
+	member := new(mockMembershipSvc)
+	svc := NewService(store, member).(*service)
+
+	store.On("MarkOrderEntitlementFailed", mock.Anything, int64(1)).Return(true, nil)
+
+	err := svc.markEntitlementFailed(context.Background(), 1)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already granted or not found")
 }
 
 func TestEnsurePayableRejectsFulfilledOrder(t *testing.T) {
@@ -342,6 +390,7 @@ func TestToOrderResponseIncludesUserID(t *testing.T) {
 		PaymentStatus:     PaymentStatusUnpaid,
 		EntitlementStatus: EntitlementStatusPending,
 		PaymentChannel:    ChannelMock,
+		DurationDays:      30,
 		ExpiresAt:         time.Now().Add(time.Hour),
 		CreatedAt:         time.Now(),
 	}
@@ -349,4 +398,5 @@ func TestToOrderResponseIncludesUserID(t *testing.T) {
 	assert.Equal(t, int64(42), resp.UserID)
 	assert.Equal(t, "MO1", resp.OrderNo)
 	assert.Equal(t, "monthly", resp.PlanCode)
+	assert.Equal(t, 30, resp.DurationDays)
 }

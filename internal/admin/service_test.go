@@ -188,6 +188,47 @@ func TestServiceResetPasswordRevokesRefreshSessions(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestServiceUpdateRoleRevokesRefreshSessions(t *testing.T) {
+	svc, userStore, tokenManager, _ := newAdminTestDeps(t)
+	ctx := context.Background()
+
+	require.NoError(t, tokenManager.Save(ctx, "hash-admin-web", 21, "web"))
+	userStore.On("UpdateRole", mock.Anything, int64(21), "admin").Return(nil)
+
+	err := svc.UpdateRole(ctx, 21, "admin")
+
+	require.NoError(t, err)
+	userStore.AssertExpectations(t)
+
+	ok, verifyErr := tokenManager.Verify(ctx, "hash-admin-web", 21, "web")
+	require.NoError(t, verifyErr)
+	assert.False(t, ok)
+}
+
+func TestServiceUpdateUserRoleChangeRevokesRefreshSessions(t *testing.T) {
+	svc, userStore, tokenManager, _ := newAdminTestDeps(t)
+	ctx := context.Background()
+	role := "premium"
+
+	require.NoError(t, tokenManager.Save(ctx, "hash-role-change", 22, "web"))
+	userStore.On("GetByID", mock.Anything, int64(22)).Return(&user.User{ID: 22, Role: "user", Status: "active"}, nil).Once()
+	userStore.On("UpdateUser", mock.Anything, int64(22), mock.MatchedBy(func(fields user.UpdateUserFields) bool {
+		return fields.Role != nil && *fields.Role == role
+	})).Return(nil)
+	userStore.On("GetByID", mock.Anything, int64(22)).Return(&user.User{ID: 22, Role: role, Status: "active"}, nil).Once()
+
+	resp, err := svc.UpdateUser(ctx, 22, UpdateUserRequest{Role: &role})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, role, resp.Role)
+	userStore.AssertExpectations(t)
+
+	ok, verifyErr := tokenManager.Verify(ctx, "hash-role-change", 22, "web")
+	require.NoError(t, verifyErr)
+	assert.False(t, ok)
+}
+
 func TestServiceEnableUserClearsBanCache(t *testing.T) {
 	svc, userStore, _, client := newAdminTestDeps(t)
 	ctx := context.Background()

@@ -1103,6 +1103,9 @@ definitions:
       currency:
         example: CNY
         type: string
+      duration_days:
+        example: 30
+        type: integer
       entitlement_status:
         example: pending
         type: string
@@ -1843,6 +1846,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询录取分趋势
       tags:
       - analysis
@@ -1999,6 +2004,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询专业录取分
       tags:
       - analysis
@@ -2139,6 +2146,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询学校录取分
       tags:
       - analysis
@@ -2177,6 +2186,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 获取高考数据集概览
       tags:
       - analysis
@@ -2228,6 +2239,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 获取就业兼容数据
       tags:
       - analysis
@@ -2371,6 +2384,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 获取招生计划数据
       tags:
       - analysis
@@ -2435,6 +2450,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 获取分析筛选项
       tags:
       - analysis
@@ -2547,6 +2564,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询专业列表
       tags:
       - analysis
@@ -2599,6 +2618,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 获取专业详情
       tags:
       - analysis
@@ -2659,6 +2680,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询省控线趋势
       tags:
       - analysis
@@ -2746,6 +2769,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询省控线列表
       tags:
       - analysis
@@ -2870,6 +2895,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询学校列表
       tags:
       - analysis
@@ -2922,6 +2949,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 获取学校详情
       tags:
       - analysis
@@ -3006,6 +3035,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 查询学校开设专业
       tags:
       - analysis
@@ -3059,6 +3090,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 对比多个学校
       tags:
       - analysis
@@ -3159,6 +3192,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
       summary: 历史分数/位次匹配
       tags:
       - analysis
@@ -3549,6 +3584,10 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: 非开发环境下必填的内部 mock 回调密钥
+        in: header
+        name: X-Mock-Callback-Secret
+        type: string
       - description: mock 回调
         in: body
         name: body
@@ -3569,6 +3608,10 @@ paths:
               type: object
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/web.Response'
       summary: mock 支付回调

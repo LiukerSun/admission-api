@@ -13,6 +13,8 @@ type Service interface {
 	GetPurchasablePlan(ctx context.Context, planCode string) (*Plan, error)
 	GetCurrent(ctx context.Context, userID int64) (*CurrentMembershipResponse, error)
 	HasActiveMembership(ctx context.Context, userID int64) (bool, error)
+	HasActiveMembershipLevel(ctx context.Context, userID int64, level string) (bool, error)
+	HasActivePremiumMembership(ctx context.Context, userID int64) (bool, error)
 	GrantFromPaidOrder(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error)
 }
 
@@ -67,6 +69,17 @@ func (s *service) GetCurrent(ctx context.Context, userID int64) (*CurrentMembers
 
 func (s *service) HasActiveMembership(ctx context.Context, userID int64) (bool, error) {
 	return s.store.HasActiveMembership(ctx, userID, time.Now())
+}
+
+func (s *service) HasActiveMembershipLevel(ctx context.Context, userID int64, level string) (bool, error) {
+	if level == "" || level == LevelNone {
+		return false, nil
+	}
+	return s.store.HasActiveMembershipLevel(ctx, userID, level, time.Now())
+}
+
+func (s *service) HasActivePremiumMembership(ctx context.Context, userID int64) (bool, error) {
+	return s.HasActiveMembershipLevel(ctx, userID, LevelPremium)
 }
 
 func (s *service) GrantFromPaidOrder(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error) {

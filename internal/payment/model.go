@@ -43,6 +43,7 @@ type Order struct {
 	EntitlementStatus string     `json:"entitlement_status"`
 	PaymentChannel    string     `json:"payment_channel"`
 	IdempotencyKey    *string    `json:"idempotency_key,omitempty"`
+	DurationDays      int        `json:"duration_days,omitempty"`
 	ExpiresAt         time.Time  `json:"expires_at"`
 	PaidAt            *time.Time `json:"paid_at,omitempty"`
 	ClosedAt          *time.Time `json:"closed_at,omitempty"`
@@ -88,6 +89,7 @@ type OrderResponse struct {
 	Subject           string     `json:"subject" example:"月度会员"`
 	Amount            int        `json:"amount" example:"990"`
 	Currency          string     `json:"currency" example:"CNY"`
+	DurationDays      int        `json:"duration_days" example:"30"`
 	OrderStatus       string     `json:"order_status" example:"awaiting_payment"`
 	PaymentStatus     string     `json:"payment_status" example:"unpaid"`
 	EntitlementStatus string     `json:"entitlement_status" example:"pending"`
@@ -146,6 +148,7 @@ func ToOrderResponse(o *Order, planCode string) OrderResponse {
 		Subject:           o.Subject,
 		Amount:            o.Amount,
 		Currency:          o.Currency,
+		DurationDays:      o.DurationDays,
 		OrderStatus:       o.OrderStatus,
 		PaymentStatus:     o.PaymentStatus,
 		EntitlementStatus: o.EntitlementStatus,

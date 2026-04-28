@@ -170,7 +170,7 @@ SMS_MAX_VERIFY_ATTEMPTS=5
 
 ### 高考分析接口
 
-高考分析接口当前为公开读接口，数据来自 PostgreSQL 的 `gaokao` schema。列表接口统一支持 `page`、`per_page` 分页，默认 `page=1`、`per_page=20`，`per_page` 最大为 `100`。
+高考分析接口需要 `Authorization: Bearer <token>`，且当前用户必须拥有有效 `premium` 会员。数据来自 PostgreSQL 的 `gaokao` schema。列表接口统一支持 `page`、`per_page` 分页，默认 `page=1`、`per_page=20`，`per_page` 最大为 `100`。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -204,19 +204,24 @@ SMS_MAX_VERIFY_ATTEMPTS=5
 
 ```bash
 # 数据概览
-curl 'http://localhost:8080/api/v1/analysis/dataset-overview?include_coverage=true&include_imports=true'
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/analysis/dataset-overview?include_coverage=true&include_imports=true'
 
 # 招生计划：山东 2023 综合类，专业名包含“计算机”
-curl 'http://localhost:8080/api/v1/analysis/enrollment-plans?province=山东&year=2023&section=综合&major_name=计算机&per_page=20'
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/analysis/enrollment-plans?province=山东&year=2023&section=综合&major_name=计算机&per_page=20'
 
 # 院校筛选：北京 985 院校，展开画像、标签、排名
-curl 'http://localhost:8080/api/v1/analysis/schools?province=北京&tags=985&include=profile,tags,rankings'
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/analysis/schools?province=北京&tags=985&include=profile,tags,rankings'
 
 # 专业录取分：河南 2024 法学
-curl 'http://localhost:8080/api/v1/analysis/admission-scores/majors?province=河南&year=2024&major_name=法学'
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/analysis/admission-scores/majors?province=河南&year=2024&major_name=法学'
 
 # 历史分数/位次匹配：仅供冲稳保参考
-curl 'http://localhost:8080/api/v1/analysis/score-match?province=山东&year=2024&score=660&rank=5000&target=major&strategy=all'
+curl -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8080/api/v1/analysis/score-match?province=山东&year=2024&score=660&rank=5000&target=major&strategy=all'
 ```
 
 ### 需认证接口

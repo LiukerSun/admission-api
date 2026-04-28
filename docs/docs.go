@@ -769,6 +769,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/admission-score-trends": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询学校或专业层级录取分年份趋势，并返回数据质量说明",
                 "produces": [
                     "application/json"
@@ -889,6 +894,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/admission-scores/majors": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询专业层级历史录取分，不要求 major_id 完整，优先匹配 school_major_name 和 major_code",
                 "produces": [
                     "application/json"
@@ -1127,6 +1137,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/admission-scores/schools": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询学校层级历史录取分，支持分数、位次、线差、学校标签、include、facets 和排序",
                 "produces": [
                     "application/json"
@@ -1341,6 +1356,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/dataset-overview": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -1404,6 +1424,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/employment-data": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "兼容旧 employment-data 路由，当前基于 major_profile 的薪资和就业方向数据返回",
                 "produces": [
                     "application/json"
@@ -1486,6 +1511,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/enrollment-plans": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询真实高考招生计划数据，支持分页和灵活筛选",
                 "produces": [
                     "application/json"
@@ -1706,6 +1736,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/facets": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "按 scope 返回可用于前端筛选面板的实时枚举值",
                 "produces": [
                     "application/json"
@@ -1807,6 +1842,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/majors": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "支持分类、学位、学制、标签、薪资、就业 JSON 文本、include、facets 和排序筛选",
                 "produces": [
                     "application/json"
@@ -1979,6 +2019,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/majors/{major_id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "返回专业基础信息，可按 include 扩展 profile、tags、schools、score_summary、plan_summary",
                 "produces": [
                     "application/json"
@@ -2062,6 +2107,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/province-batch-line-trends": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "按省份和批次返回升序年份序列",
                 "produces": [
                     "application/json"
@@ -2157,6 +2207,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/province-batch-lines": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询省份批次线数据，支持省份、年份、批次、科类、分数区间和 facets",
                 "produces": [
                     "application/json"
@@ -2293,6 +2348,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/schools": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "支持地区、标签、排名、就业率、综合评分、include、facets 和排序筛选",
                 "produces": [
                     "application/json"
@@ -2483,6 +2543,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/schools/compare": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "最多对比 10 个学校，返回结果按输入 school_ids 顺序排列",
                 "produces": [
                     "application/json"
@@ -2567,6 +2632,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/schools/{school_id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "返回学校基础信息，可按 include 扩展 profile、tags、rankings、majors、score_summary、plan_summary",
                 "produces": [
                     "application/json"
@@ -2650,6 +2720,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/schools/{school_id}/majors": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询指定学校的专业目录，可按专业名称、代码、年份、学位、门类筛选",
                 "produces": [
                     "application/json"
@@ -2781,6 +2856,11 @@ const docTemplate = `{
         },
         "/api/v1/analysis/score-match": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "基于历史录取分和位次返回冲稳保参考结果，不代表录取概率",
                 "produces": [
                     "application/json"
@@ -3597,6 +3677,12 @@ const docTemplate = `{
                 "summary": "mock 支付回调",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "非开发环境下必填的内部 mock 回调密钥",
+                        "name": "X-Mock-Callback-Secret",
+                        "in": "header"
+                    },
+                    {
                         "description": "mock 回调",
                         "name": "body",
                         "in": "body",
@@ -3627,6 +3713,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
@@ -5612,6 +5704,10 @@ const docTemplate = `{
                 "currency": {
                     "type": "string",
                     "example": "CNY"
+                },
+                "duration_days": {
+                    "type": "integer",
+                    "example": 30
                 },
                 "entitlement_status": {
                     "type": "string",

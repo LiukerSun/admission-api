@@ -35,7 +35,7 @@ type Store interface {
 	MarkAttemptSuccess(ctx context.Context, attemptID int64, channelTradeNo string, now time.Time) (*Attempt, error)
 	MarkOrderPaid(ctx context.Context, orderID int64, now time.Time) (*Order, error)
 	MarkOrderFulfilled(ctx context.Context, orderID int64) (*Order, error)
-	MarkOrderEntitlementFailed(ctx context.Context, orderID int64) error
+	MarkOrderEntitlementFailed(ctx context.Context, orderID int64) (bool, error)
 	SaveCallback(ctx context.Context, req MockCallbackRequest, payload []byte) (*Callback, bool, error)
 	MarkCallbackProcessed(ctx context.Context, callbackID int64, processErr *string) error
 	GetAttemptByChannelTrade(ctx context.Context, channel, channelTradeNo string) (*Attempt, error)
@@ -67,6 +67,7 @@ func scanOrder(row pgx.Row) (*Order, error) {
 		&o.EntitlementStatus,
 		&o.PaymentChannel,
 		&o.IdempotencyKey,
+		&o.DurationDays,
 		&o.ExpiresAt,
 		&o.PaidAt,
 		&o.ClosedAt,
@@ -129,13 +130,13 @@ func (s *store) CreateOrder(ctx context.Context, input *CreateOrderInput) (*Orde
 	o, err := scanOrder(s.pool.QueryRow(ctx, `
 		INSERT INTO payment_orders (
 			order_no, user_id, product_type, product_ref_id, subject, amount, currency,
-			order_status, payment_status, entitlement_status, payment_channel, idempotency_key, expires_at
+			order_status, payment_status, entitlement_status, payment_channel, idempotency_key, duration_days, expires_at
 		)
-		VALUES ($1, $2, 'membership', $3, $4, $5, $6, 'awaiting_payment', 'unpaid', 'pending', 'mock', $7, $8)
+		VALUES ($1, $2, 'membership', $3, $4, $5, $6, 'awaiting_payment', 'unpaid', 'pending', 'mock', $7, $8, $9)
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
-			expires_at, paid_at, closed_at, created_at, updated_at
-	`, orderNo, input.UserID, input.PlanID, subject, input.Amount, input.Currency, input.IdempotencyKey, expiresAt))
+			duration_days, expires_at, paid_at, closed_at, created_at, updated_at
+	`, orderNo, input.UserID, input.PlanID, subject, input.Amount, input.Currency, input.IdempotencyKey, input.DurationDays, expiresAt))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -166,7 +167,7 @@ func (s *store) getOrderWithPlan(ctx context.Context, where string, args ...any)
 	row := s.pool.QueryRow(ctx, `
 		SELECT po.id, po.order_no, po.user_id, po.product_type, po.product_ref_id, po.subject, po.amount, po.currency,
 			po.order_status, po.payment_status, po.entitlement_status, po.payment_channel, po.idempotency_key,
-			po.expires_at, po.paid_at, po.closed_at, po.created_at, po.updated_at, mp.plan_code
+			po.duration_days, po.expires_at, po.paid_at, po.closed_at, po.created_at, po.updated_at, mp.plan_code
 		FROM payment_orders po
 		JOIN membership_plans mp ON mp.id = po.product_ref_id
 		WHERE `+where, args...)
@@ -185,6 +186,7 @@ func (s *store) getOrderWithPlan(ctx context.Context, where string, args ...any)
 		&o.EntitlementStatus,
 		&o.PaymentChannel,
 		&o.IdempotencyKey,
+		&o.DurationDays,
 		&o.ExpiresAt,
 		&o.PaidAt,
 		&o.ClosedAt,
@@ -280,7 +282,7 @@ func (s *store) ListAdminOrders(ctx context.Context, filter AdminOrderFilter, pa
 	rows, err := s.pool.Query(ctx, `
 		SELECT po.id, po.order_no, po.user_id, po.product_type, po.product_ref_id, po.subject, po.amount, po.currency,
 			po.order_status, po.payment_status, po.entitlement_status, po.payment_channel, po.idempotency_key,
-			po.expires_at, po.paid_at, po.closed_at, po.created_at, po.updated_at
+			po.duration_days, po.expires_at, po.paid_at, po.closed_at, po.created_at, po.updated_at
 		FROM payment_orders po
 		JOIN membership_plans mp ON mp.id = po.product_ref_id
 		WHERE `+whereClause+fmt.Sprintf(`
@@ -307,7 +309,7 @@ func (s *store) CloseOrder(ctx context.Context, orderNo string) (*Order, error) 
 		  AND payment_status = 'unpaid'
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
-			expires_at, paid_at, closed_at, created_at, updated_at
+			duration_days, expires_at, paid_at, closed_at, created_at, updated_at
 	`, orderNo))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -376,7 +378,7 @@ func (s *store) MarkOrderPaid(ctx context.Context, orderID int64, now time.Time)
 		  AND payment_status IN ('unpaid', 'paid')
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
-			expires_at, paid_at, closed_at, created_at, updated_at
+			duration_days, expires_at, paid_at, closed_at, created_at, updated_at
 	`, orderID, now))
 	if err == nil {
 		return o, nil
@@ -407,7 +409,7 @@ func (s *store) MarkOrderFulfilled(ctx context.Context, orderID int64) (*Order, 
 		  AND entitlement_status IN ('pending', 'failed', 'granted')
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
-			expires_at, paid_at, closed_at, created_at, updated_at
+			duration_days, expires_at, paid_at, closed_at, created_at, updated_at
 	`, orderID))
 	if err == nil {
 		return o, nil
@@ -425,13 +427,17 @@ func (s *store) MarkOrderFulfilled(ctx context.Context, orderID int64) (*Order, 
 	return nil, err
 }
 
-func (s *store) MarkOrderEntitlementFailed(ctx context.Context, orderID int64) error {
-	_, err := s.pool.Exec(ctx, `
+func (s *store) MarkOrderEntitlementFailed(ctx context.Context, orderID int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
 		UPDATE payment_orders
 		SET entitlement_status = 'failed', updated_at = NOW()
 		WHERE id = $1
+		  AND entitlement_status <> 'granted'
 	`, orderID)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 0, nil
 }
 
 func (s *store) SaveCallback(ctx context.Context, req MockCallbackRequest, payload []byte) (*Callback, bool, error) {
@@ -542,7 +548,7 @@ func orderSelectSQL() string {
 	return `
 		SELECT id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
-			expires_at, paid_at, closed_at, created_at, updated_at
+			duration_days, expires_at, paid_at, closed_at, created_at, updated_at
 		FROM payment_orders
 	`
 }

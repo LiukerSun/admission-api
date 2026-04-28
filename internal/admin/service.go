@@ -115,6 +115,9 @@ func (s *service) UpdateRole(ctx context.Context, id int64, role string) error {
 	if err := s.userStore.UpdateRole(ctx, id, role); err != nil {
 		return fmt.Errorf("update role: %w", err)
 	}
+	if err := s.clearUserTokens(ctx, id); err != nil {
+		return fmt.Errorf("clear user tokens: %w", err)
+	}
 
 	return nil
 }
@@ -145,6 +148,8 @@ func (s *service) UpdateUser(ctx context.Context, id int64, req UpdateUserReques
 		return nil, fmt.Errorf("update user: %w", err)
 	}
 
+	clearTokens := req.Role != nil && *req.Role != currentUser.Role
+
 	// Handle status change side effects
 	if req.Status != nil {
 		if *req.Status == "banned" && currentUser.Status != "banned" {
@@ -152,14 +157,17 @@ func (s *service) UpdateUser(ctx context.Context, id int64, req UpdateUserReques
 			if err := s.redisClient.Set(ctx, middleware.UserStatusCacheKey(id), "banned", 0); err != nil {
 				return nil, fmt.Errorf("cache banned status: %w", err)
 			}
-			if err := s.clearUserTokens(ctx, id); err != nil {
-				return nil, fmt.Errorf("clear user tokens: %w", err)
-			}
+			clearTokens = true
 		} else if *req.Status == "active" && currentUser.Status == "banned" {
 			// User being unbanned
 			if err := s.redisClient.Del(ctx, middleware.UserStatusCacheKey(id)); err != nil {
 				return nil, fmt.Errorf("clear banned status cache: %w", err)
 			}
+		}
+	}
+	if clearTokens {
+		if err := s.clearUserTokens(ctx, id); err != nil {
+			return nil, fmt.Errorf("clear user tokens: %w", err)
 		}
 	}
 

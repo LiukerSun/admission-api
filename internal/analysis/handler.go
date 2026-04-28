@@ -62,6 +62,7 @@ func parseIDParam(c *gin.Context, name string) (int64, error) {
 // @Success      200 {object} web.Response{data=DatasetOverviewResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/dataset-overview [get]
 func (h *Handler) GetDatasetOverview(c *gin.Context) {
 	query, err := bindQuery[DatasetOverviewQuery](c)
@@ -90,6 +91,7 @@ func (h *Handler) GetDatasetOverview(c *gin.Context) {
 // @Success      200 {object} web.Response{data=FacetsResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/facets [get]
 func (h *Handler) GetFacets(c *gin.Context) {
 	query, err := bindQuery[FacetsQuery](c)
@@ -133,6 +135,7 @@ func (h *Handler) GetFacets(c *gin.Context) {
 // @Success      200 {object} web.Response{data=ListResponse[School]}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/schools [get]
 func (h *Handler) ListSchools(c *gin.Context) {
 	query, err := bindQuery[SchoolListQuery](c)
@@ -158,6 +161,7 @@ func (h *Handler) ListSchools(c *gin.Context) {
 // @Failure      400 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/schools/{school_id} [get]
 func (h *Handler) GetSchool(c *gin.Context) {
 	id, err := parseIDParam(c, "school_id")
@@ -188,6 +192,7 @@ func (h *Handler) GetSchool(c *gin.Context) {
 // @Success      200 {object} web.Response{data=map[string]interface{}}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/schools/compare [get]
 func (h *Handler) CompareSchools(c *gin.Context) {
 	query, err := bindQuery[SchoolCompareQuery](c)
@@ -228,6 +233,7 @@ func (h *Handler) CompareSchools(c *gin.Context) {
 // @Success      200 {object} web.Response{data=ListResponse[Major]}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/majors [get]
 func (h *Handler) ListMajors(c *gin.Context) {
 	query, err := bindQuery[MajorListQuery](c)
@@ -253,6 +259,7 @@ func (h *Handler) ListMajors(c *gin.Context) {
 // @Failure      400 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/majors/{major_id} [get]
 func (h *Handler) GetMajor(c *gin.Context) {
 	id, err := parseIDParam(c, "major_id")
@@ -291,6 +298,7 @@ func (h *Handler) GetMajor(c *gin.Context) {
 // @Failure      400 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/schools/{school_id}/majors [get]
 func (h *Handler) ListSchoolMajors(c *gin.Context) {
 	id, err := parseIDParam(c, "school_id")
@@ -344,6 +352,7 @@ func (h *Handler) ListSchoolMajors(c *gin.Context) {
 // @Success      200 {object} web.Response{data=EnrollmentPlanResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/enrollment-plans [get]
 func (h *Handler) GetEnrollmentPlans(c *gin.Context) {
 	query, err := bindQuery[EnrollmentPlanQuery](c)
@@ -378,6 +387,7 @@ func (h *Handler) GetEnrollmentPlans(c *gin.Context) {
 // @Success      200 {object} web.Response{data=ListResponse[ProvinceBatchLine]}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/province-batch-lines [get]
 func (h *Handler) ListProvinceBatchLines(c *gin.Context) {
 	query, err := bindQuery[BatchLineQuery](c)
@@ -405,6 +415,7 @@ func (h *Handler) ListProvinceBatchLines(c *gin.Context) {
 // @Success      200 {object} web.Response{data=BatchLineTrendResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/province-batch-line-trends [get]
 func (h *Handler) GetProvinceBatchLineTrend(c *gin.Context) {
 	query, err := bindQuery[BatchLineTrendQuery](c)
@@ -452,6 +463,7 @@ func (h *Handler) GetProvinceBatchLineTrend(c *gin.Context) {
 // @Success      200 {object} web.Response{data=ListResponse[SchoolAdmissionScore]}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/admission-scores/schools [get]
 func (h *Handler) ListSchoolAdmissionScores(c *gin.Context) {
 	query, err := bindQuery[ScoreListQuery](c)
@@ -503,6 +515,7 @@ func (h *Handler) ListSchoolAdmissionScores(c *gin.Context) {
 // @Success      200 {object} web.Response{data=ListResponse[MajorAdmissionScore]}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/admission-scores/majors [get]
 func (h *Handler) ListMajorAdmissionScores(c *gin.Context) {
 	query, err := bindQuery[ScoreListQuery](c)
@@ -534,6 +547,7 @@ func (h *Handler) ListMajorAdmissionScores(c *gin.Context) {
 // @Success      200 {object} web.Response{data=ScoreTrendResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/admission-score-trends [get]
 func (h *Handler) GetAdmissionScoreTrend(c *gin.Context) {
 	query, err := bindQuery[ScoreTrendQuery](c)
@@ -571,6 +585,7 @@ func (h *Handler) GetAdmissionScoreTrend(c *gin.Context) {
 // @Success      200 {object} web.Response{data=ScoreMatchResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/score-match [get]
 func (h *Handler) GetScoreMatch(c *gin.Context) {
 	query, err := bindQuery[ScoreMatchQuery](c)
@@ -596,6 +611,7 @@ func (h *Handler) GetScoreMatch(c *gin.Context) {
 // @Success      200 {object} web.Response{data=EmploymentDataResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
+// @Security     BearerAuth
 // @Router       /api/v1/analysis/employment-data [get]
 func (h *Handler) GetEmploymentData(c *gin.Context) {
 	query, err := bindQuery[EmploymentDataQuery](c)

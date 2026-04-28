@@ -102,7 +102,9 @@ func (s *service) PayMock(ctx context.Context, userID int64, orderNo string) (*O
 		return nil, fmt.Errorf("mark order paid: %w", err)
 	}
 	if err := s.fulfillMembership(ctx, paid); err != nil {
-		_ = s.store.MarkOrderEntitlementFailed(ctx, paid.ID)
+		if markErr := s.markEntitlementFailed(ctx, paid.ID); markErr != nil {
+			return nil, errors.Join(err, markErr)
+		}
 		return nil, err
 	}
 	fulfilled, _, err := s.store.GetOrderByNo(ctx, orderNo)
@@ -170,9 +172,11 @@ func (s *service) ProcessMockCallback(ctx context.Context, req MockCallbackReque
 		}
 		if existingOrder.OrderStatus == OrderStatusPaid || existingOrder.EntitlementStatus == EntitlementStatusFailed {
 			if err := s.fulfillMembership(ctx, existingOrder); err != nil {
+				if markErr := s.markEntitlementFailed(ctx, existingOrder.ID); markErr != nil {
+					err = errors.Join(err, markErr)
+				}
 				msg := err.Error()
 				processErr = &msg
-				_ = s.store.MarkOrderEntitlementFailed(ctx, existingOrder.ID)
 				_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
 				return nil, err
 			}
@@ -212,9 +216,11 @@ func (s *service) ProcessMockCallback(ctx context.Context, req MockCallbackReque
 		return nil, err
 	}
 	if err := s.fulfillMembership(ctx, paid); err != nil {
+		if markErr := s.markEntitlementFailed(ctx, paid.ID); markErr != nil {
+			err = errors.Join(err, markErr)
+		}
 		msg := err.Error()
 		processErr = &msg
-		_ = s.store.MarkOrderEntitlementFailed(ctx, paid.ID)
 		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
 		return nil, err
 	}
@@ -234,7 +240,9 @@ func (s *service) Detect(ctx context.Context, userID int64, orderNo string) (*Or
 	}
 	if o.OrderStatus == OrderStatusPaid || o.EntitlementStatus == EntitlementStatusFailed {
 		if err := s.fulfillMembership(ctx, o); err != nil {
-			_ = s.store.MarkOrderEntitlementFailed(ctx, o.ID)
+			if markErr := s.markEntitlementFailed(ctx, o.ID); markErr != nil {
+				return nil, errors.Join(err, markErr)
+			}
 			return nil, err
 		}
 		o, planCode, err = s.store.GetOrderByNo(ctx, orderNo)
@@ -298,7 +306,9 @@ func (s *service) RedetectAdmin(ctx context.Context, orderNo string) (*OrderResp
 	}
 	if o.OrderStatus == OrderStatusPaid || o.EntitlementStatus == EntitlementStatusFailed {
 		if err := s.fulfillMembership(ctx, o); err != nil {
-			_ = s.store.MarkOrderEntitlementFailed(ctx, o.ID)
+			if markErr := s.markEntitlementFailed(ctx, o.ID); markErr != nil {
+				return nil, errors.Join(err, markErr)
+			}
 			return nil, err
 		}
 		o, planCode, err = s.store.GetOrderByNo(ctx, orderNo)
@@ -319,7 +329,9 @@ func (s *service) RegrantMembership(ctx context.Context, orderNo string) (*Order
 		return nil, ErrOrderNotPayable
 	}
 	if err := s.fulfillMembership(ctx, o); err != nil {
-		_ = s.store.MarkOrderEntitlementFailed(ctx, o.ID)
+		if markErr := s.markEntitlementFailed(ctx, o.ID); markErr != nil {
+			return nil, errors.Join(err, markErr)
+		}
 		return nil, err
 	}
 	o, planCode, err := s.store.GetOrderByNo(ctx, orderNo)
@@ -334,27 +346,43 @@ func (s *service) fulfillMembership(ctx context.Context, o *Order) error {
 	if o.EntitlementStatus == EntitlementStatusGranted && o.OrderStatus == OrderStatusFulfilled {
 		return nil
 	}
-	planCode := ""
-	_, planCode, err := s.store.GetOrderByNo(ctx, o.OrderNo)
-	if err != nil {
-		return err
+	durationDays := o.DurationDays
+	if durationDays <= 0 {
+		reloaded, _, err := s.store.GetOrderByNo(ctx, o.OrderNo)
+		if err != nil {
+			return fmt.Errorf("load payment order duration snapshot: %w", err)
+		}
+		durationDays = reloaded.DurationDays
 	}
-	plan, err := s.membershipService.GetPurchasablePlan(ctx, planCode)
-	if err != nil {
-		return err
+	if durationDays <= 0 {
+		return fmt.Errorf("payment order %s missing duration snapshot", o.OrderNo)
 	}
-	_, _, _, err = s.membershipService.GrantFromPaidOrder(ctx, membership.GrantRequest{
+	_, _, _, err := s.membershipService.GrantFromPaidOrder(ctx, membership.GrantRequest{
 		UserID:         o.UserID,
 		PaymentOrderID: o.ID,
-		DurationDays:   plan.DurationDays,
+		DurationDays:   durationDays,
 		IdempotencyKey: fmt.Sprintf("payment-order:%d", o.ID),
 		Now:            time.Now(),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("grant membership from paid order: %w", err)
 	}
 	_, err = s.store.MarkOrderFulfilled(ctx, o.ID)
-	return err
+	if err != nil {
+		return fmt.Errorf("mark order fulfilled: %w", err)
+	}
+	return nil
+}
+
+func (s *service) markEntitlementFailed(ctx context.Context, orderID int64) error {
+	skipped, err := s.store.MarkOrderEntitlementFailed(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("mark order entitlement failed: %w", err)
+	}
+	if skipped {
+		return fmt.Errorf("mark order entitlement failed: order %d was already granted or not found", orderID)
+	}
+	return nil
 }
 
 func ensurePayable(o *Order, now time.Time) error {

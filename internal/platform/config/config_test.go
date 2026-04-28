@@ -20,6 +20,7 @@ func TestLoadRequiresJWTSecret(t *testing.T) {
 
 func TestLoadUsesDatabaseURLAndRedisAddrOverrides(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("ENV", "development")
 	t.Setenv("DATABASE_URL", "postgres://override")
 	t.Setenv("REDIS_ADDR", "redis.example:6379")
 	t.Setenv("MOCK_CALLBACK_SECRET", "mock-secret")
@@ -34,6 +35,7 @@ func TestLoadUsesDatabaseURLAndRedisAddrOverrides(t *testing.T) {
 
 func TestLoadBuildsFallbackURLsFromComponents(t *testing.T) {
 	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("ENV", "development")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_ADDR", "")
 	t.Setenv("POSTGRES_HOST", "postgres.internal")
@@ -48,4 +50,16 @@ func TestLoadBuildsFallbackURLsFromComponents(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "postgres://appuser:apppass@postgres.internal:5433/admission_test?sslmode=disable", cfg.DatabaseURL)
 	assert.Equal(t, "localhost:6381", cfg.RedisAddr)
+}
+
+func TestLoadRejectsDefaultJWTSecretInProduction(t *testing.T) {
+	t.Setenv("JWT_SECRET", defaultJWTSecret)
+	t.Setenv("ENV", "production")
+	t.Setenv("DATABASE_URL", "postgres://db")
+
+	cfg, err := Load()
+
+	require.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "JWT_SECRET must be changed in production")
 }

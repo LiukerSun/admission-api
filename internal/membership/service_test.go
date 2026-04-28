@@ -40,6 +40,11 @@ func (m *mockStore) HasActiveMembership(ctx context.Context, userID int64, now t
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *mockStore) HasActiveMembershipLevel(ctx context.Context, userID int64, level string, now time.Time) (bool, error) {
+	args := m.Called(ctx, userID, level, now)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockStore) GrantMembership(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error) {
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
@@ -134,6 +139,18 @@ func TestHasActiveMembershipDelegatesToStore(t *testing.T) {
 	store.On("HasActiveMembership", mock.Anything, int64(7), mock.AnythingOfType("time.Time")).Return(true, nil)
 
 	active, err := svc.HasActiveMembership(context.Background(), 7)
+
+	require.NoError(t, err)
+	assert.True(t, active)
+}
+
+func TestHasActivePremiumMembershipDelegatesToPremiumLevel(t *testing.T) {
+	store := new(mockStore)
+	svc := NewService(store)
+
+	store.On("HasActiveMembershipLevel", mock.Anything, int64(7), LevelPremium, mock.AnythingOfType("time.Time")).Return(true, nil)
+
+	active, err := svc.HasActivePremiumMembership(context.Background(), 7)
 
 	require.NoError(t, err)
 	assert.True(t, active)

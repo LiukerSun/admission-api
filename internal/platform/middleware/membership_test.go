@@ -13,11 +13,20 @@ import (
 
 type mockMembershipChecker struct {
 	active bool
+	level  string
 	err    error
 }
 
 func (m mockMembershipChecker) HasActiveMembership(ctx context.Context, userID int64) (bool, error) {
 	return m.active, m.err
+}
+
+func (m mockMembershipChecker) HasActiveMembershipLevel(ctx context.Context, userID int64, level string) (bool, error) {
+	return m.active && m.level == level, m.err
+}
+
+func (m mockMembershipChecker) HasActivePremiumMembership(ctx context.Context, userID int64) (bool, error) {
+	return m.active && m.level == "premium", m.err
 }
 
 func TestRequireActiveMembershipAllowsActiveMember(t *testing.T) {
@@ -55,4 +64,41 @@ func TestRequireActiveMembershipRejectsExpiredMember(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), "active membership required")
+}
+
+func TestRequireActivePremiumMembershipRejectsNonPremiumMember(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(ContextUserIDKey, int64(1))
+		c.Next()
+	})
+	r.GET("/premium", RequireActivePremiumMembership(mockMembershipChecker{active: true, level: "basic"}), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/premium", http.NoBody)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "active premium membership required")
+}
+
+func TestRequireActivePremiumMembershipAllowsPremiumMember(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(ContextUserIDKey, int64(1))
+		c.Next()
+	})
+	r.GET("/premium", RequireActivePremiumMembership(mockMembershipChecker{active: true, level: "premium"}), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/premium", http.NoBody)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
 }

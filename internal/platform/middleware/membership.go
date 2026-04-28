@@ -11,7 +11,33 @@ type ActiveMembershipChecker interface {
 	HasActiveMembership(ctx context.Context, userID int64) (bool, error)
 }
 
+type MembershipLevelChecker interface {
+	HasActiveMembershipLevel(ctx context.Context, userID int64, level string) (bool, error)
+}
+
+type PremiumMembershipChecker interface {
+	HasActivePremiumMembership(ctx context.Context, userID int64) (bool, error)
+}
+
 func RequireActiveMembership(checker ActiveMembershipChecker) gin.HandlerFunc {
+	return requireMembership(func(ctx context.Context, userID int64) (bool, error) {
+		return checker.HasActiveMembership(ctx, userID)
+	}, "active membership required")
+}
+
+func RequireActiveMembershipLevel(checker MembershipLevelChecker, level string) gin.HandlerFunc {
+	return requireMembership(func(ctx context.Context, userID int64) (bool, error) {
+		return checker.HasActiveMembershipLevel(ctx, userID, level)
+	}, "active "+level+" membership required")
+}
+
+func RequireActivePremiumMembership(checker PremiumMembershipChecker) gin.HandlerFunc {
+	return requireMembership(func(ctx context.Context, userID int64) (bool, error) {
+		return checker.HasActivePremiumMembership(ctx, userID)
+	}, "active premium membership required")
+}
+
+func requireMembership(check func(context.Context, int64) (bool, error), deniedMessage string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userIDRaw, exists := c.Get(ContextUserIDKey)
 		if !exists {
@@ -27,14 +53,14 @@ func RequireActiveMembership(checker ActiveMembershipChecker) gin.HandlerFunc {
 			return
 		}
 
-		active, err := checker.HasActiveMembership(c.Request.Context(), userID)
+		active, err := check(c.Request.Context(), userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 5000, "message": "membership check failed"})
 			c.Abort()
 			return
 		}
 		if !active {
-			c.JSON(http.StatusForbidden, gin.H{"code": 1003, "message": "active membership required"})
+			c.JSON(http.StatusForbidden, gin.H{"code": 1003, "message": deniedMessage})
 			c.Abort()
 			return
 		}
