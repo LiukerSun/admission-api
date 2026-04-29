@@ -35,12 +35,12 @@ import (
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
+	"admission-api/internal/planner"
 	"admission-api/internal/platform/config"
 	"admission-api/internal/platform/db"
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
-	"admission-api/internal/planner"
 	"admission-api/internal/user"
 )
 
@@ -148,6 +148,23 @@ func run() error {
 	activityLogHandler := candidate.NewActivityLogHandler(activityLogService)
 	activityLogConsumer := candidate.NewActivityLogConsumer(activityLogStore, redisClient.RDB())
 
+	// Initialize candidate profile module
+	idcardCipher, err := candidate.NewIDCardCipher(cfg.CandidateIDCardMasterKey)
+	if err != nil {
+		return fmt.Errorf("failed to initialize candidate idcard cipher: %w", err)
+	}
+	candidateProfileStore := candidate.NewProfileStore(database.Pool())
+	candidateProfileService := candidate.NewProfileService(
+		candidateProfileStore,
+		bindingStore,
+		userStore,
+		idcardCipher,
+		activityLogService,
+		redisClient.RDB(),
+		cfg,
+	)
+	candidateProfileHandler := candidate.NewProfileHandler(candidateProfileService)
+
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -215,6 +232,17 @@ func run() error {
 
 		// candidate activity log routes
 		authorized.GET("/me/activities", activityLogHandler.GetMyActivities)
+
+		// candidate profile routes (M1)
+		authorized.GET("/candidate/profiles", candidateProfileHandler.GetMyProfiles)
+		authorized.POST("/candidate/profiles", candidateProfileHandler.CreateProfile)
+		authorized.GET("/candidate/profiles/:id", candidateProfileHandler.GetProfile)
+		authorized.PUT("/candidate/profiles/:id", candidateProfileHandler.UpdateProfile)
+		authorized.DELETE("/candidate/profiles/:id", candidateProfileHandler.DeleteProfile)
+		authorized.POST("/candidate/profiles/lookup/idcard", candidateProfileHandler.LookupByIDCard)
+		authorized.POST("/candidate/profiles/lookup/phone", candidateProfileHandler.LookupByPhone)
+		authorized.POST("/candidate/profiles/lookup/code", candidateProfileHandler.LookupByCode)
+		authorized.POST("/candidate/profiles/:id/invite-code", candidateProfileHandler.GenerateInviteCode)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireRole("admin"))
