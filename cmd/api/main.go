@@ -144,7 +144,7 @@ func run() error {
 
 	// Initialize candidate activity log module
 	activityLogStore := candidate.NewActivityLogStore(database.Pool())
-	activityLogService := candidate.NewActivityLogService(activityLogStore, redisClient.RDB())
+	activityLogService := candidate.NewActivityLogService(activityLogStore, redisClient.RDB(), cfg.ActivityLogEnabled)
 	activityLogHandler := candidate.NewActivityLogHandler(activityLogService)
 	activityLogConsumer := candidate.NewActivityLogConsumer(activityLogStore, redisClient.RDB())
 

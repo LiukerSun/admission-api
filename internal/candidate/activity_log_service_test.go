@@ -61,7 +61,7 @@ func setupMiniredis(t *testing.T) *redis.Client {
 func TestActivityLogService_LogActivity(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	input := CreateActivityInput{
 		UserID:       1,
@@ -78,7 +78,7 @@ func TestActivityLogService_LogActivity(t *testing.T) {
 func TestActivityLogService_ListActivities(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	store.On("List", mock.Anything, ActivityFilter{ActivityType: "view_school"}, 1, 20).Return(
 		[]*ActivityLog{
@@ -97,7 +97,7 @@ func TestActivityLogService_ListActivities(t *testing.T) {
 func TestActivityLogService_GetMyActivities(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	store.On("List", mock.Anything, ActivityFilter{UserID: 1}, 1, 20).Return(
 		[]*ActivityLog{
@@ -115,7 +115,7 @@ func TestActivityLogService_GetMyActivities(t *testing.T) {
 func TestActivityLogService_GetStats(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	store.On("GetStats", mock.Anything, "school", int64(123)).Return(int64(42), nil)
 
@@ -129,7 +129,7 @@ func TestActivityLogService_GetStats(t *testing.T) {
 func TestActivityLogService_GetStats_InvalidParams(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	_, err := svc.GetStats(context.Background(), "", 123)
 	assert.Error(t, err)
@@ -141,7 +141,7 @@ func TestActivityLogService_GetStats_InvalidParams(t *testing.T) {
 func TestActivityLogService_DeleteByIDs(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	store.On("DeleteByIDs", mock.Anything, []int64{1, 2, 3}).Return(int64(3), nil)
 
@@ -153,7 +153,7 @@ func TestActivityLogService_DeleteByIDs(t *testing.T) {
 func TestActivityLogService_DeleteByIDs_Empty(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	_, err := svc.DeleteByIDs(context.Background(), []int64{})
 	assert.Error(t, err)
@@ -165,7 +165,7 @@ func TestActivityLogService_DeleteByIDs_Empty(t *testing.T) {
 func TestActivityLogService_DeleteBefore(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	before := time.Now().Add(-24 * time.Hour)
 	store.On("DeleteBefore", mock.Anything, before).Return(int64(100), nil)
@@ -178,7 +178,7 @@ func TestActivityLogService_DeleteBefore(t *testing.T) {
 func TestActivityLogService_DeleteBefore_ZeroTime(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
-	svc := NewActivityLogService(store, rdb)
+	svc := NewActivityLogService(store, rdb, true)
 
 	_, err := svc.DeleteBefore(context.Background(), time.Time{})
 	assert.Error(t, err)

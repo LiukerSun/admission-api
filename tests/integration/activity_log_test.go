@@ -175,7 +175,7 @@ func newActivityLogIntegrationRouter(t *testing.T, database *db.DB, redisClient 
 	}
 
 	activityLogStore := candidate.NewActivityLogStore(database.Pool())
-	activityLogService := candidate.NewActivityLogService(activityLogStore, redisClient.RDB())
+	activityLogService := candidate.NewActivityLogService(activityLogStore, redisClient.RDB(), true)
 	activityLogHandler := candidate.NewActivityLogHandler(activityLogService)
 
 	userStore := userStoreForActivityLog(database)
@@ -286,7 +286,7 @@ func TestActivityLogConsumer(t *testing.T) {
 	_ = rdb.Del(ctx, "activity_log:queue").Err()
 
 	store := candidate.NewActivityLogStore(database.Pool())
-	service := candidate.NewActivityLogService(store, rdb)
+	service := candidate.NewActivityLogService(store, rdb, true)
 	consumer := candidate.NewActivityLogConsumer(store, rdb)
 
 	// Log two activities via service (pushes to Redis)

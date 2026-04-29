@@ -364,7 +364,7 @@ func newCandidateProfileRouter(t *testing.T, database *db.DB, redisClient *redis
 	userStore := user.NewStore(database.Pool())
 	bindingStore := user.NewBindingStore(database.Pool())
 	activityStore := candidate.NewActivityLogStore(database.Pool())
-	activityService := candidate.NewActivityLogService(activityStore, redisClient.RDB())
+	activityService := candidate.NewActivityLogService(activityStore, redisClient.RDB(), true)
 
 	profileStore := candidate.NewProfileStore(database.Pool())
 	profileService := candidate.NewProfileService(

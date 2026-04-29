@@ -30,6 +30,7 @@ type Config struct {
 
 	CandidateIDCardMasterKey  string
 	CandidateBindCodeTTLHours int
+	ActivityLogEnabled        bool
 }
 
 // Load reads configuration from environment variables.
@@ -58,6 +59,7 @@ func Load() (*Config, error) {
 
 		CandidateIDCardMasterKey:  getEnv("CANDIDATE_IDCARD_MASTER_KEY", ""),
 		CandidateBindCodeTTLHours: getIntEnv("CANDIDATE_BIND_CODE_TTL_HOURS", 24),
+		ActivityLogEnabled:        getBoolEnv("ACTIVITY_LOG_ENABLED", true),
 	}
 
 	if cfg.JWTSecret == "" {
@@ -98,6 +100,15 @@ func getIntEnv(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func getBoolEnv(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return fallback

@@ -22,18 +22,22 @@ type ActivityLogService interface {
 }
 
 type activityLogService struct {
-	store ActivityLogStore
-	rdb   *redis.Client
+	store   ActivityLogStore
+	rdb     *redis.Client
+	enabled bool
 }
 
 // NewActivityLogService creates a new activity log service.
-func NewActivityLogService(store ActivityLogStore, rdb *redis.Client) ActivityLogService {
-	return &activityLogService{store: store, rdb: rdb}
+func NewActivityLogService(store ActivityLogStore, rdb *redis.Client, enabled bool) ActivityLogService {
+	return &activityLogService{store: store, rdb: rdb, enabled: enabled}
 }
 
 const activityLogQueueKey = "activity_log:queue"
 
 func (s *activityLogService) LogActivity(ctx context.Context, input CreateActivityInput) error {
+	if !s.enabled {
+		return nil
+	}
 	data, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("marshal activity log: %w", err)
