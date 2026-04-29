@@ -58,7 +58,7 @@ func setupIntentionHandlerRouter(t *testing.T, withAuth bool) (*gin.Engine, *moc
 
 	r.GET("/candidate/intentions/:profile_id", h.GetIntentions)
 	r.PUT("/candidate/intentions/:profile_id/:type", h.SaveIntentions)
-	r.DELETE("/candidate/intentions/:profile_id/:type", h.ClearIntentions)
+	r.DELETE("/candidate/intentions/by_profile_id/:profile_id/:type", h.ClearIntentions)
 	r.DELETE("/candidate/intentions/:id", h.RemoveIntention)
 
 	return r, svc
