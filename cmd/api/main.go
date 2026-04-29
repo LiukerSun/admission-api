@@ -165,6 +165,16 @@ func run() error {
 	)
 	candidateProfileHandler := candidate.NewProfileHandler(candidateProfileService)
 
+	// Initialize candidate intention module
+	intentionStore := candidate.NewIntentionStore(database.Pool())
+	intentionService := candidate.NewIntentionService(
+		intentionStore,
+		candidateProfileStore,
+		bindingStore,
+		activityLogService,
+	)
+	intentionHandler := candidate.NewIntentionHandler(intentionService)
+
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -243,6 +253,12 @@ func run() error {
 		authorized.POST("/candidate/profiles/lookup/phone", candidateProfileHandler.LookupByPhone)
 		authorized.POST("/candidate/profiles/lookup/code", candidateProfileHandler.LookupByCode)
 		authorized.POST("/candidate/profiles/:id/invite-code", candidateProfileHandler.GenerateInviteCode)
+
+		// candidate intention routes
+		authorized.GET("/candidate/intentions/:profile_id", intentionHandler.GetIntentions)
+		authorized.PUT("/candidate/intentions/:profile_id/:type", intentionHandler.SaveIntentions)
+		authorized.DELETE("/candidate/intentions/by_profile_id/:profile_id/:type", intentionHandler.ClearIntentions)
+		authorized.DELETE("/candidate/intentions/:id", intentionHandler.RemoveIntention)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireRole("admin"))
