@@ -175,6 +175,18 @@ func run() error {
 	)
 	intentionHandler := candidate.NewIntentionHandler(intentionService)
 
+	// Initialize candidate exam record module
+	examRecordStore := candidate.NewExamRecordStore(database.Pool())
+	scoreHistoryStore := candidate.NewScoreHistoryStore(database.Pool())
+	examRecordService := candidate.NewExamRecordService(
+		examRecordStore,
+		scoreHistoryStore,
+		candidateProfileStore,
+		bindingStore,
+		activityLogService,
+	)
+	examRecordHandler := candidate.NewExamRecordHandler(examRecordService)
+
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -259,6 +271,14 @@ func run() error {
 		authorized.PUT("/candidate/intentions/:profile_id/:type", intentionHandler.SaveIntentions)
 		authorized.DELETE("/candidate/intentions/by_profile_id/:profile_id/:type", intentionHandler.ClearIntentions)
 		authorized.DELETE("/candidate/intentions/:id", intentionHandler.RemoveIntention)
+
+		// candidate exam record routes
+		authorized.GET("/candidate/exam-records/by_profile_id/:profile_id", examRecordHandler.ListByProfile)
+		authorized.POST("/candidate/exam-records/by_profile_id/:profile_id", examRecordHandler.Create)
+		authorized.GET("/candidate/exam-records/:id", examRecordHandler.GetByID)
+		authorized.PUT("/candidate/exam-records/:id", examRecordHandler.Update)
+		authorized.DELETE("/candidate/exam-records/:id", examRecordHandler.Void)
+		authorized.GET("/candidate/exam-records/:id/score-histories", examRecordHandler.ListScoreHistories)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireRole("admin"))
