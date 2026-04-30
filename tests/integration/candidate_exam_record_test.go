@@ -511,8 +511,15 @@ func resetCandidateExamRecordUsers(t *testing.T, env *candidateExamRecordTestEnv
 	t.Helper()
 	pool := env.database.Pool()
 
-	// Delete score histories first (foreign key to exam records)
+	_ = env.redis.RDB().Del(env.ctx, "activity_log:queue").Err()
+
 	_, err := pool.Exec(env.ctx, `
+		DELETE FROM candidate_activity_logs
+		WHERE user_id IN (SELECT id FROM users WHERE email = ANY($1))
+	`, emails)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(env.ctx, `
 		DELETE FROM candidate_score_histories
 		WHERE exam_record_id IN (
 			SELECT id FROM candidate_exam_records

@@ -434,7 +434,17 @@ func resetCandidateUsers(t *testing.T, env *candidateTestEnv, emails []string) {
 	t.Helper()
 	pool := env.database.Pool()
 
+	// Clear queued activity logs to prevent async consumer from inserting
+	// logs with user_ids that are about to be deleted.
+	_ = env.redis.RDB().Del(env.ctx, "activity_log:queue").Err()
+
 	_, err := pool.Exec(env.ctx, `
+		DELETE FROM candidate_activity_logs
+		WHERE user_id IN (SELECT id FROM users WHERE email = ANY($1))
+	`, emails)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(env.ctx, `
 		DELETE FROM candidate_profiles
 		WHERE user_id IN (SELECT id FROM users WHERE email = ANY($1))
 	`, emails)

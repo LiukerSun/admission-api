@@ -329,7 +329,15 @@ func resetCandidateIntentionUsers(t *testing.T, env *candidateIntentionTestEnv, 
 	t.Helper()
 	pool := env.database.Pool()
 
+	_ = env.redis.RDB().Del(env.ctx, "activity_log:queue").Err()
+
 	_, err := pool.Exec(env.ctx, `
+		DELETE FROM candidate_activity_logs
+		WHERE user_id IN (SELECT id FROM users WHERE email = ANY($1))
+	`, emails)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(env.ctx, `
 		DELETE FROM candidate_intentions
 		WHERE profile_id IN (SELECT id FROM candidate_profiles WHERE user_id IN (SELECT id FROM users WHERE email = ANY($1)))
 	`, emails)
