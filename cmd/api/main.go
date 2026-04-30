@@ -85,7 +85,7 @@ func run() error {
 	tokenManager := redis.NewRefreshTokenManager(redisClient, jwtConfig.RefreshTTL)
 
 	userStore := user.NewStore(database.Pool())
-	userService := user.NewAuthService(userStore, tokenManager, jwtConfig)
+	userService := user.NewAuthService(userStore, tokenManager, jwtConfig, redisClient)
 	smsClient := sms.NewMockClient()
 	if cfg.AliyunSMSAccessKeyID != "" && cfg.AliyunSMSAccessKeySecret != "" && cfg.AliyunSMSSignName != "" && cfg.AliyunSMSTemplateCode != "" {
 		aliyunClient, err := sms.NewAliyunClient(&sms.AliyunConfig{
@@ -153,6 +153,8 @@ func run() error {
 		api.POST("/auth/register", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Register)
 		api.POST("/auth/login", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Login)
 		api.POST("/auth/refresh", userHandler.Refresh)
+		api.POST("/auth/forgot-password", userHandler.ForgotPassword)
+		api.POST("/auth/reset-password", userHandler.ResetPassword)
 
 		api.POST("/payment/callbacks/mock", paymentHandler.MockCallback)
 

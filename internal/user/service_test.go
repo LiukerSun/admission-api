@@ -103,7 +103,7 @@ func (m *mockStore) UpdateUser(ctx context.Context, id int64, fields UpdateUserF
 
 func TestAuthService_Register(t *testing.T) {
 	store := new(mockStore)
-	svc := NewAuthService(store, nil, nil)
+	svc := NewAuthService(store, nil, nil, nil)
 
 	store.On("Create", mock.Anything, "test@example.com", mock.AnythingOfType("string"), "user", "student").
 		Return(&User{ID: 1, Email: "test@example.com", Role: "user", UserType: "student"}, nil)
@@ -119,7 +119,7 @@ func TestAuthService_Register(t *testing.T) {
 
 func TestAuthService_Register_InvalidUserType(t *testing.T) {
 	store := new(mockStore)
-	svc := NewAuthService(store, nil, nil)
+	svc := NewAuthService(store, nil, nil, nil)
 
 	_, err := svc.Register(context.Background(), "test@example.com", "password123", "invalid")
 
@@ -128,7 +128,7 @@ func TestAuthService_Register_InvalidUserType(t *testing.T) {
 
 func TestAuthService_Me(t *testing.T) {
 	store := new(mockStore)
-	svc := NewAuthService(store, nil, nil)
+	svc := NewAuthService(store, nil, nil, nil)
 
 	store.On("GetByID", mock.Anything, int64(1)).
 		Return(&User{ID: 1, Email: "test@example.com", Role: "user", UserType: "parent"}, nil)
@@ -144,7 +144,7 @@ func TestAuthService_Me(t *testing.T) {
 func TestAuthService_ChangePassword(t *testing.T) {
 	store := new(mockStore)
 	tokenManager, _, _ := newUserTestTokenManager(t)
-	svc := NewAuthService(store, tokenManager, nil)
+	svc := NewAuthService(store, tokenManager, nil, nil)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte("oldpass123"), bcrypt.DefaultCost)
 	assert.NoError(t, err)
@@ -167,7 +167,7 @@ func TestAuthService_RefreshAllowsOnlySingleUseRotation(t *testing.T) {
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	svc := NewAuthService(nil, tokenManager, jwtConfig)
+	svc := NewAuthService(nil, tokenManager, jwtConfig, nil)
 
 	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", "parent", "ios")
 	require.NoError(t, err)
@@ -210,7 +210,7 @@ func TestAuthService_RefreshReplayExpiresWithWindow(t *testing.T) {
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	svc := NewAuthService(nil, tokenManager, jwtConfig)
+	svc := NewAuthService(nil, tokenManager, jwtConfig, nil)
 
 	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", "parent", "ios")
 	require.NoError(t, err)
@@ -240,7 +240,7 @@ func TestAuthService_ChangePasswordRevokesRefreshSessions(t *testing.T) {
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	svc := NewAuthService(store, tokenManager, jwtConfig)
+	svc := NewAuthService(store, tokenManager, jwtConfig, nil)
 
 	oldPasswordHash, err := bcrypt.GenerateFromPassword([]byte("oldpass123"), bcrypt.DefaultCost)
 	require.NoError(t, err)

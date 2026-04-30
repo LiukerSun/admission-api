@@ -35,6 +35,15 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" validate:"required,min=8,alphanum" example:"newpass123"`
 }
 
+type ForgotPasswordRequest struct {
+	Email string `json:"email" validate:"required,email" example:"user@example.com"`
+}
+
+type ResetPasswordRequest struct {
+	Token       string `json:"token" validate:"required" example:"abc123..."`
+	NewPassword string `json:"new_password" validate:"required,min=8,alphanum" example:"newpass123"`
+}
+
 type SendPhoneCodeRequest struct {
 	Phone string `json:"phone" validate:"required" example:"13800138000"`
 }
@@ -181,6 +190,70 @@ func (h *Handler) Login(c *gin.Context) {
 		RefreshToken: tokens.RefreshToken,
 		ExpiresIn:    tokens.ExpiresIn,
 	}))
+}
+
+// ForgotPassword godoc
+// @Summary      找回密码 - 发送重置链接
+// @Description  输入注册邮箱，如果邮箱存在则生成密码重置令牌（开发环境会在响应中返回 token）
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      ForgotPasswordRequest  true  "注册邮箱"
+// @Success      200   {object}  web.Response{data=map[string]string}
+// @Router       /api/v1/auth/forgot-password [post]
+func (h *Handler) ForgotPassword(c *gin.Context) {
+	var req ForgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+
+	token, err := h.service.ForgotPassword(c.Request.Context(), req.Email)
+	if err != nil {
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
+		return
+	}
+
+	resp := gin.H{"message": "如果该邮箱已注册，重置密码链接已发送至您的邮箱"}
+	if token != "" {
+		resp["token"] = token
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
+}
+
+// ResetPassword godoc
+// @Summary      重置密码
+// @Description  使用重置令牌和新密码来重置密码
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      ResetPasswordRequest  true  "重置令牌和新密码"
+// @Success      200   {object}  web.Response{data=map[string]string}
+// @Failure      400   {object}  web.Response
+// @Router       /api/v1/auth/reset-password [post]
+func (h *Handler) ResetPassword(c *gin.Context) {
+	var req ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+
+	if err := h.service.ResetPassword(c.Request.Context(), req.Token, req.NewPassword); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "重置链接无效或已过期")
+		return
+	}
+
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(gin.H{"message": "密码已重置，请重新登录"}))
 }
 
 // Refresh godoc

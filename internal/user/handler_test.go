@@ -65,6 +65,16 @@ func (m *mockService) ChangePassword(ctx context.Context, userID int64, currentP
 	return args.Error(0)
 }
 
+func (m *mockService) ForgotPassword(ctx context.Context, email string) (string, error) {
+	args := m.Called(ctx, email)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockService) ResetPassword(ctx context.Context, token, newPassword string) error {
+	args := m.Called(ctx, token, newPassword)
+	return args.Error(0)
+}
+
 type mockPhoneVerificationService struct {
 	mock.Mock
 }

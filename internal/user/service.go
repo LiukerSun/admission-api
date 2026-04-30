@@ -2,8 +2,11 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
@@ -23,6 +26,8 @@ type Service interface {
 	Refresh(ctx context.Context, refreshToken string) (*middleware.TokenPair, error)
 	Me(ctx context.Context, userID int64) (*User, error)
 	ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error
+	ForgotPassword(ctx context.Context, email string) (string, error)
+	ResetPassword(ctx context.Context, token, newPassword string) error
 }
 
 // AuthService implements Service.
@@ -30,13 +35,15 @@ type AuthService struct {
 	store        Store
 	tokenManager *redis.RefreshTokenManager
 	jwtConfig    *middleware.JWTConfig
+	rdb          *redis.Client
 }
 
-func NewAuthService(store Store, tokenManager *redis.RefreshTokenManager, jwtConfig *middleware.JWTConfig) *AuthService {
+func NewAuthService(store Store, tokenManager *redis.RefreshTokenManager, jwtConfig *middleware.JWTConfig, rdb *redis.Client) *AuthService {
 	return &AuthService{
 		store:        store,
 		tokenManager: tokenManager,
 		jwtConfig:    jwtConfig,
+		rdb:          rdb,
 	}
 }
 
@@ -152,6 +159,78 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID int64, currentP
 
 	if err := s.store.UpdatePassword(ctx, userID, string(hash)); err != nil {
 		return fmt.Errorf("update password: %w", err)
+	}
+
+	if s.tokenManager != nil {
+		if err := s.tokenManager.RevokeUserSessions(ctx, userID); err != nil {
+			return fmt.Errorf("revoke user sessions: %w", err)
+		}
+	}
+
+	return nil
+}
+
+const (
+	resetTokenTTL = 15 * time.Minute
+	resetTokenLen = 32
+	resetTokenKey = "password_reset:%s"
+)
+
+func generateResetToken() (string, error) {
+	b := make([]byte, resetTokenLen)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate reset token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) (string, error) {
+	// Always return success to prevent email enumeration.
+	u, err := s.store.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("get user by email: %w", err)
+	}
+
+	token, err := generateResetToken()
+	if err != nil {
+		return "", err
+	}
+
+	key := fmt.Sprintf(resetTokenKey, token)
+	if err := s.rdb.Set(ctx, key, u.ID, resetTokenTTL); err != nil {
+		return "", fmt.Errorf("store reset token: %w", err)
+	}
+
+	return token, nil
+}
+
+func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword string) error {
+	key := fmt.Sprintf(resetTokenKey, token)
+	userIDStr, err := s.rdb.Get(ctx, key)
+	if err != nil {
+		return ErrVerificationCodeExpired
+	}
+
+	var userID int64
+	if _, err := fmt.Sscanf(userIDStr, "%d", &userID); err != nil {
+		return ErrVerificationCodeExpired
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := s.store.UpdatePassword(ctx, userID, string(hash)); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	// Delete the token so it can't be reused.
+	if err := s.rdb.Del(ctx, key); err != nil {
+		return fmt.Errorf("delete reset token: %w", err)
 	}
 
 	if s.tokenManager != nil {
