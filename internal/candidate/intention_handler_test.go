@@ -202,6 +202,6 @@ func TestIntentionHandler_ClearIntentions_Forbidden(t *testing.T) {
 	svc.On("ClearIntentions", mock.Anything, int64(10), int64(1), "school").Return(web.NewError(web.ErrCodeForbidden, "无权访问"))
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/candidate/intentions/1/school", http.NoBody))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/candidate/intentions/by_profile_id/1/school", http.NoBody))
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
