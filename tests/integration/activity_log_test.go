@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -262,6 +263,7 @@ func TestActivityLogConsumer(t *testing.T) {
 	if os.Getenv("JWT_SECRET") == "" {
 		t.Setenv("JWT_SECRET", "integration-test-secret")
 	}
+	t.Setenv("ACTIVITY_LOG_QUEUE_KEY", "activity_log:queue:test:consumer")
 
 	ctx := context.Background()
 	cfg, err := config.Load()
@@ -283,7 +285,7 @@ func TestActivityLogConsumer(t *testing.T) {
 
 	// Clear Redis queue
 	rdb := redisClient.RDB()
-	_ = rdb.Del(ctx, "activity_log:queue").Err()
+	_ = rdb.Del(ctx, os.Getenv("ACTIVITY_LOG_QUEUE_KEY")).Err()
 
 	store := candidate.NewActivityLogStore(database.Pool())
 	service := candidate.NewActivityLogService(store, rdb)
@@ -312,8 +314,10 @@ func TestActivityLogConsumer(t *testing.T) {
 	consumerCtx, cancel := context.WithCancel(context.Background())
 	consumerDone := consumer.Start(consumerCtx)
 
-	// Consumer flush interval is 2s; wait a bit longer to ensure processing
-	time.Sleep(3 * time.Second)
+	require.Eventually(t, func() bool {
+		_, total, err := store.List(ctx, candidate.ActivityFilter{UserID: userID}, 1, 20)
+		return err == nil && total == 2
+	}, 10*time.Second, 200*time.Millisecond)
 
 	cancel()
 	select {
@@ -335,6 +339,126 @@ func TestActivityLogConsumer(t *testing.T) {
 	}
 	require.True(t, activityTypes["view_school"])
 	require.True(t, activityTypes["view_major"])
+}
+
+func TestActivityLogBatchCreate(t *testing.T) {
+	if os.Getenv("JWT_SECRET") == "" {
+		t.Setenv("JWT_SECRET", "integration-test-secret")
+	}
+
+	ctx := context.Background()
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	database, err := db.New(ctx, cfg.DatabaseURL)
+	require.NoError(t, err)
+	defer database.Close()
+
+	_, _ = database.Pool().Exec(ctx, "DELETE FROM users WHERE email = $1", "actlog-batch@example.com")
+	userID := createIntegrationUser(t, database, "actlog-batch@example.com", "student")
+
+	store := candidate.NewActivityLogStore(database.Pool())
+	err = store.BatchCreate(ctx, []*candidate.CreateActivityInput{
+		{
+			UserID:       userID,
+			ActivityType: "view_school",
+			TargetType:   "school",
+			TargetID:     999,
+			Metadata:     map[string]any{"school_name": "Test University"},
+		},
+		{
+			UserID:       userID,
+			ActivityType: "view_major",
+			TargetType:   "major",
+			TargetID:     888,
+			Metadata:     map[string]any{"major_name": "Computer Science"},
+		},
+	})
+	require.NoError(t, err)
+
+	_, total, err := store.List(ctx, candidate.ActivityFilter{UserID: userID}, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+}
+
+func TestActivityLogConsumerWithRealRedis(t *testing.T) {
+	if os.Getenv("JWT_SECRET") == "" {
+		t.Setenv("JWT_SECRET", "integration-test-secret")
+	}
+	t.Setenv("ACTIVITY_LOG_QUEUE_KEY", "activity_log:queue:test:realredis")
+
+	ctx := context.Background()
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	redisClient, err := redis.New(cfg.RedisAddr)
+	require.NoError(t, err)
+	defer redisClient.Close()
+
+	rdb := redisClient.RDB()
+	require.NoError(t, rdb.Del(ctx, os.Getenv("ACTIVITY_LOG_QUEUE_KEY")).Err())
+
+	store := new(spyActivityLogStore)
+	service := candidate.NewActivityLogService(store, rdb)
+	consumer := candidate.NewActivityLogConsumer(store, rdb)
+
+	require.NoError(t, service.LogActivity(ctx, candidate.CreateActivityInput{
+		UserID:       1,
+		ActivityType: "view_school",
+		TargetType:   "school",
+		TargetID:     999,
+	}))
+	require.NoError(t, service.LogActivity(ctx, candidate.CreateActivityInput{
+		UserID:       1,
+		ActivityType: "view_major",
+		TargetType:   "major",
+		TargetID:     888,
+	}))
+
+	consumerCtx, cancel := context.WithCancel(context.Background())
+	consumerDone := consumer.Start(consumerCtx)
+	defer func() {
+		cancel()
+		<-consumerDone
+	}()
+
+	require.Eventually(t, func() bool {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return len(store.logs) == 2
+	}, 10*time.Second, 200*time.Millisecond)
+}
+
+type spyActivityLogStore struct {
+	mu   sync.Mutex
+	logs []*candidate.CreateActivityInput
+}
+
+func (s *spyActivityLogStore) Create(ctx context.Context, input *candidate.CreateActivityInput) (*candidate.ActivityLog, error) {
+	return &candidate.ActivityLog{}, nil
+}
+
+func (s *spyActivityLogStore) BatchCreate(ctx context.Context, inputs []*candidate.CreateActivityInput) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logs = append(s.logs, inputs...)
+	return nil
+}
+
+func (s *spyActivityLogStore) List(ctx context.Context, filter candidate.ActivityFilter, page, pageSize int) ([]*candidate.ActivityLog, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *spyActivityLogStore) GetStats(ctx context.Context, targetType string, targetID int64) (int64, error) {
+	return 0, nil
+}
+
+func (s *spyActivityLogStore) DeleteByIDs(ctx context.Context, ids []int64) (int64, error) {
+	return 0, nil
+}
+
+func (s *spyActivityLogStore) DeleteBefore(ctx context.Context, before time.Time) (int64, error) {
+	return 0, nil
 }
 
 func cleanupActivityLogs(t *testing.T, database *db.DB) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"admission-api/internal/platform/web"
@@ -31,14 +32,21 @@ func NewActivityLogService(store ActivityLogStore, rdb *redis.Client) ActivityLo
 	return &activityLogService{store: store, rdb: rdb}
 }
 
-const activityLogQueueKey = "activity_log:queue"
+const defaultActivityLogQueueKey = "activity_log:queue"
+
+func activityLogQueueKey() string {
+	if key := os.Getenv("ACTIVITY_LOG_QUEUE_KEY"); key != "" {
+		return key
+	}
+	return defaultActivityLogQueueKey
+}
 
 func (s *activityLogService) LogActivity(ctx context.Context, input CreateActivityInput) error {
 	data, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("marshal activity log: %w", err)
 	}
-	if err := s.rdb.LPush(ctx, activityLogQueueKey, data).Err(); err != nil {
+	if err := s.rdb.LPush(ctx, activityLogQueueKey(), data).Err(); err != nil {
 		return fmt.Errorf("enqueue activity log: %w", err)
 	}
 	return nil
@@ -114,74 +122,59 @@ func (c *ActivityLogConsumer) Start(ctx context.Context) <-chan struct{} {
 func (c *ActivityLogConsumer) run(ctx context.Context, done chan<- struct{}) {
 	defer close(done)
 
-	logCh := make(chan *CreateActivityInput, c.batchSize*2)
-
-	// Reader goroutine: BRPOP from Redis and send to channel.
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				close(logCh)
-				return
-			default:
-			}
-
-			result, err := c.rdb.BRPop(ctx, 2*time.Second, activityLogQueueKey).Result()
-			if err != nil {
-				if err != redis.Nil {
-					// Context cancelled or other error.
-					select {
-					case <-ctx.Done():
-						close(logCh)
-						return
-					case <-time.After(500 * time.Millisecond):
-					}
-				}
-				continue
-			}
-			if len(result) < 2 {
-				continue
-			}
-
-			var input CreateActivityInput
-			if err := json.Unmarshal([]byte(result[1]), &input); err != nil {
-				continue
-			}
-
-			select {
-			case logCh <- &input:
-			case <-ctx.Done():
-				close(logCh)
-				return
-			}
-		}
-	}()
-
-	// Flusher goroutine: batch accumulate and flush to DB.
 	ticker := time.NewTicker(c.flushInterval)
 	defer ticker.Stop()
 
 	var buffer []*CreateActivityInput
+	flushBuffer := func() {
+		if len(buffer) == 0 {
+			return
+		}
+		c.flush(buffer)
+		buffer = buffer[:0]
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
-			c.flush(buffer)
+			flushBuffer()
 			return
-		case log, ok := <-logCh:
-			if !ok {
-				c.flush(buffer)
+		case <-ticker.C:
+			flushBuffer()
+			continue
+		default:
+		}
+
+		result, err := c.rdb.BRPop(ctx, time.Second, activityLogQueueKey()).Result()
+		if err != nil {
+			if ctx.Err() != nil {
+				flushBuffer()
 				return
 			}
-			buffer = append(buffer, log)
-			if len(buffer) >= c.batchSize {
-				c.flush(buffer)
-				buffer = buffer[:0]
+			if err == redis.Nil {
+				flushBuffer()
+				continue
 			}
-		case <-ticker.C:
-			if len(buffer) > 0 {
-				c.flush(buffer)
-				buffer = buffer[:0]
+			select {
+			case <-ctx.Done():
+				flushBuffer()
+				return
+			case <-time.After(500 * time.Millisecond):
 			}
+			continue
+		}
+		if len(result) < 2 {
+			continue
+		}
+
+		var input CreateActivityInput
+		if err := json.Unmarshal([]byte(result[1]), &input); err != nil {
+			continue
+		}
+
+		buffer = append(buffer, &input)
+		if len(buffer) >= c.batchSize {
+			flushBuffer()
 		}
 	}
 }

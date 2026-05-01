@@ -35,12 +35,12 @@ import (
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
+	"admission-api/internal/planner"
 	"admission-api/internal/platform/config"
 	"admission-api/internal/platform/db"
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
-	"admission-api/internal/planner"
 	"admission-api/internal/user"
 )
 
@@ -142,6 +142,11 @@ func run() error {
 	merchantService := planner.NewMerchantService(merchantStore)
 	merchantHandler := planner.NewMerchantHandler(merchantService)
 
+	// Initialize planner profile module
+	profileStore := planner.NewProfileStore(database.Pool())
+	profileService := planner.NewProfileService(profileStore, merchantStore)
+	profileHandler := planner.NewProfileHandler(profileService)
+
 	// Initialize candidate activity log module
 	activityLogStore := candidate.NewActivityLogStore(database.Pool())
 	activityLogService := candidate.NewActivityLogService(activityLogStore, redisClient.RDB())
@@ -209,10 +214,6 @@ func run() error {
 		authorized.POST("/payment/orders/:order_no/pay", paymentHandler.PayMock)
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
 
-		// planner merchant routes
-		authorized.GET("/planner/merchants", merchantHandler.ListMerchants)
-		authorized.GET("/planner/merchants/:id", merchantHandler.GetMerchant)
-
 		// candidate activity log routes
 		authorized.GET("/me/activities", activityLogHandler.GetMyActivities)
 
@@ -234,9 +235,7 @@ func run() error {
 		adminRoutes.POST("/payment/orders/:order_no/redetect", paymentHandler.AdminRedetect)
 		adminRoutes.POST("/payment/orders/:order_no/regrant-membership", paymentHandler.AdminRegrantMembership)
 
-		// planner merchant admin routes
-		adminRoutes.POST("/planner/merchants", merchantHandler.CreateMerchant)
-		adminRoutes.PUT("/planner/merchants/:id", merchantHandler.UpdateMerchant)
+		planner.RegisterRoutes(authorized, adminRoutes, merchantHandler, profileHandler)
 
 		// candidate activity log admin routes
 		adminRoutes.GET("/candidate/activities", activityLogHandler.ListActivities)

@@ -111,11 +111,11 @@ func TestProfileCRUD(t *testing.T) {
 
 	// 3. Create profile with service region inheritance (empty regions)
 	createPayload2 := map[string]interface{}{
-		"email":        "planner2@example.com",
-		"password":     "password123",
-		"real_name":    "Planner Two",
-		"merchant_id":  merchantID,
-		"status":       "active",
+		"email":       "planner2@example.com",
+		"password":    "password123",
+		"real_name":   "Planner Two",
+		"merchant_id": merchantID,
+		"status":      "active",
 	}
 	createResp2 := performProfileRequest(t, router, http.MethodPost, "/api/v1/admin/planner/profiles", createPayload2, adminToken)
 	require.Equal(t, http.StatusOK, createResp2.Code)
@@ -144,7 +144,7 @@ func TestProfileCRUD(t *testing.T) {
 	require.Equal(t, "Planner One", getProfile.RealName)
 
 	// 5. Get my profile (as planner)
-	plannerToken := issueAccessToken(t, cfg, plannerUserID, "planner", "student")
+	plannerToken := issueAccessToken(t, cfg, plannerUserID, "user", "student")
 	myResp := performProfileRequest(t, router, http.MethodGet, "/api/v1/planner/profiles/me", nil, plannerToken)
 	require.Equal(t, http.StatusOK, myResp.Code)
 
@@ -301,18 +301,9 @@ func newProfileIntegrationRouter(t *testing.T, database *db.DB, cfg *config.Conf
 	authorized := api.Group("")
 	authorized.Use(middleware.JWTMiddleware(jwtConfig))
 
-	authorized.GET("/planner/merchants", merchantHandler.ListMerchants)
-	authorized.GET("/planner/merchants/:id", merchantHandler.GetMerchant)
-	authorized.GET("/planner/profiles", profileHandler.ListProfiles)
-	authorized.GET("/planner/profiles/:id", profileHandler.GetProfile)
-	authorized.GET("/planner/profiles/me", profileHandler.GetMyProfile)
-	authorized.PUT("/planner/profiles/me", profileHandler.UpdateMyProfile)
-
 	adminRoutes := authorized.Group("/admin")
 	adminRoutes.Use(middleware.RequireRole("admin"))
-	adminRoutes.POST("/planner/merchants", merchantHandler.CreateMerchant)
-	adminRoutes.PUT("/planner/merchants/:id", merchantHandler.UpdateMerchant)
-	adminRoutes.POST("/planner/profiles", profileHandler.CreateProfile)
+	planner.RegisterRoutes(authorized, adminRoutes, merchantHandler, profileHandler)
 
 	return r
 }
@@ -340,6 +331,10 @@ func cleanupProfiles(t *testing.T, database *db.DB) {
 	ctx := context.Background()
 	_, err := database.Pool().Exec(ctx, "TRUNCATE TABLE planner_profiles RESTART IDENTITY CASCADE")
 	require.NoError(t, err)
-	_, err = database.Pool().Exec(ctx, "DELETE FROM users WHERE role = 'planner'")
+	_, err = database.Pool().Exec(ctx, "DELETE FROM users WHERE email = ANY($1)", []string{
+		"planner1@example.com",
+		"planner2@example.com",
+		"planner3@example.com",
+	})
 	require.NoError(t, err)
 }

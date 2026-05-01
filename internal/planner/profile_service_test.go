@@ -77,7 +77,7 @@ func TestProfileService_CreateProfile(t *testing.T) {
 		nil,
 	)
 	profileStore.On("EmailExists", mock.Anything, "test@example.com").Return(false, nil)
-	profileStore.On("CreateUserAndProfile", mock.Anything, "test@example.com", mock.AnythingOfType("string"), "planner", "student", mock.Anything).Return(
+	profileStore.On("CreateUserAndProfile", mock.Anything, "test@example.com", mock.AnythingOfType("string"), "user", "student", mock.Anything).Return(
 		&PlannerProfile{ID: 1, UserID: 10, RealName: "Test User", Level: "junior", Status: "active", MerchantID: ptrInt64(5), MerchantName: strPtr("Test Org")},
 		nil,
 	)
@@ -104,7 +104,7 @@ func TestProfileService_CreateProfile_ServiceRegionInheritance(t *testing.T) {
 		nil,
 	)
 	profileStore.On("EmailExists", mock.Anything, "test@example.com").Return(false, nil)
-	profileStore.On("CreateUserAndProfile", mock.Anything, "test@example.com", mock.AnythingOfType("string"), "planner", "student", mock.Anything).Return(
+	profileStore.On("CreateUserAndProfile", mock.Anything, "test@example.com", mock.AnythingOfType("string"), "user", "student", mock.Anything).Return(
 		&PlannerProfile{ID: 1, UserID: 10, RealName: "Test User", Level: "junior", Status: "active", ServiceRegion: []string{"11", "12"}, MerchantID: ptrInt64(5)},
 		nil,
 	).Run(func(args mock.Arguments) {

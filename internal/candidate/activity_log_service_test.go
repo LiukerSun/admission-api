@@ -2,6 +2,7 @@ package candidate
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockActivityLogStore struct {
@@ -75,6 +77,74 @@ func TestActivityLogService_LogActivity(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestActivityLogConsumer_FlushesQueuedLogsOnCancel(t *testing.T) {
+	rdb := setupMiniredis(t)
+	store := new(recordingActivityLogStore)
+	svc := NewActivityLogService(store, rdb)
+	consumer := NewActivityLogConsumer(store, rdb)
+	consumer.flushInterval = 50 * time.Millisecond
+
+	err := svc.LogActivity(context.Background(), CreateActivityInput{
+		UserID:       1,
+		ActivityType: "view_school",
+		TargetType:   "school",
+		TargetID:     123,
+	})
+	assert.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := consumer.Start(ctx)
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("consumer did not stop in time")
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	assert.Len(t, store.batch, 1)
+	assert.Equal(t, "view_school", store.batch[0].ActivityType)
+}
+
+func TestActivityLogConsumer_FlushesMultipleQueuedLogs(t *testing.T) {
+	rdb := setupMiniredis(t)
+	store := new(recordingActivityLogStore)
+	svc := NewActivityLogService(store, rdb)
+	consumer := NewActivityLogConsumer(store, rdb)
+	consumer.flushInterval = 50 * time.Millisecond
+
+	err := svc.LogActivity(context.Background(), CreateActivityInput{
+		UserID:       1,
+		ActivityType: "view_school",
+		TargetType:   "school",
+		TargetID:     123,
+	})
+	assert.NoError(t, err)
+	err = svc.LogActivity(context.Background(), CreateActivityInput{
+		UserID:       1,
+		ActivityType: "view_major",
+		TargetType:   "major",
+		TargetID:     456,
+	})
+	assert.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := consumer.Start(ctx)
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	require.Eventually(t, func() bool {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return len(store.batch) == 2
+	}, 3*time.Second, 25*time.Millisecond)
+}
+
 func TestActivityLogService_ListActivities(t *testing.T) {
 	rdb := setupMiniredis(t)
 	store := new(mockActivityLogStore)
@@ -92,6 +162,38 @@ func TestActivityLogService_ListActivities(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), result.Total)
 	assert.Len(t, result.Logs, 1)
+}
+
+type recordingActivityLogStore struct {
+	mu    sync.Mutex
+	batch []*CreateActivityInput
+}
+
+func (s *recordingActivityLogStore) Create(ctx context.Context, input *CreateActivityInput) (*ActivityLog, error) {
+	return &ActivityLog{}, nil
+}
+
+func (s *recordingActivityLogStore) BatchCreate(ctx context.Context, inputs []*CreateActivityInput) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.batch = append(s.batch, inputs...)
+	return nil
+}
+
+func (s *recordingActivityLogStore) List(ctx context.Context, filter ActivityFilter, page, pageSize int) ([]*ActivityLog, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *recordingActivityLogStore) GetStats(ctx context.Context, targetType string, targetID int64) (int64, error) {
+	return 0, nil
+}
+
+func (s *recordingActivityLogStore) DeleteByIDs(ctx context.Context, ids []int64) (int64, error) {
+	return 0, nil
+}
+
+func (s *recordingActivityLogStore) DeleteBefore(ctx context.Context, before time.Time) (int64, error) {
+	return 0, nil
 }
 
 func TestActivityLogService_GetMyActivities(t *testing.T) {

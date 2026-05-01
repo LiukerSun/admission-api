@@ -107,7 +107,7 @@ func (s *profileService) CreateProfile(ctx context.Context, req CreateProfileReq
 		Status:          status,
 	}
 
-	p, err := s.profileStore.CreateUserAndProfile(ctx, req.Email, string(hash), "planner", "student", input)
+	p, err := s.profileStore.CreateUserAndProfile(ctx, req.Email, string(hash), "user", "student", input)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
