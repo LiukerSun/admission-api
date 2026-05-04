@@ -36,7 +36,7 @@ COPY --from=builder /app/migration ./migration
 
 # Copy and set up entrypoint
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Expose application port
 EXPOSE 8080
