@@ -322,7 +322,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 │   │   ├── redis/           # Redis 客户端 + Token 管理
 │   │   ├── middleware/      # 中间件（JWT/CORS/限流/Recover等）
 │   │   └── web/             # 统一响应格式、错误码
-│   └── config/              # 配置结构（可合并到 platform/config）
 ├── migration/               # 数据库迁移文件
 ├── docs/                    # Swagger 自动生成文档
 ├── tests/integration/       # 集成测试
