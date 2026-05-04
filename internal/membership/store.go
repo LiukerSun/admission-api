@@ -260,10 +260,6 @@ func (s *store) GrantMembership(ctx context.Context, req GrantRequest) (*UserMem
 		return nil, nil, false, fmt.Errorf("upsert user membership: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE users SET role = 'premium', updated_at = NOW() WHERE id = $1`, req.UserID); err != nil {
-		return nil, nil, false, fmt.Errorf("sync premium role: %w", err)
-	}
-
 	if err := tx.Commit(ctx); err != nil {
 		return nil, nil, false, fmt.Errorf("commit grant membership tx: %w", err)
 	}

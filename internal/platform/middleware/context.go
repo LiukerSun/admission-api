@@ -3,6 +3,7 @@ package middleware
 const (
 	ContextUserIDKey   = "user_id"
 	ContextRoleKey     = "role"
+	ContextIsAdminKey  = "is_admin"
 	ContextUserTypeKey = "user_type"
 	ContextPlatformKey = "platform"
 )

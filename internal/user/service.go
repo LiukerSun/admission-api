@@ -72,7 +72,7 @@ func (s *AuthService) Login(ctx context.Context, email, password, platform strin
 		return nil, ErrAccountBanned
 	}
 
-	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, u.UserType, platform)
+	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, u.IsAdmin, u.UserType, platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
@@ -92,7 +92,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*middle
 	}
 
 	oldHash := middleware.HashRefreshToken(refreshToken)
-	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, claims.UserID, claims.Role, claims.UserType, claims.Platform)
+	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, claims.UserID, claims.Role, claims.IsAdmin, claims.UserType, claims.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}

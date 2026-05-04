@@ -253,8 +253,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "角色过滤 (user/premium/admin)",
+                        "description": "角色过滤 (user/premium)",
                         "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "管理员权限过滤",
+                        "name": "is_admin",
                         "in": "query"
                     },
                     {
@@ -3597,6 +3603,12 @@ const docTemplate = `{
                 "summary": "mock 支付回调",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "非开发环境下必填的内部 mock 回调密钥",
+                        "name": "X-Mock-Callback-Secret",
+                        "in": "header"
+                    },
+                    {
                         "description": "mock 回调",
                         "name": "body",
                         "in": "body",
@@ -3627,6 +3639,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
@@ -4084,8 +4102,7 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "user",
-                        "premium",
-                        "admin"
+                        "premium"
                     ],
                     "example": "premium"
                 }
@@ -4098,12 +4115,15 @@ const docTemplate = `{
                     "type": "string",
                     "example": "user@example.com"
                 },
+                "is_admin": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "role": {
                     "type": "string",
                     "enum": [
                         "user",
-                        "premium",
-                        "admin"
+                        "premium"
                     ],
                     "example": "premium"
                 },
@@ -4145,6 +4165,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 1
+                },
+                "is_admin": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "phone": {
                     "type": "string",
@@ -4209,6 +4233,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 1
+                },
+                "is_admin": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "phone": {
                     "type": "string",
@@ -5807,6 +5835,10 @@ const docTemplate = `{
                 "id": {
                     "type": "integer",
                     "example": 1
+                },
+                "is_admin": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "phone": {
                     "type": "string",

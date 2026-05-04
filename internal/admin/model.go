@@ -10,6 +10,7 @@ type UserResponse struct {
 	Phone         string    `json:"phone" example:"13800138000"`
 	PhoneVerified bool      `json:"phone_verified" example:"true"`
 	Role          string    `json:"role" example:"user"`
+	IsAdmin       bool      `json:"is_admin" example:"false"`
 	UserType      string    `json:"user_type" example:"student"`
 	Status        string    `json:"status" example:"active"`
 	CreatedAt     time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
@@ -24,6 +25,7 @@ type UserListItem struct {
 	Phone         string    `json:"phone" example:"13800138000"`
 	PhoneVerified bool      `json:"phone_verified" example:"true"`
 	Role          string    `json:"role" example:"user"`
+	IsAdmin       bool      `json:"is_admin" example:"false"`
 	UserType      string    `json:"user_type" example:"student"`
 	Status        string    `json:"status" example:"active"`
 	CreatedAt     time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
@@ -39,7 +41,7 @@ type UserListResponse struct {
 
 // UpdateRoleRequest is the request body for updating a user's role.
 type UpdateRoleRequest struct {
-	Role string `json:"role" validate:"required,oneof=user premium admin" example:"premium"`
+	Role string `json:"role" validate:"required,oneof=user premium" example:"premium"`
 }
 
 // ResetPasswordRequest is the request body for admin password reset.
@@ -51,7 +53,8 @@ type ResetPasswordRequest struct {
 type UpdateUserRequest struct {
 	Email    *string `json:"email" validate:"omitempty,email" example:"user@example.com"`
 	Username *string `json:"username" validate:"omitempty,min=1,max=50" example:"johndoe"`
-	Role     *string `json:"role" validate:"omitempty,oneof=user premium admin" example:"premium"`
+	Role     *string `json:"role" validate:"omitempty,oneof=user premium" example:"premium"`
+	IsAdmin  *bool   `json:"is_admin" example:"false"`
 	UserType *string `json:"user_type" validate:"omitempty,oneof=parent student" example:"student"`
 	Status   *string `json:"status" validate:"omitempty,oneof=active banned" example:"active"`
 }
@@ -92,5 +95,6 @@ type ListUsersFilter struct {
 	Email    string
 	Username string
 	Role     string
+	IsAdmin  *bool
 	Status   string
 }

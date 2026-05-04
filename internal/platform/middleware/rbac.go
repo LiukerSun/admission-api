@@ -7,11 +7,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Role ranking: user < premium < admin
+// Role ranking: user < premium. Administrator access is tracked separately
+// through is_admin and RequireAdmin.
 var roleRank = map[string]int{
 	"user":    1,
 	"premium": 2,
-	"admin":   3,
+}
+
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		isAdmin, exists := c.Get(ContextIsAdminKey)
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": 1002, "message": "unauthorized"})
+			c.Abort()
+			return
+		}
+
+		admin, ok := isAdmin.(bool)
+		if !ok || !admin {
+			c.JSON(http.StatusForbidden, gin.H{"code": 1003, "message": "forbidden"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
 }
 
 func RequireRole(roles ...string) gin.HandlerFunc {

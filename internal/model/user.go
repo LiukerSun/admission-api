@@ -9,6 +9,7 @@ type User struct {
 	Username     *string   `json:"username"`
 	PasswordHash string    `json:"-"`
 	Role         string    `json:"role"`
+	IsAdmin      bool      `json:"is_admin"`
 	UserType     string    `json:"user_type"`
 	Status       string    `json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -22,6 +23,7 @@ func (u *User) SafeUser() User {
 		Email:     u.Email,
 		Username:  u.Username,
 		Role:      u.Role,
+		IsAdmin:   u.IsAdmin,
 		UserType:  u.UserType,
 		Status:    u.Status,
 		CreatedAt: u.CreatedAt,

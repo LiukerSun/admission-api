@@ -51,6 +51,7 @@ type Response struct {
 	Phone         string    `json:"phone" example:"13800138000"`
 	PhoneVerified bool      `json:"phone_verified" example:"true"`
 	Role          string    `json:"role" example:"user"`
+	IsAdmin       bool      `json:"is_admin" example:"false"`
 	UserType      string    `json:"user_type" example:"parent"`
 	Status        string    `json:"status" example:"active"`
 	CreatedAt     time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
@@ -126,6 +127,7 @@ func (h *Handler) Register(c *gin.Context) {
 		Phone:         stringValue(u.Phone),
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
+		IsAdmin:       u.IsAdmin,
 		UserType:      u.UserType,
 		Status:        u.Status,
 		CreatedAt:     u.CreatedAt,
@@ -255,6 +257,7 @@ func (h *Handler) Me(c *gin.Context) {
 		Phone:         stringValue(u.Phone),
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
+		IsAdmin:       u.IsAdmin,
 		UserType:      u.UserType,
 		Status:        u.Status,
 		CreatedAt:     u.CreatedAt,

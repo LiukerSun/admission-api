@@ -202,7 +202,7 @@ func issueAccessToken(t *testing.T, cfg *config.Config, userID int64, role, user
 		RefreshTTL: time.Duration(cfg.JWTRefreshTTLHours) * time.Hour,
 	}
 
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, userID, role, userType, "web")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, userID, role, role == "admin", userType, "web")
 	require.NoError(t, err)
 	return tokens.AccessToken
 }

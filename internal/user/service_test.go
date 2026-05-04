@@ -10,6 +10,7 @@ import (
 	platformredis "admission-api/internal/platform/redis"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -169,7 +170,7 @@ func TestAuthService_RefreshAllowsOnlySingleUseRotation(t *testing.T) {
 	}
 	svc := NewAuthService(nil, tokenManager, jwtConfig)
 
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", "parent", "ios")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", false, "parent", "ios")
 	require.NoError(t, err)
 	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 7, "ios"))
 
@@ -203,6 +204,33 @@ func TestAuthService_RefreshAllowsOnlySingleUseRotation(t *testing.T) {
 	assert.Equal(t, responses[0].RefreshToken, responses[1].RefreshToken)
 }
 
+func TestAuthService_RefreshPreservesIsAdminClaim(t *testing.T) {
+	tokenManager, _, _ := newUserTestTokenManager(t)
+	jwtConfig := &middleware.JWTConfig{
+		Secret:     "test-secret",
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	}
+	svc := NewAuthService(nil, tokenManager, jwtConfig)
+
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "premium", true, "parent", "ios")
+	require.NoError(t, err)
+	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 7, "ios"))
+
+	refreshed, err := svc.Refresh(context.Background(), tokens.RefreshToken)
+	require.NoError(t, err)
+	require.NotNil(t, refreshed)
+
+	claims := &middleware.Claims{}
+	parsed, err := jwt.ParseWithClaims(refreshed.AccessToken, claims, func(token *jwt.Token) (any, error) {
+		return []byte(jwtConfig.Secret), nil
+	})
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+	assert.True(t, claims.IsAdmin)
+	assert.Equal(t, "premium", claims.Role)
+}
+
 func TestAuthService_RefreshReplayExpiresWithWindow(t *testing.T) {
 	tokenManager, client, server := newUserTestTokenManager(t)
 	jwtConfig := &middleware.JWTConfig{
@@ -212,7 +240,7 @@ func TestAuthService_RefreshReplayExpiresWithWindow(t *testing.T) {
 	}
 	svc := NewAuthService(nil, tokenManager, jwtConfig)
 
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", "parent", "ios")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", false, "parent", "ios")
 	require.NoError(t, err)
 	oldHash := middleware.HashRefreshToken(tokens.RefreshToken)
 	require.NoError(t, tokenManager.Save(context.Background(), oldHash, 7, "ios"))
@@ -244,7 +272,7 @@ func TestAuthService_ChangePasswordRevokesRefreshSessions(t *testing.T) {
 
 	oldPasswordHash, err := bcrypt.GenerateFromPassword([]byte("oldpass123"), bcrypt.DefaultCost)
 	require.NoError(t, err)
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 1, "user", "parent", "ios")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 1, "user", false, "parent", "ios")
 	require.NoError(t, err)
 	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 1, "ios"))
 

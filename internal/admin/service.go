@@ -59,6 +59,7 @@ func toUserResponse(u *user.User) *UserResponse {
 		Phone:         stringValue(u.Phone),
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
+		IsAdmin:       u.IsAdmin,
 		UserType:      u.UserType,
 		Status:        u.Status,
 		CreatedAt:     u.CreatedAt,
@@ -81,6 +82,7 @@ func (s *service) ListUsers(ctx context.Context, filter ListUsersFilter, page, p
 			Phone:         stringValue(u.Phone),
 			PhoneVerified: u.PhoneVerifiedAt != nil,
 			Role:          u.Role,
+			IsAdmin:       u.IsAdmin,
 			UserType:      u.UserType,
 			Status:        u.Status,
 			CreatedAt:     u.CreatedAt,
@@ -108,7 +110,7 @@ func (s *service) GetUser(ctx context.Context, id int64) (*UserResponse, error) 
 }
 
 func (s *service) UpdateRole(ctx context.Context, id int64, role string) error {
-	if err := s.validate.Var(role, "required,oneof=user premium admin"); err != nil {
+	if err := s.validate.Var(role, "required,oneof=user premium"); err != nil {
 		return fmt.Errorf("invalid role: %w", err)
 	}
 
@@ -137,6 +139,7 @@ func (s *service) UpdateUser(ctx context.Context, id int64, req UpdateUserReques
 		Email:    req.Email,
 		Username: req.Username,
 		Role:     req.Role,
+		IsAdmin:  req.IsAdmin,
 		UserType: req.UserType,
 		Status:   req.Status,
 	}
@@ -160,6 +163,11 @@ func (s *service) UpdateUser(ctx context.Context, id int64, req UpdateUserReques
 			if err := s.redisClient.Del(ctx, middleware.UserStatusCacheKey(id)); err != nil {
 				return nil, fmt.Errorf("clear banned status cache: %w", err)
 			}
+		}
+	}
+	if req.IsAdmin != nil && *req.IsAdmin != currentUser.IsAdmin {
+		if err := s.clearUserTokens(ctx, id); err != nil {
+			return nil, fmt.Errorf("clear user tokens after admin permission change: %w", err)
 		}
 	}
 

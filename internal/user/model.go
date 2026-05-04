@@ -11,6 +11,7 @@ type User struct {
 	PhoneVerifiedAt *time.Time `json:"phone_verified_at"`
 	PasswordHash    string     `json:"-"`
 	Role            string     `json:"role"`
+	IsAdmin         bool       `json:"is_admin"`
 	UserType        string     `json:"user_type"`
 	Status          string     `json:"status"`
 	CreatedAt       time.Time  `json:"created_at"`

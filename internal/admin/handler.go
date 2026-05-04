@@ -74,7 +74,8 @@ func (h *Handler) GetUser(c *gin.Context) {
 // @Param        page_size   query     int     false  "每页数量"   default(20)
 // @Param        email       query     string  false  "email 模糊搜索"
 // @Param        username    query     string  false  "username 模糊搜索"
-// @Param        role        query     string  false  "角色过滤 (user/premium/admin)"
+// @Param        role        query     string  false  "角色过滤 (user/premium)"
+// @Param        is_admin    query     bool    false  "管理员权限过滤"
 // @Param        status      query     string  false  "状态过滤 (active/banned)"
 // @Success      200         {object}  web.Response{data=UserListResponse}
 // @Failure      401         {object}  web.Response
@@ -89,6 +90,14 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		Username: c.Query("username"),
 		Role:     c.Query("role"),
 		Status:   c.Query("status"),
+	}
+	if raw := c.Query("is_admin"); raw != "" {
+		isAdmin, err := strconv.ParseBool(raw)
+		if err != nil {
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid is_admin")
+			return
+		}
+		filter.IsAdmin = &isAdmin
 	}
 
 	result, err := h.service.ListUsers(c.Request.Context(), filter, page, pageSize)

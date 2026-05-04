@@ -197,7 +197,7 @@ func run() error {
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
 
 		adminRoutes := authorized.Group("/admin")
-		adminRoutes.Use(middleware.RequireRole("admin"))
+		adminRoutes.Use(middleware.RequireAdmin())
 		adminRoutes.GET("/users/:id", adminHandler.GetUser)
 		adminRoutes.GET("/users", adminHandler.ListUsers)
 		adminRoutes.PUT("/users/:id", adminHandler.UpdateUser)

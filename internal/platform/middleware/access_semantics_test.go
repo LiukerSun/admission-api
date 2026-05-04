@@ -29,7 +29,7 @@ func TestPremiumRouteRejectsExpiredPremiumTokenWithoutActiveMembership(t *testin
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", "parent", "web")
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "parent", "web")
 	require.NoError(t, err)
 
 	r := gin.New()
@@ -61,7 +61,7 @@ func TestBannedUserIsDeniedEvenWithValidToken(t *testing.T) {
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", "parent", "web")
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "parent", "web")
 	require.NoError(t, err)
 
 	r := gin.New()
@@ -81,4 +81,64 @@ func TestBannedUserIsDeniedEvenWithValidToken(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Contains(t, w.Body.String(), "account has been banned")
+}
+
+func TestAdminRouteAllowsPremiumAdminToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	jwtConfig := &JWTConfig{
+		Secret:     "test-secret",
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	}
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", true, "parent", "web")
+	require.NoError(t, err)
+
+	r := gin.New()
+	r.Use(JWTMiddleware(jwtConfig))
+	r.Use(AuthStatusMiddleware(stubStatusCache{}, func(ctx context.Context, userID int64) (string, error) {
+		return "active", nil
+	}))
+	r.Use(RequireAdmin())
+	r.GET("/admin", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestAdminRouteRejectsNonAdminPremiumToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	jwtConfig := &JWTConfig{
+		Secret:     "test-secret",
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	}
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "parent", "web")
+	require.NoError(t, err)
+
+	r := gin.New()
+	r.Use(JWTMiddleware(jwtConfig))
+	r.Use(AuthStatusMiddleware(stubStatusCache{}, func(ctx context.Context, userID int64) (string, error) {
+		return "active", nil
+	}))
+	r.Use(RequireAdmin())
+	r.GET("/admin", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", http.NoBody)
+	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
 }
