@@ -44,19 +44,12 @@ func NewService(adminStore Store, userStore user.Store, tokenManager *redis.Refr
 	}
 }
 
-func stringValue(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func toUserResponse(u *user.User) *UserResponse {
 	return &UserResponse{
 		ID:            u.ID,
 		Email:         u.Email,
-		Username:      stringValue(u.Username),
-		Phone:         stringValue(u.Phone),
+		Username:      user.StringValue(u.Username),
+		Phone:         user.StringValue(u.Phone),
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
 		IsAdmin:       u.IsAdmin,
@@ -78,8 +71,8 @@ func (s *service) ListUsers(ctx context.Context, filter ListUsersFilter, page, p
 		items = append(items, &UserListItem{
 			ID:            u.ID,
 			Email:         u.Email,
-			Username:      stringValue(u.Username),
-			Phone:         stringValue(u.Phone),
+			Username:      user.StringValue(u.Username),
+			Phone:         user.StringValue(u.Phone),
 			PhoneVerified: u.PhoneVerifiedAt != nil,
 			Role:          u.Role,
 			IsAdmin:       u.IsAdmin,

@@ -62,23 +62,13 @@ func NewBindingHandler(bindingService BindingService) *BindingHandler {
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/bindings [post]
 func (h *BindingHandler) CreateBinding(c *gin.Context) {
-	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-	userID, ok := userIDRaw.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
 	}
 
-	userTypeRaw, exists := c.Get(middleware.ContextUserTypeKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-	userType, ok := userTypeRaw.(string)
+	userType, ok := middleware.GetUserType(c)
 	if !ok || userType != "parent" {
 		h.RespondError(c, http.StatusForbidden, web.ErrCodeForbidden, "only parents can create bindings")
 		return
@@ -129,23 +119,13 @@ func (h *BindingHandler) CreateBinding(c *gin.Context) {
 // @Failure      401  {object}  web.Response
 // @Router       /api/v1/bindings [get]
 func (h *BindingHandler) GetMyBindings(c *gin.Context) {
-	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-	userID, ok := userIDRaw.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
 	}
 
-	userTypeRaw, exists := c.Get(middleware.ContextUserTypeKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-	userType, ok := userTypeRaw.(string)
+	userType, ok := middleware.GetUserType(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -189,17 +169,7 @@ func (h *BindingHandler) GetMyBindings(c *gin.Context) {
 // @Failure      404  {object}  web.Response
 // @Router       /api/v1/admin/bindings/{id} [delete]
 func (h *BindingHandler) DeleteBinding(c *gin.Context) {
-	roleRaw, exists := c.Get(middleware.ContextRoleKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-	role, ok := roleRaw.(string)
-	if !ok || role != "admin" {
-		h.RespondError(c, http.StatusForbidden, web.ErrCodeForbidden, "admin access required")
-		return
-	}
-
+	// Route is already protected by RequireAdmin middleware.
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {

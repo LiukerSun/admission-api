@@ -91,13 +91,6 @@ func NewHandler(service Service, phoneVerificationService PhoneVerificationServi
 // @Failure      400   {object}  web.Response
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/auth/register [post]
-func stringValue(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func (h *Handler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -123,8 +116,8 @@ func (h *Handler) Register(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
 		ID:            u.ID,
 		Email:         u.Email,
-		Username:      stringValue(u.Username),
-		Phone:         stringValue(u.Phone),
+		Username:      StringValue(u.Username),
+		Phone:         StringValue(u.Phone),
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
 		IsAdmin:       u.IsAdmin,
@@ -232,13 +225,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 // @Failure      401  {object}  web.Response
 // @Router       /api/v1/me [get]
 func (h *Handler) Me(c *gin.Context) {
-	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-
-	userID, ok := userIDRaw.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -253,8 +240,8 @@ func (h *Handler) Me(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(Response{
 		ID:            u.ID,
 		Email:         u.Email,
-		Username:      stringValue(u.Username),
-		Phone:         stringValue(u.Phone),
+		Username:      StringValue(u.Username),
+		Phone:         StringValue(u.Phone),
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
 		IsAdmin:       u.IsAdmin,
@@ -277,13 +264,7 @@ func (h *Handler) Me(c *gin.Context) {
 // @Failure      401   {object}  web.Response
 // @Router       /api/v1/me/password [put]
 func (h *Handler) ChangePassword(c *gin.Context) {
-	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-
-	userID, ok := userIDRaw.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -331,13 +312,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/me/phone/send-code [post]
 func (h *Handler) SendPhoneVerificationCode(c *gin.Context) {
-	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-
-	userID, ok := userIDRaw.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -384,13 +359,7 @@ func (h *Handler) SendPhoneVerificationCode(c *gin.Context) {
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/me/phone/verify [post]
 func (h *Handler) VerifyPhone(c *gin.Context) {
-	userIDRaw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
-		return
-	}
-
-	userID, ok := userIDRaw.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return

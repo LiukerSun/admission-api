@@ -51,7 +51,7 @@ func NewHandler(service Service, opts HandlerOptions) *Handler {
 // @Failure      409 {object} web.Response
 // @Router       /api/v1/payment/orders [post]
 func (h *Handler) CreateOrder(c *gin.Context) {
-	userID, ok := userIDFromContext(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -84,7 +84,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 // @Failure      401 {object} web.Response
 // @Router       /api/v1/payment/orders [get]
 func (h *Handler) ListMyOrders(c *gin.Context) {
-	userID, ok := userIDFromContext(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -110,7 +110,7 @@ func (h *Handler) ListMyOrders(c *gin.Context) {
 // @Failure      404 {object} web.Response
 // @Router       /api/v1/payment/orders/{order_no} [get]
 func (h *Handler) GetMyOrder(c *gin.Context) {
-	userID, ok := userIDFromContext(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -134,7 +134,7 @@ func (h *Handler) GetMyOrder(c *gin.Context) {
 // @Failure      401 {object} web.Response
 // @Router       /api/v1/payment/orders/{order_no}/pay [post]
 func (h *Handler) PayMock(c *gin.Context) {
-	userID, ok := userIDFromContext(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -158,7 +158,7 @@ func (h *Handler) PayMock(c *gin.Context) {
 // @Failure      404 {object} web.Response
 // @Router       /api/v1/payment/orders/{order_no}/detect [post]
 func (h *Handler) Detect(c *gin.Context) {
-	userID, ok := userIDFromContext(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -288,11 +288,3 @@ func (h *Handler) writeError(c *gin.Context, err error) {
 	}
 }
 
-func userIDFromContext(c *gin.Context) (int64, bool) {
-	raw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		return 0, false
-	}
-	userID, ok := raw.(int64)
-	return userID, ok && userID > 0
-}

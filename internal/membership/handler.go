@@ -49,7 +49,7 @@ func (h *Handler) ListPlans(c *gin.Context) {
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/membership [get]
 func (h *Handler) GetCurrent(c *gin.Context) {
-	userID, ok := currentUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
 		return
@@ -60,15 +60,6 @@ func (h *Handler) GetCurrent(c *gin.Context) {
 		return
 	}
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
-}
-
-func currentUserID(c *gin.Context) (int64, bool) {
-	raw, exists := c.Get(middleware.ContextUserIDKey)
-	if !exists {
-		return 0, false
-	}
-	userID, ok := raw.(int64)
-	return userID, ok && userID > 0
 }
 
 func WritePlanError(h *web.BaseHandler, c *gin.Context, err error) bool {

@@ -2,6 +2,14 @@ package user
 
 import "time"
 
+// StringValue dereferences a string pointer, returning "" for nil.
+func StringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 // User is the domain model for a user account.
 type User struct {
 	ID              int64      `json:"id"`

@@ -176,7 +176,7 @@ func TestBindingHandler_GetMyBindings_Unauthorized(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-func TestBindingHandler_DeleteBinding_AdminSuccess(t *testing.T) {
+func TestBindingHandler_DeleteBinding_Success(t *testing.T) {
 	svc := new(mockBindingSvc)
 	h := NewBindingHandler(svc)
 
@@ -184,7 +184,6 @@ func TestBindingHandler_DeleteBinding_AdminSuccess(t *testing.T) {
 
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/bindings/10", http.NoBody)
-	c.Set(middleware.ContextRoleKey, "admin")
 	c.Params = gin.Params{{Key: "id", Value: "10"}}
 
 	h.DeleteBinding(c)
@@ -196,20 +195,6 @@ func TestBindingHandler_DeleteBinding_AdminSuccess(t *testing.T) {
 	assert.Equal(t, 0, resp.Code)
 }
 
-func TestBindingHandler_DeleteBinding_NotAdmin(t *testing.T) {
-	svc := new(mockBindingSvc)
-	h := NewBindingHandler(svc)
-
-	c, w := setupTest()
-	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/bindings/10", http.NoBody)
-	c.Set(middleware.ContextRoleKey, "user")
-	c.Params = gin.Params{{Key: "id", Value: "10"}}
-
-	h.DeleteBinding(c)
-
-	assert.Equal(t, http.StatusForbidden, w.Code)
-}
-
 func TestBindingHandler_DeleteBinding_NotFound(t *testing.T) {
 	svc := new(mockBindingSvc)
 	h := NewBindingHandler(svc)
@@ -218,7 +203,6 @@ func TestBindingHandler_DeleteBinding_NotFound(t *testing.T) {
 
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/bindings/10", http.NoBody)
-	c.Set(middleware.ContextRoleKey, "admin")
 	c.Params = gin.Params{{Key: "id", Value: "10"}}
 
 	h.DeleteBinding(c)
