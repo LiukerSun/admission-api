@@ -287,4 +287,3 @@ func (h *Handler) writeError(c *gin.Context, err error) {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
 	}
 }
-
