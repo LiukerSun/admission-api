@@ -17,16 +17,14 @@ type UpdateUserFields struct {
 	Username *string
 	Role     *string
 	IsAdmin  *bool
-	UserType *string
 	Status   *string
 }
 
 // Store defines the data access interface for users.
 type Store interface {
-	Create(ctx context.Context, email, passwordHash, role, userType string) (*User, error)
+	Create(ctx context.Context, email, passwordHash, role string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByID(ctx context.Context, id int64) (*User, error)
-	GetByEmailAndType(ctx context.Context, email, userType string) (*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByPhone(ctx context.Context, phone string) (*User, error)
 	ListUsers(ctx context.Context, filter Filter, page, pageSize int) ([]*User, int64, error)
@@ -57,7 +55,7 @@ func NewStore(pool *pgxpool.Pool) Store {
 func (s *store) scanUser(row pgx.Row) (*User, error) {
 	var u User
 	err := row.Scan(
-		&u.ID, &u.Email, &u.Username, &u.Phone, &u.PhoneVerifiedAt, &u.PasswordHash, &u.Role, &u.IsAdmin, &u.UserType, &u.Status, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.Username, &u.Phone, &u.PhoneVerifiedAt, &u.PasswordHash, &u.Role, &u.IsAdmin, &u.Status, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -65,18 +63,18 @@ func (s *store) scanUser(row pgx.Row) (*User, error) {
 	return &u, nil
 }
 
-func (s *store) Create(ctx context.Context, email, passwordHash, role, userType string) (*User, error) {
+func (s *store) Create(ctx context.Context, email, passwordHash, role string) (*User, error) {
 	if role == "" {
 		role = "user"
 	}
 
 	query := `
-		INSERT INTO users (email, password_hash, role, user_type, status)
-		VALUES ($1, $2, $3, $4, 'active')
-		RETURNING id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
+		INSERT INTO users (email, password_hash, role, status)
+		VALUES ($1, $2, $3, 'active')
+		RETURNING id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 	`
 
-	u, err := s.scanUser(s.pool.QueryRow(ctx, query, email, passwordHash, role, userType))
+	u, err := s.scanUser(s.pool.QueryRow(ctx, query, email, passwordHash, role))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -90,7 +88,7 @@ func (s *store) Create(ctx context.Context, email, passwordHash, role, userType 
 
 func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 	query := `
-		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -108,7 +106,7 @@ func (s *store) GetByEmail(ctx context.Context, email string) (*User, error) {
 
 func (s *store) GetByID(ctx context.Context, id int64) (*User, error) {
 	query := `
-		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -124,27 +122,9 @@ func (s *store) GetByID(ctx context.Context, id int64) (*User, error) {
 	return u, nil
 }
 
-func (s *store) GetByEmailAndType(ctx context.Context, email, userType string) (*User, error) {
-	query := `
-		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
-		FROM users
-		WHERE email = $1 AND user_type = $2
-	`
-
-	u, err := s.scanUser(s.pool.QueryRow(ctx, query, email, userType))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("get user by email and type: %w", err)
-	}
-
-	return u, nil
-}
-
 func (s *store) GetByUsername(ctx context.Context, username string) (*User, error) {
 	query := `
-		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 		FROM users
 		WHERE username = $1
 	`
@@ -162,7 +142,7 @@ func (s *store) GetByUsername(ctx context.Context, username string) (*User, erro
 
 func (s *store) GetByPhone(ctx context.Context, phone string) (*User, error) {
 	query := `
-		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 		FROM users
 		WHERE phone = $1
 	`
@@ -222,7 +202,7 @@ func (s *store) ListUsers(ctx context.Context, filter Filter, page, pageSize int
 
 	// Query users
 	query := fmt.Sprintf(`
-		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 		FROM users
 		WHERE %s
 		ORDER BY created_at DESC
@@ -331,11 +311,6 @@ func (s *store) UpdateUser(ctx context.Context, id int64, fields UpdateUserField
 	if fields.IsAdmin != nil {
 		setClauses = append(setClauses, fmt.Sprintf("is_admin = $%d", argIdx))
 		args = append(args, *fields.IsAdmin)
-		argIdx++
-	}
-	if fields.UserType != nil {
-		setClauses = append(setClauses, fmt.Sprintf("user_type = $%d", argIdx))
-		args = append(args, *fields.UserType)
 		argIdx++
 	}
 	if fields.Status != nil {

@@ -1,4 +1,4 @@
-# Admission API
+﻿# Admission API
 
 志愿报考分析平台后端 API。基于 Go + Gin + PostgreSQL + Redis 的模块化单体架构模板，内置用户认证、JWT 双 Token、RBAC、限流、健康检查等基础设施。
 
@@ -74,10 +74,6 @@ make run     # 生产模式：Docker Compose 全量构建并启动
 make down    # 停止所有容器（开发 + 生产）
 make logs    # 查看生产环境应用日志
 make build   # 构建 Docker 镜像
-make gaokao-import DATA_DIR=/path/to/csv-dir
-make gaokao-import-reset DATA_DIR=/path/to/csv-dir
-make gaokao-import-sample DATA_DIR=/path/to/csv-dir SAMPLE_ROWS=1000
-make gaokao-import-dev DATA_DIR=/path/to/csv-dir
 ```
 
 ---
@@ -164,60 +160,10 @@ SMS_MAX_VERIFY_ATTEMPTS=5
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | GET | `/swagger/*` | Swagger API 文档 |
-| POST | `/api/v1/auth/register` | 用户注册（需选择 `user_type`: `parent` / `student`）|
+| POST | `/api/v1/auth/register` | 用户注册（仅需邮箱和密码） |
 | POST | `/api/v1/auth/login` | 用户登录 |
 | POST | `/api/v1/auth/refresh` | 刷新 Token |
 
-### 高考分析接口
-
-高考分析接口当前为公开读接口，数据来自 PostgreSQL 的 `gaokao` schema。列表接口统一支持 `page`、`per_page` 分页，默认 `page=1`、`per_page=20`，`per_page` 最大为 `100`。
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/v1/analysis/dataset-overview` | 数据集概览，返回学校、专业、招生计划、录取分、省控线等数据量和覆盖范围 |
-| GET | `/api/v1/analysis/facets` | 获取筛选项元数据，支持 `schools`、`majors`、`enrollment_plans`、`school_scores`、`major_scores`、`batch_lines` 等 scope |
-| GET | `/api/v1/analysis/schools` | 院校列表，支持省份、城市、985/211/双一流等标签、排名、就业率、综合评分等筛选 |
-| GET | `/api/v1/analysis/schools/compare` | 院校对比，最多支持 `10` 个 `school_ids` |
-| GET | `/api/v1/analysis/schools/:school_id` | 院校详情，支持 `include=profile,tags,rankings,score_summary,plan_summary` |
-| GET | `/api/v1/analysis/schools/:school_id/majors` | 查询学校开设专业，支持专业关键词、专业代码、年份等筛选 |
-| GET | `/api/v1/analysis/majors` | 专业列表，支持专业名、专业代码、门类、专业类、学位、学制、薪资、就业方向等筛选 |
-| GET | `/api/v1/analysis/majors/:major_id` | 专业详情，支持 `include=profile,tags,schools,score_summary,plan_summary` |
-| GET | `/api/v1/analysis/enrollment-plans` | 招生计划查询，已从 mock 数据切换为 `gaokao.enrollment_plan_fact` 真实数据 |
-| GET | `/api/v1/analysis/province-batch-lines` | 省控线/批次线查询，支持省份、年份、批次、类别、科类、分数范围筛选 |
-| GET | `/api/v1/analysis/province-batch-line-trends` | 省控线趋势，按省份、批次、类别/科类返回多年序列 |
-| GET | `/api/v1/analysis/admission-scores/schools` | 院校录取分查询，支持省份、年份、学校、批次、科类、分数、位次、线差等筛选 |
-| GET | `/api/v1/analysis/admission-scores/majors` | 专业录取分查询，优先按 `school_major_name` 匹配专业，兼容 `major_id` 缺失的数据 |
-| GET | `/api/v1/analysis/admission-score-trends` | 院校/专业录取分趋势，支持 `level=school` 或 `level=major` |
-| GET | `/api/v1/analysis/score-match` | 基于历史分数/位次的冲稳保参考匹配，不代表录取概率 |
-| GET | `/api/v1/analysis/employment-data` | 兼容旧就业数据路径，当前基于专业画像薪资和就业方向数据返回 |
-
-常用筛选约定：
-
-- 多选参数使用逗号分隔，例如 `province=北京,山东`、`year=2023,2024`、`school_tags=985,211`
-- 范围参数使用 `_min` / `_max`，例如 `score_min=600&score_max=680`、`rank_max=10000`
-- 排序参数使用 `sort`，前缀 `-` 表示倒序，例如 `sort=-lowest_score`
-- 关联展开使用 `include`，例如 `include=profile,tags,rankings`
-- 分面筛选项使用 `/api/v1/analysis/facets`，例如 `scope=enrollment_plans&fields=province,year,batch,section`
-- 录取分接口默认把来源中代表未知值的 `0` 平均分/最高分转为 `null`，调试时可传 `include_zero_scores=true`
-
-示例：
-
-```bash
-# 数据概览
-curl 'http://localhost:8080/api/v1/analysis/dataset-overview?include_coverage=true&include_imports=true'
-
-# 招生计划：山东 2023 综合类，专业名包含“计算机”
-curl 'http://localhost:8080/api/v1/analysis/enrollment-plans?province=山东&year=2023&section=综合&major_name=计算机&per_page=20'
-
-# 院校筛选：北京 985 院校，展开画像、标签、排名
-curl 'http://localhost:8080/api/v1/analysis/schools?province=北京&tags=985&include=profile,tags,rankings'
-
-# 专业录取分：河南 2024 法学
-curl 'http://localhost:8080/api/v1/analysis/admission-scores/majors?province=河南&year=2024&major_name=法学'
-
-# 历史分数/位次匹配：仅供冲稳保参考
-curl 'http://localhost:8080/api/v1/analysis/score-match?province=山东&year=2024&score=660&rank=5000&target=major&strategy=all'
-```
 
 ### 需认证接口
 
@@ -227,8 +173,6 @@ curl 'http://localhost:8080/api/v1/analysis/score-match?province=山东&year=202
 | PUT | `/api/v1/me/password` | 当前用户修改自己的密码 |
 | POST | `/api/v1/me/phone/send-code` | 当前用户向手机号发送短信验证码 |
 | POST | `/api/v1/me/phone/verify` | 当前用户校验短信验证码并绑定手机号 |
-| POST | `/api/v1/bindings` | 家长发起绑定学生（仅 `user_type=parent`） |
-| GET | `/api/v1/bindings` | 查询我的绑定关系 |
 | GET | `/api/v1/membership/plans` | 获取可购买会员套餐（月卡/季卡/年卡） |
 | GET | `/api/v1/membership` | 获取当前用户会员状态与有效期 |
 | POST | `/api/v1/payment/orders` | 创建会员支付订单，支持 `idempotency_key` 幂等 |
@@ -275,14 +219,12 @@ curl -H "Authorization: Bearer $TOKEN" \
 |------|------|------|
 | GET | `/api/v1/admin/users` | 分页获取用户列表，支持按 `email`、`username`、`role`、`status` 过滤 |
 | GET | `/api/v1/admin/users/:id` | 获取单个用户详情，用于前端编辑表单回填 |
-| PUT | `/api/v1/admin/users/:id` | 修改指定用户的 `email`、`username`、`role`、`user_type`、`status` |
+| PUT | `/api/v1/admin/users/:id` | 修改指定用户的 `email`、`username`、`role`、`is_admin`、`status` |
 | PUT | `/api/v1/admin/users/:id/role` | 单独修改指定用户角色 |
 | PUT | `/api/v1/admin/users/:id/password` | 管理员重置指定用户密码，重置后用户需重新登录 |
 | POST | `/api/v1/admin/users/:id/disable` | 禁用指定用户 |
 | POST | `/api/v1/admin/users/:id/enable` | 启用指定用户 |
-| GET | `/api/v1/admin/bindings` | 分页获取所有家长-学生绑定关系 |
-| GET | `/api/v1/admin/stats` | 获取系统统计数据，包括用户总数、角色分布、绑定总数等 |
-| DELETE | `/api/v1/admin/bindings/:id` | 解除家长-学生绑定（仅 `role=admin`） |
+| GET | `/api/v1/admin/stats` | 获取系统统计数据，包括用户总数、角色分布、账号状态等 |
 | GET | `/api/v1/admin/payment/orders` | 管理员查询支付订单，支持订单号、用户、套餐、渠道、状态过滤 |
 | GET | `/api/v1/admin/payment/orders/:order_no` | 管理员查看订单详情、支付尝试和回调记录 |
 | POST | `/api/v1/admin/payment/orders/:order_no/close` | 管理员关闭未支付订单 |
@@ -379,128 +321,6 @@ go run ./cmd/api -migrate down
 
 迁移文件位于 `migration/` 目录，使用 [golang-migrate](https://github.com/golang-migrate/migrate) 管理。
 
-## 高考数据初始化与导入
-
-项目已经内置了高校分析数据库 schema 迁移和 CSV 导入器，适合把 `/Users/evan/project/db` 这类 dump 目录反复导入到新环境。
-
-### 1. 初始化数据库
-
-```bash
-make db
-```
-
-这一步会：
-
-- 启动 PostgreSQL 和 Redis
-- 执行所有 migration
-- 自动创建 `gaokao` schema 以及高校分析相关表
-
-### 2. 导入高考数据
-
-```bash
-make gaokao-import DATA_DIR=/Users/evan/project/db
-```
-
-这一步会：
-
-- 扫描你提供目录下的 CSV 文件
-- 幂等导入 `gaokao` schema
-- 重复执行时尽量使用 `ON CONFLICT` 做更新或跳过
-
-### 3. 清空后重导
-
-```bash
-make gaokao-import-reset DATA_DIR=/Users/evan/project/db
-```
-
-这一步会先清空 `gaokao` schema 下的业务表，再重新导入。适合：
-
-- 修正导入逻辑后整体重跑
-- 在新环境完整恢复数据
-- 切换到一批更新后的 CSV dump
-
-### 3.1 样本导入
-
-如果数据量太大，想先验证建库、接口和分析逻辑，可以只导入每个 CSV 的前 N 行：
-
-```bash
-make gaokao-import-sample DATA_DIR=/Users/evan/project/db SAMPLE_ROWS=1000
-```
-
-或者：
-
-```bash
-make gaokao-import-reset DATA_DIR=/Users/evan/project/db SAMPLE_ROWS=1000
-```
-
-说明：
-
-- `SAMPLE_ROWS=1000` 表示每个 CSV 只导入前 `1000` 行
-- 这是固定前 N 行，不是随机抽样，因此结果可重复
-- 很适合本地联调、接口开发、前端对接和排查导入逻辑
-
-### 3.2 开发画像导入
-
-如果你想在本地快速验证建库、导入器、接口和前端联调，可以直接使用开发画像：
-
-```bash
-make gaokao-import-dev DATA_DIR=/Users/evan/project/db
-```
-
-当前 `dev` 画像默认目标是控制在几分钟内完成，不导入全量数据：
-
-- 每个 CSV 默认最多导入 `1000` 条有效样本
-- 每个 CSV 默认最多读取 `5000` 行，避免为了筛选条件扫完整个几十万行大文件
-- 默认跳过 `xgk/elective` 相关重表
-- 大而重的事实表仍会按固定条件筛选
-  - 年份：`2021`、`2023`、`2024`
-  - 省份：`11`、`12`、`21`、`35`、`37`、`41`
-
-如果你需要稍微扩大样本，可以覆盖默认值：
-
-```bash
-make gaokao-import-dev DATA_DIR=/Users/evan/project/db SAMPLE_ROWS=3000 MAX_READ_ROWS=20000
-```
-
-这样做的好处是：
-
-- 导入时间稳定可控
-- 不会误扫全量数据
-- 样本足够用于本地接口开发、页面联调和排查导入逻辑
-
-### 4. 直接运行导入器
-
-如果你想单独调试导入器，也可以直接运行：
-
-```bash
-go run ./cmd/importer -data-dir /Users/evan/project/db
-go run ./cmd/importer -data-dir /Users/evan/project/db -truncate
-go run ./cmd/importer -data-dir /Users/evan/project/db -truncate -sample-rows 1000
-go run ./cmd/importer -data-dir /Users/evan/project/db -truncate -profile dev -skip-xgk -sample-rows 1000 -max-read-rows 5000
-```
-
-可选参数：
-
-- `-only base,schools,majors`：只跑指定阶段
-- `-skip-xgk`：跳过 `xgk/elective` 相关导入
-- `-sample-rows 1000`：每个 CSV 只导入前 `1000` 行
-- `-max-read-rows 5000`：每个 CSV 最多读取 `5000` 行，避免筛选样本时扫完整个大文件
-- `-profile dev`：使用开发导入画像，按固定年份和省份筛选大表
-
-### 导入器当前覆盖范围
-
-当前导入器已覆盖这些核心数据：
-
-- 省份、城市、学校、专业主数据
-- 学校档案、学校排名、专业详情
-- 学校/专业政策标签
-- 招生政策基础记录
-- 学校专业目录
-- 选科要求维度、院校专业组
-- 学校录取线、专业录取线、招生计划
-- 省控线、分数范围
-
-后续如果你增加新的 CSV 或想增强推荐分析字段，可以继续在这个导入器上扩展，而不用改手工导库流程。
 
 ### 测试
 
@@ -616,25 +436,24 @@ make run
 │  └──────────┴──────────┴──────────┴──────────┘         │
 │                       │                                  │
 │         ┌─────────────┼─────────────┐                  │
-│         ▼             ▼             ▼             ▼    │
-│    ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌────────┐│
-│    │ /health │   │ /auth/* │   │  /me    │   │/bindings│
-│    └────┬────┘   └────┬────┘   └────┬────┘   └────┬───┘│
-│         │             │             │             │       │
-│    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐   ┌────▼────┐ │
-│    │ Handler │   │ Handler │   │ Handler │   │ Binding │ │
-│    │  health │   │  auth   │   │  user   │   │ Handler │ │
-│    └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘ │
-│         │             │             │             │       │
-│    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐   ┌────▼────┐ │
-│    │ Service │   │ Service │   │ Service │   │ Binding │ │
-│    └────┬────┘   └────┬────┘   └────┬────┘   │ Service │ │
-│         │             │             │        └────┬────┘ │
-│    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐   ┌────▼────┐ │
-│    │  Store  │   │  Store  │   │  Store  │   │ Binding │ │
-│    └────┬────┘   └────┬────┘   └────┬────┘   │  Store  │ │
-│         │             │             │        └────┬────┘ │
-│         └─────────────┴─────────────┴─────────────┘       │
+│         ▼             ▼             ▼                  │
+│    ┌─────────┐   ┌─────────┐   ┌─────────┐             │
+│    │ /health │   │ /auth/* │   │  /me    │             │
+│    └────┬────┘   └────┬────┘   └────┬────┘             │
+│         │             │             │                  │
+│    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐             │
+│    │ Handler │   │ Handler │   │ Handler │             │
+│    │  health │   │  auth   │   │  user   │             │
+│    └────┬────┘   └────┬────┘   └────┬────┘             │
+│         │             │             │                  │
+│    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐             │
+│    │ Service │   │ Service │   │ Service │             │
+│    └────┬────┘   └────┬────┘   └────┬────┘             │
+│         │             │             │                  │
+│    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐             │
+│    │  Store  │   │  Store  │   │  Store  │             │
+│    └────┬────┘   └────┬────┘   └────┬────┘             │
+│         └─────────────┴─────────────┘                  │
 │                           │                               │
 │              ┌────────────┴────────────┐                 │
 │              ▼                         ▼                 │

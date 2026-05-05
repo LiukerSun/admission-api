@@ -21,7 +21,6 @@ type Service interface {
 	ResetPassword(ctx context.Context, id int64, newPassword string) error
 	DisableUser(ctx context.Context, id int64) error
 	EnableUser(ctx context.Context, id int64) error
-	ListBindings(ctx context.Context, page, pageSize int) (*BindingListResponse, error)
 	GetStats(ctx context.Context) (*StatsResponse, error)
 }
 
@@ -53,7 +52,6 @@ func toUserResponse(u *user.User) *UserResponse {
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
 		IsAdmin:       u.IsAdmin,
-		UserType:      u.UserType,
 		Status:        u.Status,
 		CreatedAt:     u.CreatedAt,
 		UpdatedAt:     u.UpdatedAt,
@@ -76,7 +74,6 @@ func (s *service) ListUsers(ctx context.Context, filter ListUsersFilter, page, p
 			PhoneVerified: u.PhoneVerifiedAt != nil,
 			Role:          u.Role,
 			IsAdmin:       u.IsAdmin,
-			UserType:      u.UserType,
 			Status:        u.Status,
 			CreatedAt:     u.CreatedAt,
 		})
@@ -133,7 +130,6 @@ func (s *service) UpdateUser(ctx context.Context, id int64, req UpdateUserReques
 		Username: req.Username,
 		Role:     req.Role,
 		IsAdmin:  req.IsAdmin,
-		UserType: req.UserType,
 		Status:   req.Status,
 	}
 
@@ -243,20 +239,6 @@ func (s *service) EnableUser(ctx context.Context, id int64) error {
 	}
 
 	return nil
-}
-
-func (s *service) ListBindings(ctx context.Context, page, pageSize int) (*BindingListResponse, error) {
-	bindings, total, err := s.adminStore.ListBindings(ctx, page, pageSize)
-	if err != nil {
-		return nil, fmt.Errorf("list bindings: %w", err)
-	}
-
-	return &BindingListResponse{
-		Bindings: bindings,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
-	}, nil
 }
 
 func (s *service) GetStats(ctx context.Context) (*StatsResponse, error) {

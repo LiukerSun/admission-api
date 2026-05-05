@@ -28,11 +28,6 @@ func (m *mockAdminStore) ListUsers(ctx context.Context, filter ListUsersFilter, 
 	return args.Get(0).([]*user.User), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *mockAdminStore) ListBindings(ctx context.Context, page, pageSize int) ([]*BindingListItem, int64, error) {
-	args := m.Called(ctx, page, pageSize)
-	return args.Get(0).([]*BindingListItem), args.Get(1).(int64), args.Error(2)
-}
-
 func (m *mockAdminStore) GetStats(ctx context.Context) (*StatsResponse, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
@@ -41,8 +36,8 @@ func (m *mockAdminStore) GetStats(ctx context.Context) (*StatsResponse, error) {
 	return args.Get(0).(*StatsResponse), args.Error(1)
 }
 
-func (m *mockUserStore) Create(ctx context.Context, email, passwordHash, role, userType string) (*user.User, error) {
-	args := m.Called(ctx, email, passwordHash, role, userType)
+func (m *mockUserStore) Create(ctx context.Context, email, passwordHash, role string) (*user.User, error) {
+	args := m.Called(ctx, email, passwordHash, role)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -59,14 +54,6 @@ func (m *mockUserStore) GetByEmail(ctx context.Context, email string) (*user.Use
 
 func (m *mockUserStore) GetByID(ctx context.Context, id int64) (*user.User, error) {
 	args := m.Called(ctx, id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*user.User), args.Error(1)
-}
-
-func (m *mockUserStore) GetByEmailAndType(ctx context.Context, email, userType string) (*user.User, error) {
-	args := m.Called(ctx, email, userType)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

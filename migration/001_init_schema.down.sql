@@ -4,3 +4,4 @@ DROP TABLE IF EXISTS payment_callbacks;
 DROP TABLE IF EXISTS payment_attempts;
 DROP TABLE IF EXISTS payment_orders;
 DROP TABLE IF EXISTS membership_plans;
+DROP TABLE IF EXISTS users;

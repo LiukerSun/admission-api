@@ -73,14 +73,6 @@ func (m *mockService) EnableUser(ctx context.Context, id int64) error {
 	return args.Error(0)
 }
 
-func (m *mockService) ListBindings(ctx context.Context, page, pageSize int) (*BindingListResponse, error) {
-	args := m.Called(ctx, page, pageSize)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*BindingListResponse), args.Error(1)
-}
-
 func (m *mockService) GetStats(ctx context.Context) (*StatsResponse, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
@@ -95,12 +87,10 @@ func TestHandler_GetUser(t *testing.T) {
 
 	updatedAt := time.Now().UTC()
 	svc.On("GetUser", mock.Anything, int64(7)).Return(&UserResponse{
-		ID:        7,
-		Email:     "user@example.com",
-		Username:  "alice",
-		Role:      "user",
-		UserType:  "student",
-		Status:    "active",
+		ID:       7,
+		Email:    "user@example.com",
+		Username: "alice",
+		Role:     "user", Status: "active",
 		CreatedAt: updatedAt,
 		UpdatedAt: updatedAt,
 	}, nil)
@@ -140,25 +130,20 @@ func TestHandler_UpdateUser(t *testing.T) {
 	email := "updated@example.com"
 	username := "alice"
 	role := "premium"
-	userType := "student"
 	status := "active"
 	now := time.Now().UTC()
 
 	req := UpdateUserRequest{
 		Email:    &email,
 		Username: &username,
-		Role:     &role,
-		UserType: &userType,
-		Status:   &status,
+		Role:     &role, Status: &status,
 	}
 
 	svc.On("UpdateUser", mock.Anything, int64(7), req).Return(&UserResponse{
-		ID:        7,
-		Email:     email,
-		Username:  username,
-		Role:      role,
-		UserType:  userType,
-		Status:    status,
+		ID:       7,
+		Email:    email,
+		Username: username,
+		Role:     role, Status: status,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil)

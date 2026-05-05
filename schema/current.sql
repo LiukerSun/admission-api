@@ -1,4 +1,31 @@
-CREATE TABLE IF NOT EXISTS membership_plans (
+-- Current application schema after removing the gaokao domain.
+-- This file is a readable snapshot, not a golang-migrate migration.
+
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'user'
+        CHECK (role IN ('user', 'premium')),
+    status VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'banned')),
+    username VARCHAR(50),
+    phone VARCHAR(20),
+    phone_verified_at TIMESTAMPTZ,
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_status ON users(status);
+CREATE INDEX idx_users_role ON users(role);
+CREATE UNIQUE INDEX idx_users_phone
+    ON users(phone)
+    WHERE phone IS NOT NULL;
+CREATE INDEX idx_users_is_admin ON users(is_admin);
+
+CREATE TABLE membership_plans (
     id BIGSERIAL PRIMARY KEY,
     plan_code VARCHAR(32) NOT NULL UNIQUE,
     plan_name VARCHAR(100) NOT NULL,
@@ -13,7 +40,10 @@ CREATE TABLE IF NOT EXISTS membership_plans (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS payment_orders (
+CREATE INDEX idx_membership_plans_status
+    ON membership_plans(status);
+
+CREATE TABLE payment_orders (
     id BIGSERIAL PRIMARY KEY,
     order_no VARCHAR(64) NOT NULL UNIQUE,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -38,7 +68,17 @@ CREATE TABLE IF NOT EXISTS payment_orders (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS payment_attempts (
+CREATE INDEX idx_payment_orders_user_created
+    ON payment_orders(user_id, created_at DESC);
+CREATE INDEX idx_payment_orders_status
+    ON payment_orders(order_status, payment_status, entitlement_status);
+CREATE INDEX idx_payment_orders_product
+    ON payment_orders(product_type, product_ref_id);
+CREATE UNIQUE INDEX uq_payment_orders_user_idempotency
+    ON payment_orders(user_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+
+CREATE TABLE payment_attempts (
     id BIGSERIAL PRIMARY KEY,
     payment_order_id BIGINT NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
     attempt_no INTEGER NOT NULL CHECK (attempt_no > 0),
@@ -57,7 +97,13 @@ CREATE TABLE IF NOT EXISTS payment_attempts (
     UNIQUE (payment_order_id, attempt_no)
 );
 
-CREATE TABLE IF NOT EXISTS payment_callbacks (
+CREATE INDEX idx_payment_attempts_order
+    ON payment_attempts(payment_order_id, created_at DESC);
+CREATE UNIQUE INDEX uq_payment_attempts_channel_trade
+    ON payment_attempts(channel, channel_trade_no)
+    WHERE channel_trade_no IS NOT NULL;
+
+CREATE TABLE payment_callbacks (
     id BIGSERIAL PRIMARY KEY,
     channel VARCHAR(32) NOT NULL,
     callback_id VARCHAR(128) NOT NULL,
@@ -69,7 +115,13 @@ CREATE TABLE IF NOT EXISTS payment_callbacks (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS user_memberships (
+CREATE UNIQUE INDEX uq_payment_callbacks_channel_callback
+    ON payment_callbacks(channel, callback_id);
+CREATE INDEX idx_payment_callbacks_trade
+    ON payment_callbacks(channel, channel_trade_no)
+    WHERE channel_trade_no IS NOT NULL;
+
+CREATE TABLE user_memberships (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     membership_level VARCHAR(20) NOT NULL DEFAULT 'premium'
@@ -83,13 +135,18 @@ CREATE TABLE IF NOT EXISTS user_memberships (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS membership_grants (
+CREATE INDEX idx_user_memberships_active_lookup
+    ON user_memberships(user_id, ends_at)
+    WHERE status = 'active';
+
+CREATE TABLE membership_grants (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     payment_order_id BIGINT NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
     source_type VARCHAR(32) NOT NULL DEFAULT 'payment'
         CHECK (source_type IN ('payment')),
-    action VARCHAR(32) NOT NULL CHECK (action IN ('activate', 'renew', 'extend', 'restore')),
+    action VARCHAR(32) NOT NULL
+        CHECK (action IN ('activate', 'renew', 'extend', 'restore')),
     duration_days INTEGER NOT NULL CHECK (duration_days > 0),
     starts_at TIMESTAMPTZ NOT NULL,
     ends_at TIMESTAMPTZ NOT NULL,
@@ -97,53 +154,5 @@ CREATE TABLE IF NOT EXISTS membership_grants (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_membership_plans_status
-    ON membership_plans(status);
-
-CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created
-    ON payment_orders(user_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_payment_orders_status
-    ON payment_orders(order_status, payment_status, entitlement_status);
-
-CREATE INDEX IF NOT EXISTS idx_payment_orders_product
-    ON payment_orders(product_type, product_ref_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_orders_user_idempotency
-    ON payment_orders(user_id, idempotency_key)
-    WHERE idempotency_key IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_payment_attempts_order
-    ON payment_attempts(payment_order_id, created_at DESC);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_attempts_channel_trade
-    ON payment_attempts(channel, channel_trade_no)
-    WHERE channel_trade_no IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_callbacks_channel_callback
-    ON payment_callbacks(channel, callback_id);
-
-CREATE INDEX IF NOT EXISTS idx_payment_callbacks_trade
-    ON payment_callbacks(channel, channel_trade_no)
-    WHERE channel_trade_no IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_user_memberships_active_lookup
-    ON user_memberships(user_id, ends_at)
-    WHERE status = 'active';
-
-CREATE INDEX IF NOT EXISTS idx_membership_grants_user_created
+CREATE INDEX idx_membership_grants_user_created
     ON membership_grants(user_id, created_at DESC);
-
-INSERT INTO membership_plans (plan_code, plan_name, membership_level, duration_days, price_amount, currency, status)
-VALUES
-    ('monthly', '月度会员', 'premium', 30, 990, 'CNY', 'active'),
-    ('quarterly', '季度会员', 'premium', 90, 2690, 'CNY', 'active'),
-    ('yearly', '年度会员', 'premium', 365, 9990, 'CNY', 'active')
-ON CONFLICT (plan_code) DO UPDATE
-SET plan_name = EXCLUDED.plan_name,
-    membership_level = EXCLUDED.membership_level,
-    duration_days = EXCLUDED.duration_days,
-    price_amount = EXCLUDED.price_amount,
-    currency = EXCLUDED.currency,
-    status = EXCLUDED.status,
-    updated_at = NOW();

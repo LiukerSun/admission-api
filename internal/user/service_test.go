@@ -21,16 +21,8 @@ type mockStore struct {
 	mock.Mock
 }
 
-func (m *mockStore) Create(ctx context.Context, email, passwordHash, role, userType string) (*User, error) {
-	args := m.Called(ctx, email, passwordHash, role, userType)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*User), args.Error(1)
-}
-
-func (m *mockStore) GetByEmailAndType(ctx context.Context, email, userType string) (*User, error) {
-	args := m.Called(ctx, email, userType)
+func (m *mockStore) Create(ctx context.Context, email, passwordHash, role string) (*User, error) {
+	args := m.Called(ctx, email, passwordHash, role)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -106,25 +98,15 @@ func TestAuthService_Register(t *testing.T) {
 	store := new(mockStore)
 	svc := NewAuthService(store, nil, nil)
 
-	store.On("Create", mock.Anything, "test@example.com", mock.AnythingOfType("string"), "user", "student").
-		Return(&User{ID: 1, Email: "test@example.com", Role: "user", UserType: "student"}, nil)
+	store.On("Create", mock.Anything, "test@example.com", mock.AnythingOfType("string"), "user").
+		Return(&User{ID: 1, Email: "test@example.com", Role: "user"}, nil)
 
-	u, err := svc.Register(context.Background(), "test@example.com", "password123", "student")
+	u, err := svc.Register(context.Background(), "test@example.com", "password123")
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), u.ID)
 	assert.Equal(t, "test@example.com", u.Email)
-	assert.Equal(t, "student", u.UserType)
 	store.AssertExpectations(t)
-}
-
-func TestAuthService_Register_InvalidUserType(t *testing.T) {
-	store := new(mockStore)
-	svc := NewAuthService(store, nil, nil)
-
-	_, err := svc.Register(context.Background(), "test@example.com", "password123", "invalid")
-
-	assert.Error(t, err)
 }
 
 func TestAuthService_Me(t *testing.T) {
@@ -132,13 +114,12 @@ func TestAuthService_Me(t *testing.T) {
 	svc := NewAuthService(store, nil, nil)
 
 	store.On("GetByID", mock.Anything, int64(1)).
-		Return(&User{ID: 1, Email: "test@example.com", Role: "user", UserType: "parent"}, nil)
+		Return(&User{ID: 1, Email: "test@example.com", Role: "user"}, nil)
 
 	u, err := svc.Me(context.Background(), 1)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), u.ID)
-	assert.Equal(t, "parent", u.UserType)
 	store.AssertExpectations(t)
 }
 
@@ -170,7 +151,7 @@ func TestAuthService_RefreshAllowsOnlySingleUseRotation(t *testing.T) {
 	}
 	svc := NewAuthService(nil, tokenManager, jwtConfig)
 
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", false, "parent", "ios")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", false, "ios")
 	require.NoError(t, err)
 	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 7, "ios"))
 
@@ -213,7 +194,7 @@ func TestAuthService_RefreshPreservesIsAdminClaim(t *testing.T) {
 	}
 	svc := NewAuthService(nil, tokenManager, jwtConfig)
 
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "premium", true, "parent", "ios")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "premium", true, "ios")
 	require.NoError(t, err)
 	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 7, "ios"))
 
@@ -240,7 +221,7 @@ func TestAuthService_RefreshReplayExpiresWithWindow(t *testing.T) {
 	}
 	svc := NewAuthService(nil, tokenManager, jwtConfig)
 
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", false, "parent", "ios")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 7, "user", false, "ios")
 	require.NoError(t, err)
 	oldHash := middleware.HashRefreshToken(tokens.RefreshToken)
 	require.NoError(t, tokenManager.Save(context.Background(), oldHash, 7, "ios"))
@@ -272,7 +253,7 @@ func TestAuthService_ChangePasswordRevokesRefreshSessions(t *testing.T) {
 
 	oldPasswordHash, err := bcrypt.GenerateFromPassword([]byte("oldpass123"), bcrypt.DefaultCost)
 	require.NoError(t, err)
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 1, "user", false, "parent", "ios")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, 1, "user", false, "ios")
 	require.NoError(t, err)
 	require.NoError(t, tokenManager.Save(context.Background(), middleware.HashRefreshToken(tokens.RefreshToken), 1, "ios"))
 

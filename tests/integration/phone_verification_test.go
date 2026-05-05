@@ -57,9 +57,9 @@ func TestPhoneVerificationFlow(t *testing.T) {
 
 	cleanupIntegrationState(t, database, redisClient)
 
-	userID := createIntegrationUser(t, database, "phone-flow@example.com", "student")
+	userID := createIntegrationUser(t, database, "phone-flow@example.com")
 	router := newIntegrationRouter(t, database, redisClient, cfg)
-	accessToken := issueAccessToken(t, cfg, userID, "user", "student")
+	accessToken := issueAccessToken(t, cfg, userID, "user")
 
 	sendPayload := map[string]string{"phone": "13800138000"}
 	sendResp := performJSONRequest(t, router, http.MethodPost, "/api/v1/me/phone/send-code", sendPayload, accessToken)
@@ -116,9 +116,9 @@ func TestPhoneVerificationSendCodeCooldown(t *testing.T) {
 
 	cleanupIntegrationState(t, database, redisClient)
 
-	userID := createIntegrationUser(t, database, "phone-cooldown@example.com", "student")
+	userID := createIntegrationUser(t, database, "phone-cooldown@example.com")
 	router := newIntegrationRouter(t, database, redisClient, cfg)
-	accessToken := issueAccessToken(t, cfg, userID, "user", "student")
+	accessToken := issueAccessToken(t, cfg, userID, "user")
 
 	payload := map[string]string{"phone": "13800138001"}
 	firstResp := performJSONRequest(t, router, http.MethodPost, "/api/v1/me/phone/send-code", payload, accessToken)
@@ -193,7 +193,7 @@ func performJSONRequest(t *testing.T, router http.Handler, method, path string, 
 	return rec
 }
 
-func issueAccessToken(t *testing.T, cfg *config.Config, userID int64, role, userType string) string {
+func issueAccessToken(t *testing.T, cfg *config.Config, userID int64, role string) string {
 	t.Helper()
 
 	jwtConfig := &middleware.JWTConfig{
@@ -202,12 +202,12 @@ func issueAccessToken(t *testing.T, cfg *config.Config, userID int64, role, user
 		RefreshTTL: time.Duration(cfg.JWTRefreshTTLHours) * time.Hour,
 	}
 
-	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, userID, role, role == "admin", userType, "web")
+	tokens, _, err := middleware.GenerateTokenPair(jwtConfig, userID, role, false, "web")
 	require.NoError(t, err)
 	return tokens.AccessToken
 }
 
-func createIntegrationUser(t *testing.T, database *db.DB, email, userType string) int64 {
+func createIntegrationUser(t *testing.T, database *db.DB, email string) int64 {
 	t.Helper()
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
@@ -216,10 +216,9 @@ func createIntegrationUser(t *testing.T, database *db.DB, email, userType string
 	var userID int64
 	err = database.Pool().QueryRow(
 		context.Background(),
-		`INSERT INTO users (email, password_hash, role, user_type, status) VALUES ($1, $2, 'user', $3, 'active') RETURNING id`,
+		`INSERT INTO users (email, password_hash, role, status) VALUES ($1, $2, 'user', 'active') RETURNING id`,
 		email,
 		string(passwordHash),
-		userType,
 	).Scan(&userID)
 	require.NoError(t, err)
 
@@ -230,7 +229,7 @@ func cleanupIntegrationState(t *testing.T, database *db.DB, redisClient *platfor
 	t.Helper()
 
 	ctx := context.Background()
-	_, err := database.Pool().Exec(ctx, "TRUNCATE TABLE user_bindings, users RESTART IDENTITY CASCADE")
+	_, err := database.Pool().Exec(ctx, "TRUNCATE TABLE users RESTART IDENTITY CASCADE")
 	require.NoError(t, err)
 
 	err = flushRedisDB(ctx, redisClient)

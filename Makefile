@@ -1,4 +1,4 @@
-.PHONY: dev run down logs build db setup gaokao-import gaokao-import-reset gaokao-import-sample gaokao-import-dev
+.PHONY: dev run down logs build db setup
 
 ifeq ($(OS),Windows_NT)
     SHELL := powershell.exe
@@ -18,15 +18,6 @@ ifeq ($(OS),Windows_NT)
 		@powershell -Command ".\Makefile.ps1 -Target build"
     setup:
 		@powershell -Command ".\Makefile.ps1 -Target setup"
-    gaokao-import:
-		@powershell -Command ".\Makefile.ps1 -Target gaokao-import -DataDir $(DATA_DIR) $(if $(PROFILE),-Profile $(PROFILE),) $(if $(SAMPLE_ROWS),-SampleRows $(SAMPLE_ROWS),)"
-    gaokao-import-reset:
-		@powershell -Command ".\Makefile.ps1 -Target gaokao-import-reset -DataDir $(DATA_DIR) $(if $(PROFILE),-Profile $(PROFILE),) $(if $(SAMPLE_ROWS),-SampleRows $(SAMPLE_ROWS),)"
-    gaokao-import-sample:
-		@powershell -Command ".\Makefile.ps1 -Target gaokao-import-sample -DataDir $(DATA_DIR) -SampleRows $(SAMPLE_ROWS)"
-    gaokao-import-dev:
-		@powershell -Command ".\Makefile.ps1 -Target gaokao-import-dev -DataDir $(DATA_DIR) $(if $(SAMPLE_ROWS),-SampleRows $(SAMPLE_ROWS),) $(if $(MAX_READ_ROWS),-MaxReadRows $(MAX_READ_ROWS),)"
-
 else
     # Linux/Mac targets (original)
     db:
@@ -98,37 +89,5 @@ else
     setup:
 	git config core.hooksPath .githooks
 	@echo "Git hooks configured. All commits will be validated."
-
-    gaokao-import:
-	@if [ -z "$(DATA_DIR)" ]; then \
-		echo "Usage: make gaokao-import DATA_DIR=/absolute/path/to/csv-dir"; \
-		exit 1; \
-	fi
-	go run ./cmd/importer -data-dir "$(DATA_DIR)" $(if $(PROFILE),-profile $(PROFILE),) $(if $(SAMPLE_ROWS),-sample-rows $(SAMPLE_ROWS),)
-
-    gaokao-import-reset:
-	@if [ -z "$(DATA_DIR)" ]; then \
-		echo "Usage: make gaokao-import-reset DATA_DIR=/absolute/path/to/csv-dir"; \
-		exit 1; \
-	fi
-	go run ./cmd/importer -data-dir "$(DATA_DIR)" -truncate $(if $(PROFILE),-profile $(PROFILE),) $(if $(SAMPLE_ROWS),-sample-rows $(SAMPLE_ROWS),)
-
-    gaokao-import-sample:
-	@if [ -z "$(DATA_DIR)" ]; then \
-		echo "Usage: make gaokao-import-sample DATA_DIR=/absolute/path/to/csv-dir SAMPLE_ROWS=1000"; \
-		exit 1; \
-	fi
-	@if [ -z "$(SAMPLE_ROWS)" ]; then \
-		echo "Usage: make gaokao-import-sample DATA_DIR=/absolute/path/to/csv-dir SAMPLE_ROWS=1000"; \
-		exit 1; \
-	fi
-	go run ./cmd/importer -data-dir "$(DATA_DIR)" -truncate -sample-rows "$(SAMPLE_ROWS)"
-
-    gaokao-import-dev:
-	@if [ -z "$(DATA_DIR)" ]; then \
-		echo "Usage: make gaokao-import-dev DATA_DIR=/absolute/path/to/csv-dir"; \
-		exit 1; \
-	fi
-	go run ./cmd/importer -data-dir "$(DATA_DIR)" -truncate -profile dev -skip-xgk -sample-rows "$(SAMPLE_ROWS:-1000)" -max-read-rows "$(MAX_READ_ROWS:-5000)"
 
 endif

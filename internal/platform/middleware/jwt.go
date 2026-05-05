@@ -30,13 +30,12 @@ type Claims struct {
 	UserID   int64  `json:"sub"`
 	Role     string `json:"role"`
 	IsAdmin  bool   `json:"is_admin"`
-	UserType string `json:"user_type"`
 	Platform string `json:"platform"`
 	Type     string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
-func GenerateTokenPair(cfg *JWTConfig, userID int64, role string, isAdmin bool, userType, platform string) (*TokenPair, string, error) {
+func GenerateTokenPair(cfg *JWTConfig, userID int64, role string, isAdmin bool, platform string) (*TokenPair, string, error) {
 	now := time.Now()
 	accessTokenID, err := generateRandomToken()
 	if err != nil {
@@ -47,7 +46,6 @@ func GenerateTokenPair(cfg *JWTConfig, userID int64, role string, isAdmin bool, 
 		UserID:   userID,
 		Role:     role,
 		IsAdmin:  isAdmin,
-		UserType: userType,
 		Platform: platform,
 		Type:     "access",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -71,7 +69,6 @@ func GenerateTokenPair(cfg *JWTConfig, userID int64, role string, isAdmin bool, 
 		UserID:   userID,
 		Role:     role,
 		IsAdmin:  isAdmin,
-		UserType: userType,
 		Platform: platform,
 		Type:     "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -130,7 +127,6 @@ func JWTMiddleware(cfg *JWTConfig) gin.HandlerFunc {
 		c.Set(ContextUserIDKey, claims.UserID)
 		c.Set(ContextRoleKey, claims.Role)
 		c.Set(ContextIsAdminKey, claims.IsAdmin)
-		c.Set(ContextUserTypeKey, claims.UserType)
 		c.Set(ContextPlatformKey, claims.Platform)
 
 		c.Next()

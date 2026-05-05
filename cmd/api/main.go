@@ -30,7 +30,6 @@ import (
 
 	_ "admission-api/docs"
 	"admission-api/internal/admin"
-	"admission-api/internal/analysis"
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
@@ -108,10 +107,6 @@ func run() error {
 	})
 	userHandler := user.NewHandler(userService, phoneVerificationService, jwtConfig)
 
-	bindingStore := user.NewBindingStore(database.Pool())
-	bindingService := user.NewBindingService(userStore, bindingStore)
-	bindingHandler := user.NewBindingHandler(bindingService)
-
 	membershipStore := membership.NewStore(database.Pool())
 	membershipService := membership.NewService(membershipStore)
 	membershipHandler := membership.NewHandler(membershipService)
@@ -122,11 +117,6 @@ func run() error {
 		AllowAnonymousMockCallback: cfg.Env == "development",
 		MockCallbackSecret:         cfg.MockCallbackSecret,
 	})
-
-	// 初始化数据分析模块
-	analysisStore := analysis.NewStore(database.Pool())
-	analysisService := analysis.NewService(analysisStore)
-	analysisHandler := analysis.NewHandler(analysisService)
 
 	healthHandler := health.NewHandler(database)
 
@@ -154,23 +144,6 @@ func run() error {
 		api.POST("/auth/login", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Login)
 		api.POST("/auth/refresh", userHandler.Refresh)
 
-		api.GET("/analysis/dataset-overview", analysisHandler.GetDatasetOverview)
-		api.GET("/analysis/facets", analysisHandler.GetFacets)
-		api.GET("/analysis/schools", analysisHandler.ListSchools)
-		api.GET("/analysis/schools/compare", analysisHandler.CompareSchools)
-		api.GET("/analysis/schools/:school_id", analysisHandler.GetSchool)
-		api.GET("/analysis/schools/:school_id/majors", analysisHandler.ListSchoolMajors)
-		api.GET("/analysis/majors", analysisHandler.ListMajors)
-		api.GET("/analysis/majors/:major_id", analysisHandler.GetMajor)
-		api.GET("/analysis/enrollment-plans", analysisHandler.GetEnrollmentPlans)
-		api.GET("/analysis/province-batch-lines", analysisHandler.ListProvinceBatchLines)
-		api.GET("/analysis/province-batch-line-trends", analysisHandler.GetProvinceBatchLineTrend)
-		api.GET("/analysis/admission-scores/schools", analysisHandler.ListSchoolAdmissionScores)
-		api.GET("/analysis/admission-scores/majors", analysisHandler.ListMajorAdmissionScores)
-		api.GET("/analysis/admission-score-trends", analysisHandler.GetAdmissionScoreTrend)
-		api.GET("/analysis/score-match", analysisHandler.GetScoreMatch)
-		api.GET("/analysis/employment-data", analysisHandler.GetEmploymentData)
-
 		api.POST("/payment/callbacks/mock", paymentHandler.MockCallback)
 
 		authorized := api.Group("")
@@ -186,8 +159,6 @@ func run() error {
 		authorized.PUT("/me/password", userHandler.ChangePassword)
 		authorized.POST("/me/phone/send-code", userHandler.SendPhoneVerificationCode)
 		authorized.POST("/me/phone/verify", userHandler.VerifyPhone)
-		authorized.POST("/bindings", bindingHandler.CreateBinding)
-		authorized.GET("/bindings", bindingHandler.GetMyBindings)
 		authorized.GET("/membership/plans", membershipHandler.ListPlans)
 		authorized.GET("/membership", membershipHandler.GetCurrent)
 		authorized.POST("/payment/orders", paymentHandler.CreateOrder)
@@ -205,9 +176,7 @@ func run() error {
 		adminRoutes.PUT("/users/:id/password", adminHandler.ResetPassword)
 		adminRoutes.POST("/users/:id/disable", adminHandler.DisableUser)
 		adminRoutes.POST("/users/:id/enable", adminHandler.EnableUser)
-		adminRoutes.GET("/bindings", adminHandler.ListBindings)
 		adminRoutes.GET("/stats", adminHandler.GetStats)
-		adminRoutes.DELETE("/bindings/:id", bindingHandler.DeleteBinding)
 		adminRoutes.GET("/payment/orders", paymentHandler.AdminListOrders)
 		adminRoutes.GET("/payment/orders/:order_no", paymentHandler.AdminGetOrder)
 		adminRoutes.POST("/payment/orders/:order_no/close", paymentHandler.AdminCloseOrder)

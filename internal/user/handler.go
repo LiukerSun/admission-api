@@ -18,7 +18,6 @@ import (
 type RegisterRequest struct {
 	Email    string `json:"email" validate:"required,email" example:"user@example.com"`
 	Password string `json:"password" validate:"required,min=8,alphanum" example:"pass1234"`
-	UserType string `json:"user_type" validate:"required,oneof=parent student" example:"parent"`
 }
 
 type LoginRequest struct {
@@ -52,7 +51,6 @@ type Response struct {
 	PhoneVerified bool      `json:"phone_verified" example:"true"`
 	Role          string    `json:"role" example:"user"`
 	IsAdmin       bool      `json:"is_admin" example:"false"`
-	UserType      string    `json:"user_type" example:"parent"`
 	Status        string    `json:"status" example:"active"`
 	CreatedAt     time.Time `json:"created_at" example:"2024-01-01T00:00:00Z"`
 }
@@ -103,7 +101,7 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	u, err := h.service.Register(c.Request.Context(), req.Email, req.Password, req.UserType)
+	u, err := h.service.Register(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, ErrEmailAlreadyExists) {
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "email already exists")
@@ -121,7 +119,6 @@ func (h *Handler) Register(c *gin.Context) {
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
 		IsAdmin:       u.IsAdmin,
-		UserType:      u.UserType,
 		Status:        u.Status,
 		CreatedAt:     u.CreatedAt,
 	}))
@@ -245,7 +242,6 @@ func (h *Handler) Me(c *gin.Context) {
 		PhoneVerified: u.PhoneVerifiedAt != nil,
 		Role:          u.Role,
 		IsAdmin:       u.IsAdmin,
-		UserType:      u.UserType,
 		Status:        u.Status,
 		CreatedAt:     u.CreatedAt,
 	}))

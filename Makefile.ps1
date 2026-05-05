@@ -1,9 +1,5 @@
 param(
-    [string]$Target = "help",
-    [string]$DataDir,
-    [string]$Profile,
-    [int]$SampleRows,
-    [int]$MaxReadRows
+    [string]$Target = "help"
 )
 
 function Write-Help {
@@ -19,16 +15,6 @@ Targets:
     logs        Show production logs
     build       Build Docker image
     setup       Configure git hooks
-    gaokao-import          Import gaokao data
-    gaokao-import-reset    Reset and import gaokao data
-    gaokao-import-sample   Import sample gaokao data
-    gaokao-import-dev      Import dev gaokao data
-
-Options for gaokao-import targets:
-    -DataDir      Path to CSV directory (required)
-    -Profile      Profile name (optional)
-    -SampleRows   Number of sample rows (optional)
-    -MaxReadRows  Maximum rows to read (optional)
 "@
 }
 
@@ -176,47 +162,6 @@ function Invoke-SetupTarget {
     Write-Host "Git hooks configured. All commits will be validated."
 }
 
-function Invoke-GaokaoImport {
-    param(
-        [string]$DataDir,
-        [string]$Profile,
-        [int]$SampleRows,
-        [int]$MaxReadRows,
-        [switch]$Truncate,
-        [switch]$SkipXgk
-    )
-    
-    if (-not $DataDir) {
-        Write-Error "Usage: .\Makefile.ps1 -Target gaokao-import -DataDir /absolute/path/to/csv-dir"
-        exit 1
-    }
-    
-    $args = @("-data-dir", "`"$DataDir`"")
-    
-    if ($Truncate) {
-        $args += "-truncate"
-    }
-    
-    if ($Profile) {
-        $args += "-profile", $Profile
-    }
-    
-    if ($SampleRows -gt 0) {
-        $args += "-sample-rows", $SampleRows.ToString()
-    }
-    
-    if ($MaxReadRows -gt 0) {
-        $args += "-max-read-rows", $MaxReadRows.ToString()
-    }
-    
-    if ($SkipXgk) {
-        $args += "-skip-xgk"
-    }
-    
-    Write-Host "Running: go run ./cmd/importer $($args -join ' ')"
-    & go run ./cmd/importer $args
-}
-
 switch ($Target) {
     "help" {
         Write-Help
@@ -241,28 +186,6 @@ switch ($Target) {
     }
     "setup" {
         Invoke-SetupTarget
-    }
-    "gaokao-import" {
-        Invoke-GaokaoImport -DataDir $DataDir -Profile $Profile -SampleRows $SampleRows
-    }
-    "gaokao-import-reset" {
-        Invoke-GaokaoImport -DataDir $DataDir -Profile $Profile -SampleRows $SampleRows -Truncate
-    }
-    "gaokao-import-sample" {
-        if ($SampleRows -eq 0) {
-            Write-Error "Usage: .\Makefile.ps1 -Target gaokao-import-sample -DataDir /path/to/csv-dir -SampleRows 1000"
-            exit 1
-        }
-        Invoke-GaokaoImport -DataDir $DataDir -SampleRows $SampleRows -Truncate
-    }
-    "gaokao-import-dev" {
-        if (-not $DataDir) {
-            Write-Error "Usage: .\Makefile.ps1 -Target gaokao-import-dev -DataDir /path/to/csv-dir"
-            exit 1
-        }
-        $sampleRows = if ($SampleRows -gt 0) { $SampleRows } else { 1000 }
-        $maxReadRows = if ($MaxReadRows -gt 0) { $MaxReadRows } else { 5000 }
-        Invoke-GaokaoImport -DataDir $DataDir -Profile "dev" -SampleRows $sampleRows -MaxReadRows $maxReadRows -Truncate -SkipXgk
     }
     default {
         Write-Error "Unknown target: $Target"

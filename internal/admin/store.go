@@ -13,7 +13,6 @@ import (
 // Store defines the data access interface for admin operations.
 type Store interface {
 	ListUsers(ctx context.Context, filter ListUsersFilter, page, pageSize int) ([]*user.User, int64, error)
-	ListBindings(ctx context.Context, page, pageSize int) ([]*BindingListItem, int64, error)
 	GetStats(ctx context.Context) (*StatsResponse, error)
 }
 
@@ -75,7 +74,7 @@ func (s *store) ListUsers(ctx context.Context, filter ListUsersFilter, page, pag
 
 	// Query users
 	query := fmt.Sprintf(`
-		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, user_type, status, created_at, updated_at
+		SELECT id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 		FROM users
 		WHERE %s
 		ORDER BY created_at DESC
@@ -93,7 +92,7 @@ func (s *store) ListUsers(ctx context.Context, filter ListUsersFilter, page, pag
 	for rows.Next() {
 		var u user.User
 		err := rows.Scan(
-			&u.ID, &u.Email, &u.Username, &u.Phone, &u.PhoneVerifiedAt, &u.PasswordHash, &u.Role, &u.IsAdmin, &u.UserType, &u.Status, &u.CreatedAt, &u.UpdatedAt,
+			&u.ID, &u.Email, &u.Username, &u.Phone, &u.PhoneVerifiedAt, &u.PasswordHash, &u.Role, &u.IsAdmin, &u.Status, &u.CreatedAt, &u.UpdatedAt,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan user: %w", err)
@@ -106,54 +105,6 @@ func (s *store) ListUsers(ctx context.Context, filter ListUsersFilter, page, pag
 	}
 
 	return users, total, nil
-}
-
-func (s *store) ListBindings(ctx context.Context, page, pageSize int) ([]*BindingListItem, int64, error) {
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-
-	// Count total
-	var total int64
-	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM user_bindings").Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count bindings: %w", err)
-	}
-
-	query := `
-		SELECT b.id, b.parent_id, p.email, b.student_id, s.email, b.created_at
-		FROM user_bindings b
-		JOIN users p ON p.id = b.parent_id
-		JOIN users s ON s.id = b.student_id
-		ORDER BY b.created_at DESC
-		LIMIT $1 OFFSET $2
-	`
-
-	rows, err := s.pool.Query(ctx, query, pageSize, (page-1)*pageSize)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list bindings: %w", err)
-	}
-	defer rows.Close()
-
-	var bindings []*BindingListItem
-	for rows.Next() {
-		var b BindingListItem
-		err := rows.Scan(
-			&b.ID, &b.Parent.ID, &b.Parent.Email, &b.Student.ID, &b.Student.Email, &b.CreatedAt,
-		)
-		if err != nil {
-			return nil, 0, fmt.Errorf("scan binding: %w", err)
-		}
-		bindings = append(bindings, &b)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate bindings: %w", err)
-	}
-
-	return bindings, total, nil
 }
 
 func (s *store) GetStats(ctx context.Context) (*StatsResponse, error) {
@@ -182,11 +133,6 @@ func (s *store) GetStats(ctx context.Context) (*StatsResponse, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate role counts: %w", err)
-	}
-
-	// Total bindings
-	if err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM user_bindings").Scan(&stats.TotalBindings); err != nil {
-		return nil, fmt.Errorf("count bindings: %w", err)
 	}
 
 	// Active users

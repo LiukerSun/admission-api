@@ -28,8 +28,8 @@ type mockService struct {
 	mock.Mock
 }
 
-func (m *mockService) Register(ctx context.Context, email, password, userType string) (*User, error) {
-	args := m.Called(ctx, email, password, userType)
+func (m *mockService) Register(ctx context.Context, email, password string) (*User, error) {
+	args := m.Called(ctx, email, password)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -83,10 +83,10 @@ func TestHandler_Register(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
-	svc.On("Register", mock.Anything, "new@example.com", "password123", "student").
-		Return(&User{ID: 1, Email: "new@example.com", Role: "user", UserType: "student"}, nil)
+	svc.On("Register", mock.Anything, "new@example.com", "password123").
+		Return(&User{ID: 1, Email: "new@example.com", Role: "user"}, nil)
 
-	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123", UserType: "student"})
+	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
@@ -185,10 +185,10 @@ func TestHandler_Register_Conflict(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
-	svc.On("Register", mock.Anything, "new@example.com", "password123", "student").
+	svc.On("Register", mock.Anything, "new@example.com", "password123").
 		Return(nil, ErrEmailAlreadyExists)
 
-	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123", UserType: "student"})
+	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
@@ -274,10 +274,10 @@ func TestHandler_Register_InternalError(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
-	svc.On("Register", mock.Anything, "new@example.com", "password123", "student").
+	svc.On("Register", mock.Anything, "new@example.com", "password123").
 		Return(nil, errors.New("db down"))
 
-	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123", UserType: "student"})
+	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")

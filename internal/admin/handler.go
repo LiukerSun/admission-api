@@ -111,7 +111,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 // UpdateUser godoc
 // @Summary      管理员修改用户信息
-// @Description  修改指定用户的 email、username、role、user_type、status
+// @Description  修改指定用户的 email、username、role、is_admin、status
 // @Tags         admin
 // @Accept       json
 // @Produce      json
@@ -328,35 +328,9 @@ func isInvalidPasswordError(err error) bool {
 	return errors.As(err, &validationErrs) || strings.Contains(err.Error(), "invalid password")
 }
 
-// ListBindings godoc
-// @Summary      管理员查看所有绑定关系
-// @Description  分页获取所有家长-学生绑定关系
-// @Tags         admin
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        page       query     int  false  "页码"      default(1)
-// @Param        page_size  query     int  false  "每页数量"  default(20)
-// @Success      200        {object}  web.Response{data=BindingListResponse}
-// @Failure      401        {object}  web.Response
-// @Failure      403        {object}  web.Response
-// @Router       /api/v1/admin/bindings [get]
-func (h *Handler) ListBindings(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-
-	result, err := h.service.ListBindings(c.Request.Context(), page, pageSize)
-	if err != nil {
-		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
-		return
-	}
-
-	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(result))
-}
-
 // GetStats godoc
 // @Summary      管理员查看系统统计
-// @Description  获取用户总数、绑定总数等运营数据
+// @Description  获取用户总数、会员等级分布和账号状态等运营数据
 // @Tags         admin
 // @Accept       json
 // @Produce      json

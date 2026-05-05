@@ -29,7 +29,7 @@ func TestPremiumRouteRejectsExpiredPremiumTokenWithoutActiveMembership(t *testin
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "parent", "web")
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "web")
 	require.NoError(t, err)
 
 	r := gin.New()
@@ -61,7 +61,7 @@ func TestBannedUserIsDeniedEvenWithValidToken(t *testing.T) {
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "parent", "web")
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "web")
 	require.NoError(t, err)
 
 	r := gin.New()
@@ -91,7 +91,7 @@ func TestAdminRouteAllowsPremiumAdminToken(t *testing.T) {
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", true, "parent", "web")
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", true, "web")
 	require.NoError(t, err)
 
 	r := gin.New()
@@ -121,7 +121,7 @@ func TestAdminRouteRejectsNonAdminPremiumToken(t *testing.T) {
 		AccessTTL:  time.Minute,
 		RefreshTTL: time.Hour,
 	}
-	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "parent", "web")
+	tokenPair, _, err := GenerateTokenPair(jwtConfig, 7, "premium", false, "web")
 	require.NoError(t, err)
 
 	r := gin.New()
