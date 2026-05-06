@@ -35,8 +35,8 @@ type ScoreHistory struct {
 	PrevRankValue      sql.NullInt32      `db:"prev_rank_value" json:"prev_rank_value,omitempty"`
 	PrevSubjectScores  map[string]float64 `db:"prev_subject_scores" json:"prev_subject_scores,omitempty"`
 	PrevSelectSubjects []string           `db:"prev_select_subjects" json:"prev_select_subjects,omitempty"`
-	NewTotalScore      float64            `db:"new_total_score" json:"new_total_score"`
-	NewRankValue       int32              `db:"new_rank_value" json:"new_rank_value"`
+	NewTotalScore      sql.NullFloat64    `db:"new_total_score" json:"new_total_score,omitempty"`
+	NewRankValue       sql.NullInt32      `db:"new_rank_value" json:"new_rank_value,omitempty"`
 	NewSubjectScores   map[string]float64 `db:"new_subject_scores" json:"new_subject_scores,omitempty"`
 	NewSelectSubjects  []string           `db:"new_select_subjects" json:"new_select_subjects,omitempty"`
 	ChangeReason       sql.NullString     `db:"change_reason" json:"change_reason,omitempty"`
@@ -110,8 +110,8 @@ type ScoreHistoryResponse struct {
 	PrevRankValue      *int32             `json:"prev_rank_value,omitempty"`
 	PrevSubjectScores  map[string]float64 `json:"prev_subject_scores,omitempty"`
 	PrevSelectSubjects []string           `json:"prev_select_subjects,omitempty"`
-	NewTotalScore      float64            `json:"new_total_score"`
-	NewRankValue       int32              `json:"new_rank_value"`
+	NewTotalScore      *float64           `json:"new_total_score,omitempty"`
+	NewRankValue       *int32             `json:"new_rank_value,omitempty"`
 	NewSubjectScores   map[string]float64 `json:"new_subject_scores,omitempty"`
 	NewSelectSubjects  []string           `json:"new_select_subjects,omitempty"`
 	ChangeReason       string             `json:"change_reason,omitempty"`
@@ -157,8 +157,8 @@ type createScoreHistoryInput struct {
 	PrevRankValue      sql.NullInt32
 	PrevSubjectScores  map[string]float64
 	PrevSelectSubjects []string
-	NewTotalScore      float64
-	NewRankValue       int32
+	NewTotalScore      sql.NullFloat64
+	NewRankValue       sql.NullInt32
 	NewSubjectScores   map[string]float64
 	NewSelectSubjects  []string
 	ChangeReason       sql.NullString
@@ -204,8 +204,6 @@ func toScoreHistoryResponse(h *ScoreHistory) *ScoreHistoryResponse {
 	resp := &ScoreHistoryResponse{
 		ID:                 h.ID,
 		ExamRecordID:       h.ExamRecordID,
-		NewTotalScore:      h.NewTotalScore,
-		NewRankValue:       h.NewRankValue,
 		NewSubjectScores:   h.NewSubjectScores,
 		NewSelectSubjects:  h.NewSelectSubjects,
 		ChangeReason:       h.ChangeReason.String,
@@ -219,6 +217,12 @@ func toScoreHistoryResponse(h *ScoreHistory) *ScoreHistoryResponse {
 	}
 	if h.PrevRankValue.Valid {
 		resp.PrevRankValue = &h.PrevRankValue.Int32
+	}
+	if h.NewTotalScore.Valid {
+		resp.NewTotalScore = &h.NewTotalScore.Float64
+	}
+	if h.NewRankValue.Valid {
+		resp.NewRankValue = &h.NewRankValue.Int32
 	}
 	return resp
 }

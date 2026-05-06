@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"admission-api/internal/platform/web"
 	"admission-api/internal/user"
@@ -245,14 +246,16 @@ func (s *examRecordService) Update(ctx context.Context, userID, recordID int64, 
 			PrevRankValue:      record.RankValue,
 			PrevSubjectScores:  record.SubjectScores,
 			PrevSelectSubjects: record.SelectSubjects,
-			NewTotalScore:      updated.TotalScore.Float64,
-			NewRankValue:       updated.RankValue.Int32,
+			NewTotalScore:      updated.TotalScore,
+			NewRankValue:       updated.RankValue,
 			NewSubjectScores:   updated.SubjectScores,
 			NewSelectSubjects:  updated.SelectSubjects,
 			ChangeReason:       sql.NullString{Valid: req.ChangeReason != "", String: req.ChangeReason},
 			Source:             "manual",
 		}
-		_, _ = s.historyStore.Create(ctx, historyInput)
+		if _, err := s.historyStore.Create(ctx, historyInput); err != nil {
+			return nil, fmt.Errorf("record score history: %w", err)
+		}
 	}
 
 	if s.activityLog != nil {

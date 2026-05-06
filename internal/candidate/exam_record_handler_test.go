@@ -20,6 +20,9 @@ import (
 // mockExamRecordServiceForHandler
 type mockExamRecordServiceForHandler struct{ mock.Mock }
 
+func floatPtr(v float64) *float64 { return &v }
+func int32PtrR(v int32) *int32     { return &v }
+
 func (m *mockExamRecordServiceForHandler) ListByProfile(ctx context.Context, userID, profileID int64) ([]*ExamRecordResponse, error) {
 	args := m.Called(ctx, userID, profileID)
 	if args.Get(0) == nil {
@@ -282,7 +285,7 @@ func TestExamRecordHandler_Void_NotFound(t *testing.T) {
 func TestExamRecordHandler_ListScoreHistories_Success(t *testing.T) {
 	r, svc := setupExamRecordHandlerRouter(t, true)
 	svc.On("ListScoreHistories", mock.Anything, int64(10), int64(1)).Return([]*ScoreHistoryResponse{
-		{ID: 1, ExamRecordID: 1, NewTotalScore: 660, NewRankValue: 4800},
+		{ID: 1, ExamRecordID: 1, NewTotalScore: floatPtr(660), NewRankValue: int32PtrR(4800)},
 	}, nil)
 
 	w := httptest.NewRecorder()

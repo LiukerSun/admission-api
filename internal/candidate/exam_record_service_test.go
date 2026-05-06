@@ -370,13 +370,13 @@ func TestExamRecordService_ListScoreHistories_Success(t *testing.T) {
 	}, nil)
 	profileStore.On("GetOwnerUserID", ctx, int64(1)).Return(int64(10), nil)
 	historyStore.On("ListByExamRecord", ctx, int64(1)).Return([]*ScoreHistory{
-		{ID: 1, ExamRecordID: 1, NewTotalScore: 660, NewRankValue: 4800},
+		{ID: 1, ExamRecordID: 1, NewTotalScore: sql.NullFloat64{Valid: true, Float64: 660}, NewRankValue: sql.NullInt32{Valid: true, Int32: 4800}},
 	}, nil)
 
 	resp, err := svc.ListScoreHistories(ctx, 10, 1)
 	require.NoError(t, err)
 	require.Len(t, resp, 1)
-	assert.Equal(t, 660.0, resp[0].NewTotalScore)
+	assert.Equal(t, 660.0, *resp[0].NewTotalScore)
 }
 
 func TestExamRecordService_ListScoreHistories_Forbidden(t *testing.T) {
