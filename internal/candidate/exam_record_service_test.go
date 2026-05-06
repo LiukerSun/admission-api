@@ -195,7 +195,6 @@ func TestExamRecordService_Create_Success(t *testing.T) {
 	ctx := context.Background()
 
 	profileStore.On("GetOwnerUserID", ctx, int64(1)).Return(int64(10), nil)
-	store.On("SetOtherRecordsNotCurrent", ctx, int64(1), int64(0)).Return(nil)
 	store.On("Create", ctx, mock.Anything).Return(&ExamRecord{
 		ID: 3, ProfileID: 1, ExamYear: 2026, ExamModel: "3+1+2", IsCurrent: true, Status: "active",
 		TotalScore: float64Ptr(650),

@@ -118,10 +118,24 @@ func (s *examRecordStore) GetByID(ctx context.Context, id int64) (*ExamRecord, e
 }
 
 func (s *examRecordStore) Create(ctx context.Context, input *createExamRecordInput) (*ExamRecord, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin create exam record tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE candidate_exam_records
+		SET is_current = false, updated_at = NOW()
+		WHERE profile_id = $1 AND is_current = true
+	`, input.ProfileID); err != nil {
+		return nil, fmt.Errorf("set other records not current: %w", err)
+	}
+
 	selectSubjects, _ := json.Marshal(input.SelectSubjects)
 	subjectScores, _ := json.Marshal(input.SubjectScores)
 
-	r, err := scanExamRecord(s.pool.QueryRow(ctx, `
+	r, err := scanExamRecord(tx.QueryRow(ctx, `
 		INSERT INTO candidate_exam_records (
 			profile_id, exam_year, exam_model, exam_type,
 			total_score, rank_value, section_type,
@@ -140,6 +154,10 @@ func (s *examRecordStore) Create(ctx context.Context, input *createExamRecordInp
 		input.ArtScore, input.CultureScore, input.ArtType))
 	if err != nil {
 		return nil, fmt.Errorf("create exam record: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit create exam record tx: %w", err)
 	}
 	return r, nil
 }

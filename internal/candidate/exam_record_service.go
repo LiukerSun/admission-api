@@ -122,9 +122,6 @@ func (s *examRecordService) Create(ctx context.Context, userID, profileID int64,
 		ArtType:        sql.NullString{Valid: req.ArtType != "", String: req.ArtType},
 	}
 
-	// Unset other current records first to avoid unique constraint violation on uq_exam_records_current
-	_ = s.store.SetOtherRecordsNotCurrent(ctx, profileID, 0)
-
 	record, err := s.store.Create(ctx, input)
 	if err != nil {
 		return nil, err
