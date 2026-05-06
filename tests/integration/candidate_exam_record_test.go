@@ -105,8 +105,8 @@ func TestCandidateExamRecordCRUD(t *testing.T) {
 	require.Len(t, histories, 1)
 	require.Equal(t, 650.0, *histories[0].PrevTotalScore)
 	require.Equal(t, int32(5000), *histories[0].PrevRankValue)
-	require.Equal(t, 660.0, histories[0].NewTotalScore)
-	require.Equal(t, int32(4800), histories[0].NewRankValue)
+	require.Equal(t, 660.0, *histories[0].NewTotalScore)
+	require.Equal(t, int32(4800), *histories[0].NewRankValue)
 	require.Equal(t, "复查后修正", histories[0].ChangeReason)
 
 	// Create second record (should auto set first to not current)
