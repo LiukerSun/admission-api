@@ -142,6 +142,11 @@ func run() error {
 	merchantService := planner.NewMerchantService(merchantStore)
 	merchantHandler := planner.NewMerchantHandler(merchantService)
 
+	// Initialize planner profile module
+	profileStore := planner.NewProfileStore(database.Pool())
+	profileService := planner.NewProfileService(profileStore, merchantStore)
+	profileHandler := planner.NewProfileHandler(profileService)
+
 	// Initialize candidate activity log module
 	activityLogStore := candidate.NewActivityLogStore(database.Pool())
 	activityLogService := candidate.NewActivityLogService(activityLogStore, redisClient.RDB(), cfg.ActivityLogEnabled)
@@ -252,6 +257,12 @@ func run() error {
 		authorized.GET("/planner/merchants", merchantHandler.ListMerchants)
 		authorized.GET("/planner/merchants/:id", merchantHandler.GetMerchant)
 
+		// planner profile routes
+		authorized.GET("/planner/profiles", profileHandler.ListProfiles)
+		authorized.GET("/planner/profiles/:id", profileHandler.GetProfile)
+		authorized.GET("/planner/profiles/me", profileHandler.GetMyProfile)
+		authorized.PUT("/planner/profiles/me", profileHandler.UpdateMyProfile)
+
 		// candidate activity log routes
 		authorized.GET("/me/activities", activityLogHandler.GetMyActivities)
 
@@ -301,6 +312,9 @@ func run() error {
 		// planner merchant admin routes
 		adminRoutes.POST("/planner/merchants", merchantHandler.CreateMerchant)
 		adminRoutes.PUT("/planner/merchants/:id", merchantHandler.UpdateMerchant)
+
+		// planner profile admin routes
+		adminRoutes.POST("/planner/profiles", profileHandler.CreateProfile)
 
 		// candidate activity log admin routes
 		adminRoutes.GET("/candidate/activities", activityLogHandler.ListActivities)
