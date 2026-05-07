@@ -1,6 +1,6 @@
 package admission
 
-type AdmissionMajorTagResponse struct {
+type AdmissionMajorTagResponse struct { //nolint:revive
 	ID                         int64  `json:"id"`
 	UniversityMajorAdmissionID int64  `json:"university_major_admission_id"`
 	CatalogYear                int    `json:"catalog_year"`

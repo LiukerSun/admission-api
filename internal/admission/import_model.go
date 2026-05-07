@@ -1,6 +1,6 @@
 package admission
 
-type AdmissionImportRow struct {
+type AdmissionImportRow struct { //nolint:revive
 	SourceRowNumber        int
 	AdmissionYear          int
 	CatalogYear            int
@@ -23,7 +23,7 @@ type AdmissionImportRow struct {
 	Tuition                string
 }
 
-type AdmissionGroupKey struct {
+type AdmissionGroupKey struct { //nolint:revive
 	UniversityCode      string
 	UniversityName      string
 	AdmissionYear       int

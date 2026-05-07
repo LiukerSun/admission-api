@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type AdmissionLineStore interface {
-	ListAdmissionLines(ctx context.Context, filter AdmissionLineFilter) ([]AdmissionLineResponse, error)
+type AdmissionLineStore interface { //nolint:revive
+	ListAdmissionLines(ctx context.Context, filter *AdmissionLineFilter) ([]AdmissionLineResponse, error)
 }
 
 type admissionLineStore struct {
@@ -20,7 +20,7 @@ func NewAdmissionLineStore(pool *pgxpool.Pool) AdmissionLineStore {
 	return &admissionLineStore{pool: pool}
 }
 
-func (s *admissionLineStore) ListAdmissionLines(ctx context.Context, filter AdmissionLineFilter) ([]AdmissionLineResponse, error) {
+func (s *admissionLineStore) ListAdmissionLines(ctx context.Context, filter *AdmissionLineFilter) ([]AdmissionLineResponse, error) {
 	args := []any{}
 	conditions := []string{"1 = 1"}
 	if filter.AdmissionYear != nil {

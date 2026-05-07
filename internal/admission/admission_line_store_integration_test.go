@@ -26,7 +26,7 @@ func TestAdmissionLineStoreFiltersSchoolsGroupsAndDefaultsToLatestYear(t *testin
 	seedAdmissionLineIntegrationData(t, pool)
 
 	store := NewAdmissionLineStore(pool)
-	lines, err := store.ListAdmissionLines(ctx, AdmissionLineFilter{
+	lines, err := store.ListAdmissionLines(ctx, &AdmissionLineFilter{
 		RegionCode:          "230000",
 		SubjectCategoryCode: "physics",
 		UniversityCodes:     []string{"TDD-1003", "TDD-1001"},
@@ -54,7 +54,7 @@ func TestAdmissionLineStoreFiltersSchoolsGroupsAndDefaultsToLatestYear(t *testin
 	require.Equal(t, "含人工智能方向", lines[1].AdmissionRemark)
 
 	explicitYear := 2024
-	historicalLines, err := store.ListAdmissionLines(ctx, AdmissionLineFilter{
+	historicalLines, err := store.ListAdmissionLines(ctx, &AdmissionLineFilter{
 		AdmissionYear:       &explicitYear,
 		RegionCode:          "230000",
 		SubjectCategoryCode: "physics",
@@ -70,7 +70,7 @@ func TestAdmissionLineStoreFiltersSchoolsGroupsAndDefaultsToLatestYear(t *testin
 	require.Equal(t, "25", historicalLines[0].LocalMajorCode)
 	require.Equal(t, 700, *historicalLines[0].MinScore)
 
-	taggedLines, err := store.ListAdmissionLines(ctx, AdmissionLineFilter{
+	taggedLines, err := store.ListAdmissionLines(ctx, &AdmissionLineFilter{
 		RegionCode:          "230000",
 		SubjectCategoryCode: "physics",
 		TagCatalogYear:      intPtr(2025),
@@ -86,7 +86,7 @@ func TestAdmissionLineStoreFiltersSchoolsGroupsAndDefaultsToLatestYear(t *testin
 	require.Equal(t, "TDD-1003", taggedLines[0].UniversityCode)
 	require.Equal(t, "计算机类", taggedLines[0].LocalMajorName)
 
-	tagKeywordLines, err := store.ListAdmissionLines(ctx, AdmissionLineFilter{
+	tagKeywordLines, err := store.ListAdmissionLines(ctx, &AdmissionLineFilter{
 		RegionCode:          "230000",
 		SubjectCategoryCode: "physics",
 		TagCatalogYear:      intPtr(2025),

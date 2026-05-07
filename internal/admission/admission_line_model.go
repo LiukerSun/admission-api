@@ -1,6 +1,6 @@
 package admission
 
-type AdmissionLineFilter struct {
+type AdmissionLineFilter struct { //nolint:revive
 	AdmissionYear       *int
 	RegionCode          string
 	SubjectCategoryCode string
@@ -18,7 +18,7 @@ type AdmissionLineFilter struct {
 	MinScoreTo          *int
 }
 
-type AdmissionLineResponse struct {
+type AdmissionLineResponse struct { //nolint:revive
 	ID                          int64    `json:"id"`
 	AdmissionGroupID            int64    `json:"admission_group_id"`
 	UniversityMajorLineID       int64    `json:"university_major_line_id"`

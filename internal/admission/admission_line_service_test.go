@@ -12,7 +12,7 @@ type stubAdmissionLineStore struct {
 	err   error
 }
 
-func (s stubAdmissionLineStore) ListAdmissionLines(ctx context.Context, filter AdmissionLineFilter) ([]AdmissionLineResponse, error) {
+func (s stubAdmissionLineStore) ListAdmissionLines(ctx context.Context, filter *AdmissionLineFilter) ([]AdmissionLineResponse, error) {
 	return s.lines, s.err
 }
 
@@ -27,7 +27,7 @@ func TestAdmissionLineServiceListsAdmissionLines(t *testing.T) {
 		},
 	}})
 
-	lines, err := service.ListAdmissionLines(context.Background(), AdmissionLineFilter{RegionCode: "230000"})
+	lines, err := service.ListAdmissionLines(context.Background(), &AdmissionLineFilter{RegionCode: "230000"})
 
 	require.NoError(t, err)
 	require.Len(t, lines, 1)

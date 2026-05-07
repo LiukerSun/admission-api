@@ -19,7 +19,7 @@ func (s stubImportStore) DictionaryCodeExists(ctx context.Context, table, code s
 	return s.dictionaries[table][code], nil
 }
 
-func (s stubImportStore) AdmissionLineExists(ctx context.Context, groupKey AdmissionGroupKey, localMajorCode string) (bool, error) {
+func (s stubImportStore) AdmissionLineExists(ctx context.Context, groupKey *AdmissionGroupKey, localMajorCode string) (bool, error) {
 	return s.duplicate, nil
 }
 

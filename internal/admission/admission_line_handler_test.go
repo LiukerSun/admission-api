@@ -18,7 +18,7 @@ type stubAdmissionLineService struct {
 	err   error
 }
 
-func (s stubAdmissionLineService) ListAdmissionLines(ctx context.Context, filter AdmissionLineFilter) ([]AdmissionLineResponse, error) {
+func (s stubAdmissionLineService) ListAdmissionLines(ctx context.Context, filter *AdmissionLineFilter) ([]AdmissionLineResponse, error) {
 	return s.lines, s.err
 }
 
@@ -27,8 +27,8 @@ type capturingAdmissionLineService struct {
 	filters []AdmissionLineFilter
 }
 
-func (s *capturingAdmissionLineService) ListAdmissionLines(ctx context.Context, filter AdmissionLineFilter) ([]AdmissionLineResponse, error) {
-	s.filters = append(s.filters, filter)
+func (s *capturingAdmissionLineService) ListAdmissionLines(ctx context.Context, filter *AdmissionLineFilter) ([]AdmissionLineResponse, error) {
+	s.filters = append(s.filters, *filter)
 	return s.lines, nil
 }
 

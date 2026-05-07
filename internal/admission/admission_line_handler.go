@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type AdmissionLineHandler struct {
+type AdmissionLineHandler struct { //nolint:revive
 	web.BaseHandler
 	service AdmissionLineService
 }
@@ -48,7 +48,7 @@ func (h *AdmissionLineHandler) ListAdmissionLines(c *gin.Context) {
 	if !ok {
 		return
 	}
-	resp, err := h.service.ListAdmissionLines(c.Request.Context(), filter)
+	resp, err := h.service.ListAdmissionLines(c.Request.Context(), &filter)
 	if err != nil {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to list admission lines")
 		return

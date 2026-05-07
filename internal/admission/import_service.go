@@ -9,7 +9,7 @@ import (
 
 type ImportStore interface {
 	DictionaryCodeExists(ctx context.Context, table, code string) (bool, error)
-	AdmissionLineExists(ctx context.Context, groupKey AdmissionGroupKey, localMajorCode string) (bool, error)
+	AdmissionLineExists(ctx context.Context, groupKey *AdmissionGroupKey, localMajorCode string) (bool, error)
 }
 
 type ImportService interface {
@@ -26,7 +26,8 @@ func NewImportService(store ImportStore) ImportService {
 
 func (s *importService) ValidateRows(ctx context.Context, rows []AdmissionImportRow) (*ImportValidationResult, error) {
 	result := &ImportValidationResult{TotalRows: len(rows)}
-	for _, row := range rows {
+	for index := range rows {
+		row := &rows[index]
 		if err := s.validateRow(ctx, row); err != nil {
 			result.FailedRows++
 			result.Errors = append(result.Errors, ImportRowError{
@@ -40,7 +41,7 @@ func (s *importService) ValidateRows(ctx context.Context, rows []AdmissionImport
 	return result, nil
 }
 
-func (s *importService) validateRow(ctx context.Context, row AdmissionImportRow) error {
+func (s *importService) validateRow(ctx context.Context, row *AdmissionImportRow) error {
 	if row.AdmissionYear == 0 {
 		return fmt.Errorf("admission_year is required")
 	}
@@ -78,7 +79,7 @@ func (s *importService) validateRow(ctx context.Context, row AdmissionImportRow)
 		return fmt.Errorf("local_major_name is required")
 	}
 
-	duplicate, err := s.store.AdmissionLineExists(ctx, AdmissionGroupKey{
+	duplicate, err := s.store.AdmissionLineExists(ctx, &AdmissionGroupKey{
 		UniversityCode:      row.UniversityCode,
 		UniversityName:      row.UniversityName,
 		AdmissionYear:       row.AdmissionYear,
@@ -97,7 +98,7 @@ func (s *importService) validateRow(ctx context.Context, row AdmissionImportRow)
 	return nil
 }
 
-func validateOptionalInts(row AdmissionImportRow) error {
+func validateOptionalInts(row *AdmissionImportRow) error {
 	fields := []struct {
 		name  string
 		value string
