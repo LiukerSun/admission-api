@@ -1,6 +1,6 @@
 package admission
 
-type AdmissionMajorTagResponse struct { //nolint:revive
+type AdmissionMajorTagResponse struct { //nolint:revive // Keeps Swagger and API naming explicit.
 	ID                         int64  `json:"id"`
 	UniversityMajorAdmissionID int64  `json:"university_major_admission_id"`
 	CatalogYear                int    `json:"catalog_year"`

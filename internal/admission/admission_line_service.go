@@ -2,7 +2,7 @@ package admission
 
 import "context"
 
-type AdmissionLineService interface { //nolint:revive
+type AdmissionLineService interface { //nolint:revive // Matches route constructor naming.
 	ListAdmissionLines(ctx context.Context, filter *AdmissionLineFilter) ([]AdmissionLineResponse, error)
 }
 

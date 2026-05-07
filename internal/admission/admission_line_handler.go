@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type AdmissionLineHandler struct { //nolint:revive
+type AdmissionLineHandler struct { //nolint:revive // Matches route constructor naming.
 	web.BaseHandler
 	service AdmissionLineService
 }

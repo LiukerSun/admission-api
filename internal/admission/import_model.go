@@ -1,6 +1,6 @@
 package admission
 
-type AdmissionImportRow struct { //nolint:revive
+type AdmissionImportRow struct { //nolint:revive // Names the imported admission domain record.
 	SourceRowNumber        int
 	AdmissionYear          int
 	CatalogYear            int
@@ -23,7 +23,7 @@ type AdmissionImportRow struct { //nolint:revive
 	Tuition                string
 }
 
-type AdmissionGroupKey struct { //nolint:revive
+type AdmissionGroupKey struct { //nolint:revive // Names the admission group natural key.
 	UniversityCode      string
 	UniversityName      string
 	AdmissionYear       int

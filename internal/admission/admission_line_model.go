@@ -1,6 +1,6 @@
 package admission
 
-type AdmissionLineFilter struct { //nolint:revive
+type AdmissionLineFilter struct { //nolint:revive // Keeps Swagger and API naming explicit.
 	AdmissionYear       *int
 	RegionCode          string
 	SubjectCategoryCode string
@@ -18,7 +18,7 @@ type AdmissionLineFilter struct { //nolint:revive
 	MinScoreTo          *int
 }
 
-type AdmissionLineResponse struct { //nolint:revive
+type AdmissionLineResponse struct { //nolint:revive // Keeps Swagger and API naming explicit.
 	ID                          int64    `json:"id"`
 	AdmissionGroupID            int64    `json:"admission_group_id"`
 	UniversityMajorLineID       int64    `json:"university_major_line_id"`

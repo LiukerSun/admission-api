@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type AdmissionLineStore interface { //nolint:revive
+type AdmissionLineStore interface { //nolint:revive // Matches route constructor naming.
 	ListAdmissionLines(ctx context.Context, filter *AdmissionLineFilter) ([]AdmissionLineResponse, error)
 }
 
