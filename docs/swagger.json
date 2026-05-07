@@ -630,6 +630,390 @@
                 }
             }
         },
+        "/api/v1/admission/admission-lines": {
+            "get": {
+                "description": "Returns school-major admission lines with university, admission group, local school major, score, rank, and plan fields. If admission_year is omitted, the latest available admission year is used for the selected region and subject category.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "List admission lines",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Admission year",
+                        "name": "admission_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Region code",
+                        "name": "region_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Subject category code",
+                        "name": "subject_category_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated internal university IDs",
+                        "name": "university_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated school-published university codes",
+                        "name": "university_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated admission group codes",
+                        "name": "group_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "CHSI tag catalog year",
+                        "name": "tag_catalog_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI tag keyword, matching category/class/major code or name",
+                        "name": "tag_query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI major category code",
+                        "name": "tag_category_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI major class code",
+                        "name": "tag_class_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI standard major code",
+                        "name": "tag_major_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum rank lower bound",
+                        "name": "min_rank_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum rank upper bound",
+                        "name": "min_rank_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum score lower bound",
+                        "name": "min_score_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum score upper bound",
+                        "name": "min_score_to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/admission.AdmissionLineResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admission/dictionaries": {
+            "get": {
+                "description": "Returns code-name values used by admission filters and imports.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "List admission dictionaries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admission.DictionaryResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admission/major-catalog/latest-year": {
+            "get": {
+                "description": "Returns the latest available CHSI standard major catalog year.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "Get latest major catalog year",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admission.LatestCatalogYearResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admission/standard-majors": {
+            "get": {
+                "description": "Returns CHSI standard majors. If catalog_year is omitted, the latest catalog year is used.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "List standard majors",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Catalog year",
+                        "name": "catalog_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search major code or name",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/admission.StandardMajorResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admission/universities": {
+            "get": {
+                "description": "Returns university identities.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "List universities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search university code or name",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/admission.UniversityResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admission/universities/{id}/profile": {
+            "get": {
+                "description": "Returns a university yearly profile. If profile_year is omitted, the latest profile is used.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "Get university profile",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "University ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Profile year",
+                        "name": "profile_year",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admission.UniversityProfileResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/login": {
             "post": {
                 "description": "使用邮箱和密码登录，获取 Access Token 和 Refresh Token",
@@ -1761,6 +2145,281 @@
                 "username": {
                     "type": "string",
                     "example": "johndoe"
+                }
+            }
+        },
+        "admission.AdmissionLineResponse": {
+            "type": "object",
+            "properties": {
+                "admission_group_id": {
+                    "type": "integer"
+                },
+                "admission_remark": {
+                    "type": "string"
+                },
+                "admission_year": {
+                    "type": "integer"
+                },
+                "admitted_count": {
+                    "type": "integer"
+                },
+                "batch_code": {
+                    "type": "string"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "equivalent_min_score": {
+                    "type": "integer"
+                },
+                "group_code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "local_major_code": {
+                    "type": "string"
+                },
+                "local_major_name": {
+                    "type": "string"
+                },
+                "max_rank": {
+                    "type": "integer"
+                },
+                "max_score": {
+                    "type": "integer"
+                },
+                "min_rank": {
+                    "type": "integer"
+                },
+                "min_score": {
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "region_code": {
+                    "type": "string"
+                },
+                "subject_category_code": {
+                    "type": "string"
+                },
+                "subject_requirement_code": {
+                    "type": "string"
+                },
+                "tuition": {
+                    "type": "integer"
+                },
+                "university_code": {
+                    "type": "string"
+                },
+                "university_id": {
+                    "type": "integer"
+                },
+                "university_major_line_id": {
+                    "type": "integer"
+                },
+                "university_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.DictionaryItem": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.DictionaryResponse": {
+            "type": "object",
+            "properties": {
+                "batches": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DictionaryItem"
+                    }
+                },
+                "education_levels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DictionaryItem"
+                    }
+                },
+                "regions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DictionaryItem"
+                    }
+                },
+                "school_categories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DictionaryItem"
+                    }
+                },
+                "school_ownership_types": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DictionaryItem"
+                    }
+                },
+                "subject_categories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DictionaryItem"
+                    }
+                },
+                "subject_requirements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DictionaryItem"
+                    }
+                }
+            }
+        },
+        "admission.LatestCatalogYearResponse": {
+            "type": "object",
+            "properties": {
+                "catalog_year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "admission.StandardMajorResponse": {
+            "type": "object",
+            "properties": {
+                "catalog_year": {
+                    "type": "integer"
+                },
+                "category_code": {
+                    "type": "string"
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "class_code": {
+                    "type": "string"
+                },
+                "class_name": {
+                    "type": "string"
+                },
+                "degree_category": {
+                    "type": "string"
+                },
+                "duration": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "major_code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.UniversityProfileResponse": {
+            "type": "object",
+            "properties": {
+                "affiliation": {
+                    "type": "string"
+                },
+                "alumni_rank": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "difficulty_rank": {
+                    "type": "string"
+                },
+                "doctoral_program_count": {
+                    "type": "integer"
+                },
+                "education_level_code": {
+                    "type": "string"
+                },
+                "excellence_tags": {
+                    "type": "string"
+                },
+                "has_postgraduate_recommendation": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_211": {
+                    "type": "boolean"
+                },
+                "is_985": {
+                    "type": "boolean"
+                },
+                "is_double_first_class": {
+                    "type": "boolean"
+                },
+                "is_national_key": {
+                    "type": "boolean"
+                },
+                "is_provincial_key": {
+                    "type": "boolean"
+                },
+                "master_program_count": {
+                    "type": "integer"
+                },
+                "national_key_subject_count": {
+                    "type": "integer"
+                },
+                "ownership_type_code": {
+                    "type": "string"
+                },
+                "postgraduate_recommendation_rate": {
+                    "type": "number"
+                },
+                "profile_year": {
+                    "type": "integer"
+                },
+                "region_code": {
+                    "type": "string"
+                },
+                "school_category_code": {
+                    "type": "string"
+                },
+                "school_level_tags": {
+                    "type": "string"
+                },
+                "soft_rank": {
+                    "type": "string"
+                },
+                "university_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "admission.UniversityResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "normalized_name": {
+                    "type": "string"
+                },
+                "university_code": {
+                    "type": "string"
                 }
             }
         },

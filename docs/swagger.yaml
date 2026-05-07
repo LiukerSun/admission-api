@@ -141,6 +141,187 @@ definitions:
         example: johndoe
         type: string
     type: object
+  admission.AdmissionLineResponse:
+    properties:
+      admission_group_id:
+        type: integer
+      admission_remark:
+        type: string
+      admission_year:
+        type: integer
+      admitted_count:
+        type: integer
+      batch_code:
+        type: string
+      duration:
+        type: string
+      equivalent_min_score:
+        type: integer
+      group_code:
+        type: string
+      id:
+        type: integer
+      local_major_code:
+        type: string
+      local_major_name:
+        type: string
+      max_rank:
+        type: integer
+      max_score:
+        type: integer
+      min_rank:
+        type: integer
+      min_score:
+        type: integer
+      plan_count:
+        type: integer
+      region_code:
+        type: string
+      subject_category_code:
+        type: string
+      subject_requirement_code:
+        type: string
+      tuition:
+        type: integer
+      university_code:
+        type: string
+      university_id:
+        type: integer
+      university_major_line_id:
+        type: integer
+      university_name:
+        type: string
+    type: object
+  admission.DictionaryItem:
+    properties:
+      code:
+        type: string
+      name:
+        type: string
+    type: object
+  admission.DictionaryResponse:
+    properties:
+      batches:
+        items:
+          $ref: '#/definitions/admission.DictionaryItem'
+        type: array
+      education_levels:
+        items:
+          $ref: '#/definitions/admission.DictionaryItem'
+        type: array
+      regions:
+        items:
+          $ref: '#/definitions/admission.DictionaryItem'
+        type: array
+      school_categories:
+        items:
+          $ref: '#/definitions/admission.DictionaryItem'
+        type: array
+      school_ownership_types:
+        items:
+          $ref: '#/definitions/admission.DictionaryItem'
+        type: array
+      subject_categories:
+        items:
+          $ref: '#/definitions/admission.DictionaryItem'
+        type: array
+      subject_requirements:
+        items:
+          $ref: '#/definitions/admission.DictionaryItem'
+        type: array
+    type: object
+  admission.LatestCatalogYearResponse:
+    properties:
+      catalog_year:
+        type: integer
+    type: object
+  admission.StandardMajorResponse:
+    properties:
+      catalog_year:
+        type: integer
+      category_code:
+        type: string
+      category_name:
+        type: string
+      class_code:
+        type: string
+      class_name:
+        type: string
+      degree_category:
+        type: string
+      duration:
+        type: string
+      id:
+        type: integer
+      major_code:
+        type: string
+      name:
+        type: string
+      source_url:
+        type: string
+    type: object
+  admission.UniversityProfileResponse:
+    properties:
+      affiliation:
+        type: string
+      alumni_rank:
+        type: string
+      city:
+        type: string
+      difficulty_rank:
+        type: string
+      doctoral_program_count:
+        type: integer
+      education_level_code:
+        type: string
+      excellence_tags:
+        type: string
+      has_postgraduate_recommendation:
+        type: boolean
+      id:
+        type: integer
+      is_211:
+        type: boolean
+      is_985:
+        type: boolean
+      is_double_first_class:
+        type: boolean
+      is_national_key:
+        type: boolean
+      is_provincial_key:
+        type: boolean
+      master_program_count:
+        type: integer
+      national_key_subject_count:
+        type: integer
+      ownership_type_code:
+        type: string
+      postgraduate_recommendation_rate:
+        type: number
+      profile_year:
+        type: integer
+      region_code:
+        type: string
+      school_category_code:
+        type: string
+      school_level_tags:
+        type: string
+      soft_rank:
+        type: string
+      university_id:
+        type: integer
+    type: object
+  admission.UniversityResponse:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      normalized_name:
+        type: string
+      university_code:
+        type: string
+    type: object
   membership.CurrentMembershipResponse:
     properties:
       active:
@@ -784,6 +965,246 @@ paths:
       summary: 管理员修改用户角色
       tags:
       - admin
+  /api/v1/admission/admission-lines:
+    get:
+      description: Returns school-major admission lines with university, admission
+        group, local school major, score, rank, and plan fields. If admission_year
+        is omitted, the latest available admission year is used for the selected region
+        and subject category.
+      parameters:
+      - description: Admission year
+        in: query
+        name: admission_year
+        type: integer
+      - description: Region code
+        in: query
+        name: region_code
+        type: string
+      - description: Subject category code
+        in: query
+        name: subject_category_code
+        type: string
+      - description: Comma-separated internal university IDs
+        in: query
+        name: university_ids
+        type: string
+      - description: Comma-separated school-published university codes
+        in: query
+        name: university_codes
+        type: string
+      - description: Comma-separated admission group codes
+        in: query
+        name: group_codes
+        type: string
+      - description: CHSI tag catalog year
+        in: query
+        name: tag_catalog_year
+        type: integer
+      - description: CHSI tag keyword, matching category/class/major code or name
+        in: query
+        name: tag_query
+        type: string
+      - description: CHSI major category code
+        in: query
+        name: tag_category_code
+        type: string
+      - description: CHSI major class code
+        in: query
+        name: tag_class_code
+        type: string
+      - description: CHSI standard major code
+        in: query
+        name: tag_major_code
+        type: string
+      - description: Minimum rank lower bound
+        in: query
+        name: min_rank_from
+        type: integer
+      - description: Minimum rank upper bound
+        in: query
+        name: min_rank_to
+        type: integer
+      - description: Minimum score lower bound
+        in: query
+        name: min_score_from
+        type: integer
+      - description: Minimum score upper bound
+        in: query
+        name: min_score_to
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/admission.AdmissionLineResponse'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: List admission lines
+      tags:
+      - admission
+  /api/v1/admission/dictionaries:
+    get:
+      description: Returns code-name values used by admission filters and imports.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.DictionaryResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: List admission dictionaries
+      tags:
+      - admission
+  /api/v1/admission/major-catalog/latest-year:
+    get:
+      description: Returns the latest available CHSI standard major catalog year.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.LatestCatalogYearResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Get latest major catalog year
+      tags:
+      - admission
+  /api/v1/admission/standard-majors:
+    get:
+      description: Returns CHSI standard majors. If catalog_year is omitted, the latest
+        catalog year is used.
+      parameters:
+      - description: Catalog year
+        in: query
+        name: catalog_year
+        type: integer
+      - description: Search major code or name
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/admission.StandardMajorResponse'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: List standard majors
+      tags:
+      - admission
+  /api/v1/admission/universities:
+    get:
+      description: Returns university identities.
+      parameters:
+      - description: Search university code or name
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/admission.UniversityResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: List universities
+      tags:
+      - admission
+  /api/v1/admission/universities/{id}/profile:
+    get:
+      description: Returns a university yearly profile. If profile_year is omitted,
+        the latest profile is used.
+      parameters:
+      - description: University ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Profile year
+        in: query
+        name: profile_year
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.UniversityProfileResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Get university profile
+      tags:
+      - admission
   /api/v1/auth/login:
     post:
       consumes:

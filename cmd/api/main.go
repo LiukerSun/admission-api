@@ -30,6 +30,7 @@ import (
 
 	_ "admission-api/docs"
 	"admission-api/internal/admin"
+	"admission-api/internal/admission"
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
@@ -118,6 +119,19 @@ func run() error {
 		MockCallbackSecret:         cfg.MockCallbackSecret,
 	})
 
+	dictionaryStore := admission.NewDictionaryStore(database.Pool())
+	dictionaryService := admission.NewDictionaryService(dictionaryStore)
+	dictionaryHandler := admission.NewDictionaryHandler(dictionaryService)
+	majorCatalogStore := admission.NewMajorCatalogStore(database.Pool())
+	majorCatalogService := admission.NewMajorCatalogService(majorCatalogStore)
+	majorCatalogHandler := admission.NewMajorCatalogHandler(majorCatalogService)
+	universityStore := admission.NewUniversityStore(database.Pool())
+	universityService := admission.NewUniversityService(universityStore)
+	universityHandler := admission.NewUniversityHandler(universityService)
+	admissionLineStore := admission.NewAdmissionLineStore(database.Pool())
+	admissionLineService := admission.NewAdmissionLineService(admissionLineStore)
+	admissionLineHandler := admission.NewAdmissionLineHandler(admissionLineService)
+
 	healthHandler := health.NewHandler(database)
 
 	// Initialize admin module
@@ -145,6 +159,12 @@ func run() error {
 		api.POST("/auth/refresh", userHandler.Refresh)
 
 		api.POST("/payment/callbacks/mock", paymentHandler.MockCallback)
+		api.GET("/admission/dictionaries", dictionaryHandler.ListDictionaries)
+		api.GET("/admission/major-catalog/latest-year", majorCatalogHandler.LatestCatalogYear)
+		api.GET("/admission/standard-majors", majorCatalogHandler.ListStandardMajors)
+		api.GET("/admission/universities", universityHandler.ListUniversities)
+		api.GET("/admission/universities/:id/profile", universityHandler.GetUniversityProfile)
+		api.GET("/admission/admission-lines", admissionLineHandler.ListAdmissionLines)
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))

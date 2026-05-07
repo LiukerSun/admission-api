@@ -156,3 +156,309 @@ CREATE TABLE membership_grants (
 
 CREATE INDEX idx_membership_grants_user_created
     ON membership_grants(user_id, created_at DESC);
+
+CREATE TABLE regions (
+    code VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE subject_categories (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE subject_requirements (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    normalized_subjects JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE batches (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE education_levels (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE school_ownership_types (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE school_categories (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE major_categories (
+    id BIGSERIAL PRIMARY KEY,
+    catalog_year INTEGER NOT NULL,
+    category_code VARCHAR(20) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (catalog_year, category_code)
+);
+
+CREATE TABLE major_classes (
+    id BIGSERIAL PRIMARY KEY,
+    catalog_year INTEGER NOT NULL,
+    category_code VARCHAR(20) NOT NULL,
+    class_code VARCHAR(20) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (catalog_year, class_code),
+    FOREIGN KEY (catalog_year, category_code)
+        REFERENCES major_categories (catalog_year, category_code)
+);
+
+CREATE TABLE standard_majors (
+    id BIGSERIAL PRIMARY KEY,
+    catalog_year INTEGER NOT NULL,
+    major_code VARCHAR(20) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    category_code VARCHAR(20) NOT NULL,
+    class_code VARCHAR(20) NOT NULL,
+    duration VARCHAR(50),
+    degree_category VARCHAR(100),
+    source_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (catalog_year, major_code),
+    FOREIGN KEY (catalog_year, category_code)
+        REFERENCES major_categories (catalog_year, category_code),
+    FOREIGN KEY (catalog_year, class_code)
+        REFERENCES major_classes (catalog_year, class_code)
+);
+
+CREATE INDEX idx_standard_majors_catalog_name
+    ON standard_majors(catalog_year, name);
+
+CREATE INDEX idx_standard_majors_catalog_class
+    ON standard_majors(catalog_year, class_code);
+
+CREATE TABLE universities (
+    id BIGSERIAL PRIMARY KEY,
+    university_code VARCHAR(50) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    normalized_name VARCHAR(200),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (university_code, name)
+);
+
+CREATE INDEX idx_universities_name
+    ON universities(name);
+
+CREATE TABLE university_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    university_id BIGINT NOT NULL REFERENCES universities(id) ON DELETE CASCADE,
+    profile_year INTEGER NOT NULL,
+    region_code VARCHAR(20) REFERENCES regions(code),
+    city VARCHAR(100),
+    ownership_type_code VARCHAR(50) REFERENCES school_ownership_types(code),
+    school_category_code VARCHAR(50) REFERENCES school_categories(code),
+    education_level_code VARCHAR(50) REFERENCES education_levels(code),
+    is_985 BOOLEAN,
+    is_211 BOOLEAN,
+    is_double_first_class BOOLEAN,
+    is_national_key BOOLEAN,
+    is_provincial_key BOOLEAN,
+    has_postgraduate_recommendation BOOLEAN,
+    postgraduate_recommendation_rate NUMERIC(5,2),
+    soft_rank VARCHAR(100),
+    alumni_rank VARCHAR(100),
+    difficulty_rank VARCHAR(100),
+    doctoral_program_count INTEGER,
+    master_program_count INTEGER,
+    national_key_subject_count INTEGER,
+    affiliation VARCHAR(200),
+    school_level_tags TEXT,
+    excellence_tags TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (university_id, profile_year)
+);
+
+CREATE INDEX idx_university_profiles_year
+    ON university_profiles(university_id, profile_year DESC);
+
+CREATE TABLE admission_groups (
+    id BIGSERIAL PRIMARY KEY,
+    university_id BIGINT NOT NULL REFERENCES universities(id) ON DELETE CASCADE,
+    admission_year INTEGER NOT NULL,
+    region_code VARCHAR(20) NOT NULL REFERENCES regions(code),
+    subject_category_code VARCHAR(50) NOT NULL REFERENCES subject_categories(code),
+    batch_code VARCHAR(50) NOT NULL REFERENCES batches(code),
+    group_code VARCHAR(50) NOT NULL,
+    subject_requirement_code VARCHAR(50) REFERENCES subject_requirements(code),
+    education_level_code VARCHAR(50) REFERENCES education_levels(code),
+    group_major_count INTEGER,
+    group_major_names TEXT,
+    group_type VARCHAR(100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (
+        university_id,
+        admission_year,
+        region_code,
+        subject_category_code,
+        batch_code,
+        group_code
+    )
+);
+
+CREATE INDEX idx_admission_groups_lookup
+    ON admission_groups(admission_year, region_code, subject_category_code, university_id, group_code);
+
+CREATE INDEX idx_admission_groups_university_year
+    ON admission_groups(university_id, admission_year DESC);
+
+CREATE TABLE admission_group_extensions (
+    id BIGSERIAL PRIMARY KEY,
+    admission_group_id BIGINT NOT NULL UNIQUE REFERENCES admission_groups(id) ON DELETE CASCADE,
+    batch_remark TEXT,
+    group_min_score INTEGER,
+    group_min_rank INTEGER,
+    equivalent_min_score_2024 INTEGER,
+    equivalent_min_score_2023 INTEGER,
+    equivalent_min_score_2022 INTEGER,
+    subject_change_2024 TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_admission_group_extensions_score
+    ON admission_group_extensions(group_min_rank, group_min_score);
+
+CREATE TABLE university_major_admissions (
+    id BIGSERIAL PRIMARY KEY,
+    admission_group_id BIGINT NOT NULL REFERENCES admission_groups(id) ON DELETE CASCADE,
+    local_major_code VARCHAR(50) NOT NULL,
+    local_major_name TEXT NOT NULL,
+    plan_count INTEGER,
+    admitted_count INTEGER,
+    min_score INTEGER,
+    min_rank INTEGER,
+    max_score INTEGER,
+    max_rank INTEGER,
+    equivalent_min_score INTEGER,
+    tuition INTEGER,
+    duration VARCHAR(50),
+    admission_remark TEXT,
+    major_intro TEXT,
+    training_goal TEXT,
+    subject_study_requirement TEXT,
+    main_courses TEXT,
+    postgraduate_direction TEXT,
+    employment_direction TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (admission_group_id, local_major_code)
+);
+
+CREATE INDEX idx_major_admissions_group
+    ON university_major_admissions(admission_group_id, local_major_code);
+
+CREATE INDEX idx_major_admissions_local_name
+    ON university_major_admissions(local_major_name);
+
+CREATE INDEX idx_major_admissions_rank
+    ON university_major_admissions(min_rank, min_score);
+
+CREATE TABLE university_major_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    university_major_admission_id BIGINT NOT NULL UNIQUE REFERENCES university_major_admissions(id) ON DELETE CASCADE,
+    discipline_category VARCHAR(100),
+    first_level_discipline VARCHAR(200),
+    fourth_round_subject_eval VARCHAR(100),
+    double_first_class_subject TEXT,
+    soft_major_grade VARCHAR(100),
+    major_evaluation_score NUMERIC(6,2),
+    major_rank VARCHAR(100),
+    is_national_feature BOOLEAN,
+    corresponding_master_majors TEXT,
+    corresponding_doctoral_majors TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_university_major_profiles_discipline
+    ON university_major_profiles(discipline_category, first_level_discipline);
+
+CREATE INDEX idx_university_major_profiles_rank
+    ON university_major_profiles(major_rank);
+
+CREATE TABLE university_postgraduate_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    university_id BIGINT NOT NULL REFERENCES universities(id) ON DELETE CASCADE,
+    profile_year INTEGER NOT NULL,
+    master_major_count INTEGER,
+    master_major_names TEXT,
+    doctoral_major_count INTEGER,
+    doctoral_major_names TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (university_id, profile_year)
+);
+
+CREATE INDEX idx_university_postgraduate_profiles_year
+    ON university_postgraduate_profiles(university_id, profile_year DESC);
+
+CREATE TABLE admission_major_tags (
+    id BIGSERIAL PRIMARY KEY,
+    university_major_admission_id BIGINT NOT NULL REFERENCES university_major_admissions(id) ON DELETE CASCADE,
+    catalog_year INTEGER NOT NULL,
+    category_code VARCHAR(20) NOT NULL,
+    category_name VARCHAR(100) NOT NULL,
+    class_code VARCHAR(20),
+    class_name VARCHAR(100),
+    major_code VARCHAR(20),
+    major_name VARCHAR(200),
+    standard_major_id BIGINT REFERENCES standard_majors(id),
+    tag_level VARCHAR(20) NOT NULL
+        CHECK (tag_level IN ('category', 'class', 'major')),
+    note TEXT,
+    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (
+        university_major_admission_id,
+        catalog_year,
+        category_code,
+        class_code,
+        major_code
+    )
+);
+
+CREATE INDEX idx_admission_major_tags_category
+    ON admission_major_tags(catalog_year, category_code);
+
+CREATE INDEX idx_admission_major_tags_class
+    ON admission_major_tags(catalog_year, class_code)
+    WHERE class_code IS NOT NULL;
+
+CREATE INDEX idx_admission_major_tags_major
+    ON admission_major_tags(catalog_year, major_code)
+    WHERE major_code IS NOT NULL;
+
+CREATE INDEX idx_admission_major_tags_standard_major
+    ON admission_major_tags(standard_major_id)
+    WHERE standard_major_id IS NOT NULL;
