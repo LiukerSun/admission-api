@@ -50,3 +50,11 @@ DESIGN.md
 openspec/
 .agents
 .codex/
+
+# Local agent / planning docs
+AGENTS.md
+docs/agents/
+docs/gaokao-database.md
+docs/gaokao-import-results.md
+docs/prd-admission-database.md
+docs/tdd-results.md
