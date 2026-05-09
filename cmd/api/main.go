@@ -136,6 +136,8 @@ func run() error {
 	aggregateStore := admission.NewAggregateStore(database.Pool())
 	aggregateService := admission.NewAggregateService(aggregateStore)
 	aggregateHandler := admission.NewAggregateHandler(aggregateService)
+	volunteerPlanService := admission.NewVolunteerPlanService(cfg.VolunteerPlansFilePath)
+	volunteerPlanHandler := admission.NewVolunteerPlanHandler(volunteerPlanService)
 	conversationStore := conversation.NewStore(database.Pool())
 	conversationService := conversation.NewService(conversationStore)
 	conversationHandler := conversation.NewHandler(conversationService)
@@ -185,6 +187,7 @@ func run() error {
 		api.GET("/admission/universities/:id/profile", universityHandler.GetUniversityProfile)
 		api.GET("/admission/admission-lines", admissionLineHandler.ListAdmissionLines)
 		api.GET("/admission/aggregate", aggregateHandler.Aggregate)
+		api.GET("/admission/volunteer-plans", volunteerPlanHandler.ListVolunteerPlans)
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
