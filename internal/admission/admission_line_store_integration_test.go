@@ -97,6 +97,28 @@ func TestAdmissionLineStoreFiltersSchoolsGroupsAndDefaultsToLatestYear(t *testin
 	require.Len(t, tagKeywordLines, 1)
 	require.Equal(t, "TDD-1001", tagKeywordLines[0].UniversityCode)
 	require.Equal(t, "理科试验班类", tagKeywordLines[0].LocalMajorName)
+
+	is985 := true
+	profileFilteredLines, err := store.ListAdmissionLines(ctx, &AdmissionLineFilter{
+		RegionCode:          "230000",
+		SubjectCategoryCode: "physics",
+		UniversityCodes:     []string{"TDD-1003", "TDD-1001"},
+		Is985:               &is985,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, profileFilteredLines, 1)
+	require.Equal(t, "TDD-1001", profileFilteredLines[0].UniversityCode)
+
+	nonBeijingLines, err := store.ListAdmissionLines(ctx, &AdmissionLineFilter{
+		RegionCode:          "230000",
+		SubjectCategoryCode: "physics",
+		UniversityCodes:     []string{"TDD-1003", "TDD-1001"},
+		ExcludeProvinces:    []string{"110000"},
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, nonBeijingLines)
 }
 
 func cleanupAdmissionLineIntegrationData(t *testing.T, pool *pgxpool.Pool) {
@@ -142,6 +164,14 @@ func seedAdmissionLineIntegrationData(t *testing.T, pool *pgxpool.Pool) {
 			($2, 2025, '230000', 'physics', 'regular_undergraduate', '008', 'physics_chemistry', 'undergraduate'),
 			($2, 2024, '230000', 'physics', 'regular_undergraduate', '008', 'physics_chemistry', 'undergraduate'),
 			($2, 2025, '110000', 'physics', 'regular_undergraduate', '008', 'physics_chemistry', 'undergraduate')
+	`, pkuID, tsinghuaID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO university_profiles (university_id, profile_year, region_code, city, is_985, is_211, is_double_first_class)
+		VALUES
+			($1, 2025, '110000', '北京', true, true, true),
+			($2, 2025, '110000', '北京', false, true, true)
 	`, pkuID, tsinghuaID)
 	require.NoError(t, err)
 

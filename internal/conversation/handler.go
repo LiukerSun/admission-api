@@ -1,0 +1,279 @@
+package conversation
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+
+	"admission-api/internal/platform/middleware"
+	"admission-api/internal/platform/web"
+
+	"github.com/gin-gonic/gin"
+)
+
+// MaxMessageContentBytes caps the size of a single user message that can
+// be inserted via the public /messages endpoint. 8 KiB is well above any
+// reasonable chat input but small enough to keep DB rows and LLM context
+// bounded.
+const MaxMessageContentBytes = 8 * 1024
+
+type Handler struct {
+	web.BaseHandler
+	service Service
+}
+
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
+}
+
+// CreateConversation godoc
+// @Summary      Create a conversation
+// @Description  Creates a new AI conversation. If user_id is omitted, the conversation is anonymous.
+// @Tags         conversation
+// @Accept       json
+// @Produce      json
+// @Param        body body CreateConversationRequest true "Conversation creation request"
+// @Success      200 {object} web.Response{data=Conversation}
+// @Failure      400 {object} web.Response
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations [post]
+func (h *Handler) CreateConversation(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	var req CreateConversationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	conv, err := h.service.CreateConversation(c.Request.Context(), req.Title, &userID)
+	if err != nil {
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to create conversation")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(conv))
+}
+
+// GetConversation godoc
+// @Summary      Get conversation with messages
+// @Description  Returns a conversation and its messages.
+// @Tags         conversation
+// @Produce      json
+// @Param        id path int true "Conversation ID"
+// @Success      200 {object} web.Response{data=ConversationWithMessages}
+// @Failure      404 {object} web.Response
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations/{id} [get]
+func (h *Handler) GetConversation(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+	conv, err := h.service.GetConversation(c.Request.Context(), id)
+	if err != nil {
+		if err == ErrConversationNotFound {
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+			return
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to get conversation")
+		return
+	}
+	if !ownsConversation(conv, userID) {
+		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+		return
+	}
+	msgs, err := h.service.ListMessages(c.Request.Context(), id)
+	if err != nil {
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to get messages")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(ConversationWithMessages{
+		Conversation: conv,
+		Messages:     msgs,
+	}))
+}
+
+// ListConversations godoc
+// @Summary      List conversations
+// @Description  Lists active conversations, optionally filtered by user_id.
+// @Tags         conversation
+// @Produce      json
+// @Param        user_id query int false "User ID"
+// @Success      200 {object} web.Response{data=[]Conversation}
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations [get]
+func (h *Handler) ListConversations(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	convs, err := h.service.ListConversations(c.Request.Context(), &userID)
+	if err != nil {
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to list conversations")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(convs))
+}
+
+// AddMessage godoc
+// @Summary      Add a user message
+// @Description  Appends a user message to an existing conversation.
+//
+//	The role is always forced to "user" on the server side; clients
+//	cannot insert assistant, tool, or system messages through this
+//	endpoint. Use POST /conversations/{id}/ai-chat to obtain assistant
+//	replies.
+//
+// @Tags         conversation
+// @Accept       json
+// @Produce      json
+// @Param        id path int true "Conversation ID"
+// @Param        body body AddMessageRequest true "Message"
+// @Success      200 {object} web.Response{data=Message}
+// @Failure      400 {object} web.Response
+// @Failure      404 {object} web.Response
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations/{id}/messages [post]
+func (h *Handler) AddMessage(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+	var req AddMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "content must not be empty")
+		return
+	}
+	if len(content) > MaxMessageContentBytes {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "content exceeds maximum length")
+		return
+	}
+	if !h.canAccessConversation(c, id, userID) {
+		return
+	}
+	// Role is hardcoded to "user" and tool_calls / tool_results are nil
+	// so this public endpoint cannot be abused to fabricate assistant or
+	// tool history.
+	msg, err := h.service.AddMessage(c.Request.Context(), id, "user", content, nil, nil)
+	if err != nil {
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to add message")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(msg))
+}
+
+// DeleteConversation godoc
+// @Summary      Delete conversation
+// @Description  Soft-deletes a conversation by marking it as deleted.
+// @Tags         conversation
+// @Produce      json
+// @Param        id path int true "Conversation ID"
+// @Success      200 {object} web.Response
+// @Failure      404 {object} web.Response
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations/{id} [delete]
+func (h *Handler) DeleteConversation(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+	if !h.canAccessConversation(c, id, userID) {
+		return
+	}
+	if err := h.service.DeleteConversation(c.Request.Context(), id); err != nil {
+		if err == ErrConversationNotFound {
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+			return
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to delete conversation")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(nil))
+}
+
+// ArchiveConversation godoc
+// @Summary      Archive conversation
+// @Description  Archives a conversation.
+// @Tags         conversation
+// @Produce      json
+// @Param        id path int true "Conversation ID"
+// @Success      200 {object} web.Response
+// @Failure      404 {object} web.Response
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations/{id}/archive [post]
+func (h *Handler) ArchiveConversation(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+	if !h.canAccessConversation(c, id, userID) {
+		return
+	}
+	if err := h.service.ArchiveConversation(c.Request.Context(), id); err != nil {
+		if err == ErrConversationNotFound {
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+			return
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to archive conversation")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(nil))
+}
+
+type ConversationWithMessages struct {
+	Conversation *Conversation `json:"conversation"`
+	Messages     []*Message    `json:"messages"`
+}
+
+func (h *Handler) canAccessConversation(c *gin.Context, id int64, userID int64) bool {
+	conv, err := h.service.GetConversation(c.Request.Context(), id)
+	if err != nil {
+		if err == ErrConversationNotFound {
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+			return false
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to get conversation")
+		return false
+	}
+	if !ownsConversation(conv, userID) {
+		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+		return false
+	}
+	return true
+}
+
+func ownsConversation(conv *Conversation, userID int64) bool {
+	return conv != nil && conv.UserID != nil && *conv.UserID == userID
+}

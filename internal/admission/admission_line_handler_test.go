@@ -191,6 +191,51 @@ func TestListAdmissionLinesAcceptsTagAndScoreRankFilters(t *testing.T) {
 	require.Equal(t, 750, *service.filters[0].MinScoreTo)
 }
 
+func TestListAdmissionLinesAcceptsProfileBooleanFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &capturingAdmissionLineService{lines: []AdmissionLineResponse{}}
+	handler := NewAdmissionLineHandler(service)
+
+	router := gin.New()
+	router.GET("/api/v1/admission/admission-lines", handler.ListAdmissionLines)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admission/admission-lines?region_code=230000&subject_category_code=physics&is_985=true&is_211=false&is_double_first_class=true", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, service.filters, 1)
+	require.NotNil(t, service.filters[0].Is985)
+	require.True(t, *service.filters[0].Is985)
+	require.NotNil(t, service.filters[0].Is211)
+	require.False(t, *service.filters[0].Is211)
+	require.NotNil(t, service.filters[0].IsDoubleFirstClass)
+	require.True(t, *service.filters[0].IsDoubleFirstClass)
+}
+
+func TestListAdmissionLinesAcceptsProfileLocationFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &capturingAdmissionLineService{lines: []AdmissionLineResponse{}}
+	handler := NewAdmissionLineHandler(service)
+
+	router := gin.New()
+	router.GET("/api/v1/admission/admission-lines", handler.ListAdmissionLines)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admission/admission-lines?cities=哈尔滨,上海&exclude_cities=北京&provinces=230000&exclude_provinces=110000&subject_categories=physics,history", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, service.filters, 1)
+	require.Equal(t, []string{"哈尔滨", "上海"}, service.filters[0].Cities)
+	require.Equal(t, []string{"北京"}, service.filters[0].ExcludeCities)
+	require.Equal(t, []string{"230000"}, service.filters[0].Provinces)
+	require.Equal(t, []string{"110000"}, service.filters[0].ExcludeProvinces)
+	require.Equal(t, []string{"physics", "history"}, service.filters[0].SubjectCategories)
+}
+
 func intPtr(v int) *int {
 	return &v
 }

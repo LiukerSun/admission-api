@@ -3,25 +3,24 @@ package admission
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"admission-api/internal/platform/web"
 
 	"github.com/gin-gonic/gin"
 )
 
-type AdmissionLineHandler struct { //nolint:revive // Matches route constructor naming.
+type AggregateHandler struct {
 	web.BaseHandler
-	service AdmissionLineService
+	service AggregateService
 }
 
-func NewAdmissionLineHandler(service AdmissionLineService) *AdmissionLineHandler {
-	return &AdmissionLineHandler{service: service}
+func NewAggregateHandler(service AggregateService) *AggregateHandler {
+	return &AggregateHandler{service: service}
 }
 
-// ListAdmissionLines godoc
-// @Summary      List admission lines
-// @Description  Returns school-major admission lines with university, admission group, local school major, score, rank, and plan fields. If admission_year is omitted, the latest available admission year is used for the selected region and subject category.
+// Aggregate godoc
+// @Summary      Aggregate admission data
+// @Description  Aggregates admission lines by a dimension (province, city, subject_category, university, group). Supports metrics: count, avg_min_score, avg_min_rank, avg_tuition, is_985_count, is_211_count, is_double_first_class_count.
 // @Tags         admission
 // @Produce      json
 // @Param        admission_year query int false "Admission year"
@@ -31,7 +30,7 @@ func NewAdmissionLineHandler(service AdmissionLineService) *AdmissionLineHandler
 // @Param        university_codes query string false "Comma-separated school-published university codes"
 // @Param        group_codes query string false "Comma-separated admission group codes"
 // @Param        tag_catalog_year query int false "CHSI tag catalog year"
-// @Param        tag_query query string false "CHSI tag keyword, matching category/class/major code or name"
+// @Param        tag_query query string false "CHSI tag keyword"
 // @Param        tag_category_code query string false "CHSI major category code"
 // @Param        tag_class_code query string false "CHSI major class code"
 // @Param        tag_major_code query string false "CHSI standard major code"
@@ -39,25 +38,30 @@ func NewAdmissionLineHandler(service AdmissionLineService) *AdmissionLineHandler
 // @Param        min_rank_to query int false "Minimum rank upper bound"
 // @Param        min_score_from query int false "Minimum score lower bound"
 // @Param        min_score_to query int false "Minimum score upper bound"
-// @Success      200 {object} web.Response{data=[]AdmissionLineResponse}
+// @Param        is_985 query bool false "Filter by 985 status"
+// @Param        is_211 query bool false "Filter by 211 status"
+// @Param        is_double_first_class query bool false "Filter by double-first-class status"
+// @Param        group_by query string true "Dimension to group by: province, city, subject_category, university, group"
+// @Param        metrics query string true "Comma-separated metrics: count, avg_min_score, avg_min_rank, avg_tuition, is_985_count, is_211_count, is_double_first_class_count"
+// @Success      200 {object} web.Response{data=AggregateResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
-// @Router       /api/v1/admission/admission-lines [get]
-func (h *AdmissionLineHandler) ListAdmissionLines(c *gin.Context) {
-	filter, ok := h.parseAdmissionLineFilter(c)
+// @Router       /api/v1/admission/aggregate [get]
+func (h *AggregateHandler) Aggregate(c *gin.Context) {
+	filter, ok := h.parseAggregateFilter(c)
 	if !ok {
 		return
 	}
-	resp, err := h.service.ListAdmissionLines(c.Request.Context(), &filter)
+	resp, err := h.service.Aggregate(c.Request.Context(), &filter)
 	if err != nil {
-		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to list admission lines")
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to aggregate admission data")
 		return
 	}
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
 }
 
-func (h *AdmissionLineHandler) parseAdmissionLineFilter(c *gin.Context) (AdmissionLineFilter, bool) {
-	filter := AdmissionLineFilter{
+func (h *AggregateHandler) parseAggregateFilter(c *gin.Context) (AggregateFilter, bool) {
+	filter := AggregateFilter{
 		RegionCode:          c.Query("region_code"),
 		SubjectCategoryCode: c.Query("subject_category_code"),
 		UniversityCodes:     splitCSV(c.Query("university_codes")),
@@ -71,6 +75,11 @@ func (h *AdmissionLineHandler) parseAdmissionLineFilter(c *gin.Context) (Admissi
 		TagCategoryCode:     c.Query("tag_category_code"),
 		TagClassCode:        c.Query("tag_class_code"),
 		TagMajorCode:        c.Query("tag_major_code"),
+		GroupBy:             c.Query("group_by"),
+		Metrics:             splitCSV(c.Query("metrics")),
+	}
+	if filter.GroupBy == "" {
+		filter.GroupBy = "province"
 	}
 	if raw := c.Query("admission_year"); raw != "" {
 		year, err := strconv.Atoi(raw)
@@ -127,32 +136,4 @@ func (h *AdmissionLineHandler) parseAdmissionLineFilter(c *gin.Context) (Admissi
 		}
 	}
 	return filter, true
-}
-
-func splitCSV(raw string) []string {
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	values := make([]string, 0, len(parts))
-	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		if value != "" {
-			values = append(values, value)
-		}
-	}
-	return values
-}
-
-func parseInt64CSV(raw string) ([]int64, error) {
-	parts := splitCSV(raw)
-	values := make([]int64, 0, len(parts))
-	for _, part := range parts {
-		value, err := strconv.ParseInt(part, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
-	}
-	return values, nil
 }
