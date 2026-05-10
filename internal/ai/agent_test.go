@@ -103,7 +103,7 @@ func TestAgentContinuesAfterThreeToolCallsUntilFinalAnswer(t *testing.T) {
 }
 
 func TestAgentDoesNotStopAfterTenToolIterations(t *testing.T) {
-	responses := make([]*LLMResponse, 35)
+	responses := make([]*LLMResponse, 35, 36)
 	for i := range responses {
 		responses[i] = &LLMResponse{
 			Content:   "我再查一下。",

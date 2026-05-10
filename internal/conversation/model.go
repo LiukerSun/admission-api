@@ -21,12 +21,6 @@ type Message struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-type ConversationFilter struct {
-	ID     int64
-	UserID *int64
-	Status string
-}
-
 type CreateConversationRequest struct {
 	Title  string `json:"title"`
 	UserID *int64 `json:"user_id,omitempty"`

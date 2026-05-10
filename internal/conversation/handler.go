@@ -62,7 +62,7 @@ func (h *Handler) CreateConversation(c *gin.Context) {
 // @Tags         conversation
 // @Produce      json
 // @Param        id path int true "Conversation ID"
-// @Success      200 {object} web.Response{data=ConversationWithMessages}
+// @Success      200 {object} web.Response{data=WithMessages}
 // @Failure      404 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/conversations/{id} [get]
@@ -95,7 +95,7 @@ func (h *Handler) GetConversation(c *gin.Context) {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to get messages")
 		return
 	}
-	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(ConversationWithMessages{
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(WithMessages{
 		Conversation: conv,
 		Messages:     msgs,
 	}))
@@ -252,12 +252,12 @@ func (h *Handler) ArchiveConversation(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(nil))
 }
 
-type ConversationWithMessages struct {
+type WithMessages struct {
 	Conversation *Conversation `json:"conversation"`
 	Messages     []*Message    `json:"messages"`
 }
 
-func (h *Handler) canAccessConversation(c *gin.Context, id int64, userID int64) bool {
+func (h *Handler) canAccessConversation(c *gin.Context, id, userID int64) bool {
 	conv, err := h.service.GetConversation(c.Request.Context(), id)
 	if err != nil {
 		if err == ErrConversationNotFound {

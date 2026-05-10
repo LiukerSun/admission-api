@@ -108,9 +108,9 @@ func (s *aggregateStore) Aggregate(ctx context.Context, filter *AggregateFilter)
 	return resp, nil
 }
 
-func buildAggregateWhere(filter *AggregateFilter) ([]any, []string) {
-	args := []any{}
-	conditions := []string{"1 = 1"}
+func buildAggregateWhere(filter *AggregateFilter) (args []any, conditions []string) {
+	args = []any{}
+	conditions = []string{"1 = 1"}
 
 	if filter.AdmissionYear != nil {
 		args = append(args, *filter.AdmissionYear)
@@ -232,7 +232,7 @@ func buildAggregateWhere(filter *AggregateFilter) ([]any, []string) {
 	return args, conditions
 }
 
-func resolveGroupBy(groupBy string) (groupCol string, nameCol string) {
+func resolveGroupBy(groupBy string) (groupCol, nameCol string) {
 	switch groupBy {
 	case "province":
 		return "up.region_code", "r.name"
