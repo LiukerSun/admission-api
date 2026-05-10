@@ -1,21 +1,29 @@
 package admission
 
 type AdmissionLineFilter struct { //nolint:revive // Keeps Swagger and API naming explicit.
-	AdmissionYear       *int
-	RegionCode          string
-	SubjectCategoryCode string
-	UniversityIDs       []int64
-	UniversityCodes     []string
-	GroupCodes          []string
-	TagCatalogYear      *int
-	TagQuery            string
-	TagCategoryCode     string
-	TagClassCode        string
-	TagMajorCode        string
-	MinRankFrom         *int
-	MinRankTo           *int
-	MinScoreFrom        *int
-	MinScoreTo          *int
+	AdmissionYear       *int     `json:"admission_year,omitempty"`
+	RegionCode          string   `json:"region_code,omitempty"`
+	SubjectCategoryCode string   `json:"subject_category_code,omitempty"`
+	UniversityIDs       []int64  `json:"university_ids,omitempty"`
+	UniversityCodes     []string `json:"university_codes,omitempty"`
+	GroupCodes          []string `json:"group_codes,omitempty"`
+	TagCatalogYear      *int     `json:"tag_catalog_year,omitempty"`
+	TagQuery            string   `json:"tag_query,omitempty"`
+	TagCategoryCode     string   `json:"tag_category_code,omitempty"`
+	TagClassCode        string   `json:"tag_class_code,omitempty"`
+	TagMajorCode        string   `json:"tag_major_code,omitempty"`
+	MinRankFrom         *int     `json:"min_rank_from,omitempty"`
+	MinRankTo           *int     `json:"min_rank_to,omitempty"`
+	MinScoreFrom        *int     `json:"min_score_from,omitempty"`
+	MinScoreTo          *int     `json:"min_score_to,omitempty"`
+	Is985               *bool    `json:"is_985,omitempty"`
+	Is211               *bool    `json:"is_211,omitempty"`
+	IsDoubleFirstClass  *bool    `json:"is_double_first_class,omitempty"`
+	Cities              []string `json:"cities,omitempty"`
+	ExcludeCities       []string `json:"exclude_cities,omitempty"`
+	Provinces           []string `json:"provinces,omitempty"`
+	ExcludeProvinces    []string `json:"exclude_provinces,omitempty"`
+	SubjectCategories   []string `json:"subject_categories,omitempty"`
 }
 
 type AdmissionLineResponse struct { //nolint:revive // Keeps Swagger and API naming explicit.

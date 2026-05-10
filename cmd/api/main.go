@@ -31,6 +31,8 @@ import (
 	_ "admission-api/docs"
 	"admission-api/internal/admin"
 	"admission-api/internal/admission"
+	"admission-api/internal/ai"
+	"admission-api/internal/conversation"
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
@@ -131,6 +133,23 @@ func run() error {
 	admissionLineStore := admission.NewAdmissionLineStore(database.Pool())
 	admissionLineService := admission.NewAdmissionLineService(admissionLineStore)
 	admissionLineHandler := admission.NewAdmissionLineHandler(admissionLineService)
+	aggregateStore := admission.NewAggregateStore(database.Pool())
+	aggregateService := admission.NewAggregateService(aggregateStore)
+	aggregateHandler := admission.NewAggregateHandler(aggregateService)
+	conversationStore := conversation.NewStore(database.Pool())
+	conversationService := conversation.NewService(conversationStore)
+	conversationHandler := conversation.NewHandler(conversationService)
+
+	var llmProxy ai.LLMProxy
+	switch cfg.LLMProvider {
+	case "anthropic":
+		llmProxy = ai.NewAnthropicClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
+	default:
+		llmProxy = ai.NewOpenAIClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
+	}
+	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore)
+	agent := ai.NewAgent(llmProxy, toolExecutor)
+	aiHandler := ai.NewHandler(agent, conversationService)
 
 	healthHandler := health.NewHandler(database)
 
@@ -165,6 +184,7 @@ func run() error {
 		api.GET("/admission/universities", universityHandler.ListUniversities)
 		api.GET("/admission/universities/:id/profile", universityHandler.GetUniversityProfile)
 		api.GET("/admission/admission-lines", admissionLineHandler.ListAdmissionLines)
+		api.GET("/admission/aggregate", aggregateHandler.Aggregate)
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
@@ -181,6 +201,14 @@ func run() error {
 		authorized.POST("/me/phone/verify", userHandler.VerifyPhone)
 		authorized.GET("/membership/plans", membershipHandler.ListPlans)
 		authorized.GET("/membership", membershipHandler.GetCurrent)
+		authorized.POST("/conversations", conversationHandler.CreateConversation)
+		authorized.GET("/conversations", conversationHandler.ListConversations)
+		authorized.GET("/conversations/:id", conversationHandler.GetConversation)
+		authorized.POST("/conversations/:id/messages", conversationHandler.AddMessage)
+		authorized.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
+		authorized.POST("/conversations/:id/archive", conversationHandler.ArchiveConversation)
+		authorized.POST("/ai/chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Chat)
+		authorized.POST("/conversations/:id/ai-chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.ChatWithConversation)
 		authorized.POST("/payment/orders", paymentHandler.CreateOrder)
 		authorized.GET("/payment/orders", paymentHandler.ListMyOrders)
 		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)

@@ -54,6 +54,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  frontend:
+    build:
+      context: ../admission-frontend
+      dockerfile: Dockerfile
+    image: admission-frontend:latest
+    container_name: admission-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:

@@ -104,6 +104,38 @@ func (s *admissionLineStore) ListAdmissionLines(ctx context.Context, filter *Adm
 			  AND %s
 		)`, strings.Join(tagConditions, " AND ")))
 	}
+	if filter.Is985 != nil {
+		args = append(args, *filter.Is985)
+		conditions = append(conditions, fmt.Sprintf("up.is_985 = $%d", len(args)))
+	}
+	if filter.Is211 != nil {
+		args = append(args, *filter.Is211)
+		conditions = append(conditions, fmt.Sprintf("up.is_211 = $%d", len(args)))
+	}
+	if filter.IsDoubleFirstClass != nil {
+		args = append(args, *filter.IsDoubleFirstClass)
+		conditions = append(conditions, fmt.Sprintf("up.is_double_first_class = $%d", len(args)))
+	}
+	if len(filter.Cities) > 0 {
+		args = append(args, filter.Cities)
+		conditions = append(conditions, fmt.Sprintf("up.city = ANY($%d)", len(args)))
+	}
+	if len(filter.ExcludeCities) > 0 {
+		args = append(args, filter.ExcludeCities)
+		conditions = append(conditions, fmt.Sprintf("(up.city IS NULL OR up.city <> ALL($%d))", len(args)))
+	}
+	if len(filter.Provinces) > 0 {
+		args = append(args, filter.Provinces)
+		conditions = append(conditions, fmt.Sprintf("up.region_code = ANY($%d)", len(args)))
+	}
+	if len(filter.ExcludeProvinces) > 0 {
+		args = append(args, filter.ExcludeProvinces)
+		conditions = append(conditions, fmt.Sprintf("(up.region_code IS NULL OR up.region_code <> ALL($%d))", len(args)))
+	}
+	if len(filter.SubjectCategories) > 0 {
+		args = append(args, filter.SubjectCategories)
+		conditions = append(conditions, fmt.Sprintf("ag.subject_category_code = ANY($%d)", len(args)))
+	}
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -140,6 +172,13 @@ func (s *admissionLineStore) ListAdmissionLines(ctx context.Context, filter *Adm
 			ORDER BY latest_upp.profile_year DESC
 			LIMIT 1
 		) upp ON true
+		LEFT JOIN LATERAL (
+			SELECT latest_up.*
+			FROM university_profiles latest_up
+			WHERE latest_up.university_id = u.id
+			ORDER BY latest_up.profile_year DESC
+			LIMIT 1
+		) up ON true
 		WHERE %s
 		ORDER BY u.name, ag.group_code, uma.local_major_code
 	`, strings.Join(conditions, " AND "))
