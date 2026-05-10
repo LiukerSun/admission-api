@@ -31,6 +31,7 @@ type Config struct {
 	LLMAPIKey                string
 	LLMBaseURL               string
 	LLMModel                 string
+	VolunteerPlansFilePath   string
 }
 
 // Load reads configuration from environment variables.
@@ -60,6 +61,7 @@ func Load() (*Config, error) {
 		LLMAPIKey:                getEnv("LLM_API_KEY", ""),
 		LLMBaseURL:               getEnv("LLM_BASE_URL", ""),
 		LLMModel:                 getEnv("LLM_MODEL", ""),
+		VolunteerPlansFilePath:   getEnv("VOLUNTEER_PLANS_FILE_PATH", "../admission-frontend/plans.json"),
 	}
 
 	if cfg.JWTSecret == "" {

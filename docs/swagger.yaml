@@ -153,17 +153,61 @@ definitions:
         type: integer
       batch_code:
         type: string
+      batch_remark:
+        type: string
+      corresponding_doctoral_majors:
+        type: string
+      corresponding_master_majors:
+        type: string
+      discipline_category:
+        type: string
+      doctoral_major_count:
+        type: integer
+      doctoral_major_names:
+        type: string
+      double_first_class_subject:
+        type: string
       duration:
+        type: string
+      employment_direction:
         type: string
       equivalent_min_score:
         type: integer
+      equivalent_min_score_2022:
+        type: integer
+      equivalent_min_score_2023:
+        type: integer
+      equivalent_min_score_2024:
+        type: integer
+      first_level_discipline:
+        type: string
+      fourth_round_subject_eval:
+        type: string
       group_code:
         type: string
+      group_min_rank:
+        type: integer
+      group_min_score:
+        type: integer
       id:
         type: integer
+      is_national_feature:
+        type: boolean
       local_major_code:
         type: string
       local_major_name:
+        type: string
+      main_courses:
+        type: string
+      major_evaluation_score:
+        type: number
+      major_intro:
+        type: string
+      major_rank:
+        type: string
+      master_major_count:
+        type: integer
+      master_major_names:
         type: string
       max_rank:
         type: integer
@@ -175,11 +219,21 @@ definitions:
         type: integer
       plan_count:
         type: integer
+      postgraduate_direction:
+        type: string
       region_code:
+        type: string
+      soft_major_grade:
         type: string
       subject_category_code:
         type: string
+      subject_change_2024:
+        type: string
       subject_requirement_code:
+        type: string
+      subject_study_requirement:
+        type: string
+      training_goal:
         type: string
       tuition:
         type: integer
@@ -191,6 +245,38 @@ definitions:
         type: integer
       university_name:
         type: string
+    type: object
+  admission.AggregateItem:
+    properties:
+      avg_min_rank:
+        type: number
+      avg_min_score:
+        type: number
+      avg_tuition:
+        type: number
+      code:
+        type: string
+      count:
+        type: integer
+      is_211_count:
+        type: integer
+      is_985_count:
+        type: integer
+      is_double_first_class_count:
+        type: integer
+      name:
+        type: string
+    type: object
+  admission.AggregateResponse:
+    properties:
+      group_by:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/admission.AggregateItem'
+        type: array
+      total:
+        type: integer
     type: object
   admission.DictionaryItem:
     properties:
@@ -321,6 +407,138 @@ definitions:
         type: string
       university_code:
         type: string
+    type: object
+  admission.VolunteerPlan:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      rows:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      stats:
+        $ref: '#/definitions/admission.VolunteerPlanStats'
+    type: object
+  admission.VolunteerPlanStats:
+    properties:
+      groupCount:
+        type: integer
+      recordCount:
+        type: integer
+      schoolCount:
+        type: integer
+    type: object
+  admission.VolunteerPlansResponse:
+    properties:
+      plans:
+        items:
+          $ref: '#/definitions/admission.VolunteerPlan'
+        type: array
+    type: object
+  ai.ChatRequest:
+    properties:
+      messages:
+        items:
+          $ref: '#/definitions/ai.Message'
+        type: array
+    type: object
+  ai.ConversationChatRequest:
+    properties:
+      message:
+        type: string
+    type: object
+  ai.Message:
+    properties:
+      content:
+        type: string
+      role:
+        type: string
+      tool_call_id:
+        type: string
+      tool_calls:
+        items:
+          $ref: '#/definitions/ai.ToolCall'
+        type: array
+    type: object
+  ai.ToolCall:
+    properties:
+      function:
+        properties:
+          arguments:
+            type: string
+          name:
+            type: string
+        type: object
+      id:
+        type: string
+      type:
+        type: string
+    type: object
+  conversation.AddMessageRequest:
+    properties:
+      content:
+        type: string
+    type: object
+  conversation.Conversation:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      status:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  conversation.CreateConversationRequest:
+    properties:
+      title:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  conversation.Message:
+    properties:
+      content:
+        type: string
+      conversation_id:
+        type: integer
+      created_at:
+        type: string
+      id:
+        type: integer
+      role:
+        type: string
+      tool_calls:
+        items:
+          type: integer
+        type: array
+      tool_results:
+        items:
+          type: integer
+        type: array
+    type: object
+  conversation.WithMessages:
+    properties:
+      conversation:
+        $ref: '#/definitions/conversation.Conversation'
+      messages:
+        items:
+          $ref: '#/definitions/conversation.Message'
+        type: array
     type: object
   membership.CurrentMembershipResponse:
     properties:
@@ -1057,6 +1275,119 @@ paths:
       summary: List admission lines
       tags:
       - admission
+  /api/v1/admission/aggregate:
+    get:
+      description: 'Aggregates admission lines by a dimension (province, city, subject_category,
+        university, group). Supports metrics: count, avg_min_score, avg_min_rank,
+        avg_tuition, is_985_count, is_211_count, is_double_first_class_count.'
+      parameters:
+      - description: Admission year
+        in: query
+        name: admission_year
+        type: integer
+      - description: Region code
+        in: query
+        name: region_code
+        type: string
+      - description: Subject category code
+        in: query
+        name: subject_category_code
+        type: string
+      - description: Comma-separated internal university IDs
+        in: query
+        name: university_ids
+        type: string
+      - description: Comma-separated school-published university codes
+        in: query
+        name: university_codes
+        type: string
+      - description: Comma-separated admission group codes
+        in: query
+        name: group_codes
+        type: string
+      - description: CHSI tag catalog year
+        in: query
+        name: tag_catalog_year
+        type: integer
+      - description: CHSI tag keyword
+        in: query
+        name: tag_query
+        type: string
+      - description: CHSI major category code
+        in: query
+        name: tag_category_code
+        type: string
+      - description: CHSI major class code
+        in: query
+        name: tag_class_code
+        type: string
+      - description: CHSI standard major code
+        in: query
+        name: tag_major_code
+        type: string
+      - description: Minimum rank lower bound
+        in: query
+        name: min_rank_from
+        type: integer
+      - description: Minimum rank upper bound
+        in: query
+        name: min_rank_to
+        type: integer
+      - description: Minimum score lower bound
+        in: query
+        name: min_score_from
+        type: integer
+      - description: Minimum score upper bound
+        in: query
+        name: min_score_to
+        type: integer
+      - description: Filter by 985 status
+        in: query
+        name: is_985
+        type: boolean
+      - description: Filter by 211 status
+        in: query
+        name: is_211
+        type: boolean
+      - description: Filter by double-first-class status
+        in: query
+        name: is_double_first_class
+        type: boolean
+      - description: 'Dimension to group by: province, city, subject_category, university,
+          group'
+        in: query
+        name: group_by
+        required: true
+        type: string
+      - description: 'Comma-separated metrics: count, avg_min_score, avg_min_rank,
+          avg_tuition, is_985_count, is_211_count, is_double_first_class_count'
+        in: query
+        name: metrics
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.AggregateResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Aggregate admission data
+      tags:
+      - admission
   /api/v1/admission/dictionaries:
     get:
       description: Returns code-name values used by admission filters and imports.
@@ -1205,6 +1536,59 @@ paths:
       summary: Get university profile
       tags:
       - admission
+  /api/v1/admission/volunteer-plans:
+    get:
+      description: Returns volunteer plans from plans.json.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.VolunteerPlansResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: List volunteer plans
+      tags:
+      - admission
+  /api/v1/ai/chat:
+    post:
+      consumes:
+      - application/json
+      description: Streams AI responses via SSE. Send messages array; receive step_start/step_finish/text_delta/done
+        events.
+      parameters:
+      - description: Chat messages
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ai.ChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: AI chat with SSE streaming
+      tags:
+      - ai
   /api/v1/auth/login:
     post:
       consumes:
@@ -1308,6 +1692,239 @@ paths:
       summary: 用户注册
       tags:
       - auth
+  /api/v1/conversations:
+    get:
+      description: Lists active conversations, optionally filtered by user_id.
+      parameters:
+      - description: User ID
+        in: query
+        name: user_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/conversation.Conversation'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: List conversations
+      tags:
+      - conversation
+    post:
+      consumes:
+      - application/json
+      description: Creates a new AI conversation. If user_id is omitted, the conversation
+        is anonymous.
+      parameters:
+      - description: Conversation creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/conversation.CreateConversationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/conversation.Conversation'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Create a conversation
+      tags:
+      - conversation
+  /api/v1/conversations/{id}:
+    delete:
+      description: Soft-deletes a conversation by marking it as deleted.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Delete conversation
+      tags:
+      - conversation
+    get:
+      description: Returns a conversation and its messages.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/conversation.WithMessages'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Get conversation with messages
+      tags:
+      - conversation
+  /api/v1/conversations/{id}/ai-chat:
+    post:
+      consumes:
+      - application/json
+      description: Sends a message in a conversation context. Persists messages and
+        streams AI response via SSE.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: User message
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ai.ConversationChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: AI chat within a conversation
+      tags:
+      - ai
+  /api/v1/conversations/{id}/archive:
+    post:
+      description: Archives a conversation.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Archive conversation
+      tags:
+      - conversation
+  /api/v1/conversations/{id}/messages:
+    post:
+      consumes:
+      - application/json
+      description: Appends a user message to an existing conversation.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Message
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/conversation.AddMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/conversation.Message'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Add a user message
+      tags:
+      - conversation
   /api/v1/me:
     get:
       consumes:

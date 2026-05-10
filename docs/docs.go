@@ -774,6 +774,174 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admission/aggregate": {
+            "get": {
+                "description": "Aggregates admission lines by a dimension (province, city, subject_category, university, group). Supports metrics: count, avg_min_score, avg_min_rank, avg_tuition, is_985_count, is_211_count, is_double_first_class_count.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "Aggregate admission data",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Admission year",
+                        "name": "admission_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Region code",
+                        "name": "region_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Subject category code",
+                        "name": "subject_category_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated internal university IDs",
+                        "name": "university_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated school-published university codes",
+                        "name": "university_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated admission group codes",
+                        "name": "group_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "CHSI tag catalog year",
+                        "name": "tag_catalog_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI tag keyword",
+                        "name": "tag_query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI major category code",
+                        "name": "tag_category_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI major class code",
+                        "name": "tag_class_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "CHSI standard major code",
+                        "name": "tag_major_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum rank lower bound",
+                        "name": "min_rank_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum rank upper bound",
+                        "name": "min_rank_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum score lower bound",
+                        "name": "min_score_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum score upper bound",
+                        "name": "min_score_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by 985 status",
+                        "name": "is_985",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by 211 status",
+                        "name": "is_211",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by double-first-class status",
+                        "name": "is_double_first_class",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Dimension to group by: province, city, subject_category, university, group",
+                        "name": "group_by",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated metrics: count, avg_min_score, avg_min_rank, avg_tuition, is_985_count, is_211_count, is_double_first_class_count",
+                        "name": "metrics",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admission.AggregateResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admission/dictionaries": {
             "get": {
                 "description": "Returns code-name values used by admission filters and imports.",
@@ -1019,6 +1187,90 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admission/volunteer-plans": {
+            "get": {
+                "description": "Returns volunteer plans from plans.json.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "List volunteer plans",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admission.VolunteerPlansResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ai/chat": {
+            "post": {
+                "description": "Streams AI responses via SSE. Send messages array; receive step_start/step_finish/text_delta/done events.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "ai"
+                ],
+                "summary": "AI chat with SSE streaming",
+                "parameters": [
+                    {
+                        "description": "Chat messages",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ai.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/login": {
             "post": {
                 "description": "使用邮箱和密码登录，获取 Access Token 和 Refresh Token",
@@ -1185,6 +1437,374 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations": {
+            "get": {
+                "description": "Lists active conversations, optionally filtered by user_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "conversation"
+                ],
+                "summary": "List conversations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/conversation.Conversation"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new AI conversation. If user_id is omitted, the conversation is anonymous.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "conversation"
+                ],
+                "summary": "Create a conversation",
+                "parameters": [
+                    {
+                        "description": "Conversation creation request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/conversation.CreateConversationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/conversation.Conversation"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{id}": {
+            "get": {
+                "description": "Returns a conversation and its messages.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "conversation"
+                ],
+                "summary": "Get conversation with messages",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/conversation.WithMessages"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Soft-deletes a conversation by marking it as deleted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "conversation"
+                ],
+                "summary": "Delete conversation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{id}/ai-chat": {
+            "post": {
+                "description": "Sends a message in a conversation context. Persists messages and streams AI response via SSE.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "ai"
+                ],
+                "summary": "AI chat within a conversation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "User message",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ai.ConversationChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{id}/archive": {
+            "post": {
+                "description": "Archives a conversation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "conversation"
+                ],
+                "summary": "Archive conversation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{id}/messages": {
+            "post": {
+                "description": "Appends a user message to an existing conversation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "conversation"
+                ],
+                "summary": "Add a user message",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Message",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/conversation.AddMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/conversation.Message"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
@@ -2171,22 +2791,88 @@ const docTemplate = `{
                 "batch_code": {
                     "type": "string"
                 },
+                "batch_remark": {
+                    "type": "string"
+                },
+                "corresponding_doctoral_majors": {
+                    "type": "string"
+                },
+                "corresponding_master_majors": {
+                    "type": "string"
+                },
+                "discipline_category": {
+                    "type": "string"
+                },
+                "doctoral_major_count": {
+                    "type": "integer"
+                },
+                "doctoral_major_names": {
+                    "type": "string"
+                },
+                "double_first_class_subject": {
+                    "type": "string"
+                },
                 "duration": {
+                    "type": "string"
+                },
+                "employment_direction": {
                     "type": "string"
                 },
                 "equivalent_min_score": {
                     "type": "integer"
                 },
+                "equivalent_min_score_2022": {
+                    "type": "integer"
+                },
+                "equivalent_min_score_2023": {
+                    "type": "integer"
+                },
+                "equivalent_min_score_2024": {
+                    "type": "integer"
+                },
+                "first_level_discipline": {
+                    "type": "string"
+                },
+                "fourth_round_subject_eval": {
+                    "type": "string"
+                },
                 "group_code": {
                     "type": "string"
                 },
+                "group_min_rank": {
+                    "type": "integer"
+                },
+                "group_min_score": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "integer"
+                },
+                "is_national_feature": {
+                    "type": "boolean"
                 },
                 "local_major_code": {
                     "type": "string"
                 },
                 "local_major_name": {
+                    "type": "string"
+                },
+                "main_courses": {
+                    "type": "string"
+                },
+                "major_evaluation_score": {
+                    "type": "number"
+                },
+                "major_intro": {
+                    "type": "string"
+                },
+                "major_rank": {
+                    "type": "string"
+                },
+                "master_major_count": {
+                    "type": "integer"
+                },
+                "master_major_names": {
                     "type": "string"
                 },
                 "max_rank": {
@@ -2204,13 +2890,28 @@ const docTemplate = `{
                 "plan_count": {
                     "type": "integer"
                 },
+                "postgraduate_direction": {
+                    "type": "string"
+                },
                 "region_code": {
+                    "type": "string"
+                },
+                "soft_major_grade": {
                     "type": "string"
                 },
                 "subject_category_code": {
                     "type": "string"
                 },
+                "subject_change_2024": {
+                    "type": "string"
+                },
                 "subject_requirement_code": {
+                    "type": "string"
+                },
+                "subject_study_requirement": {
+                    "type": "string"
+                },
+                "training_goal": {
                     "type": "string"
                 },
                 "tuition": {
@@ -2227,6 +2928,55 @@ const docTemplate = `{
                 },
                 "university_name": {
                     "type": "string"
+                }
+            }
+        },
+        "admission.AggregateItem": {
+            "type": "object",
+            "properties": {
+                "avg_min_rank": {
+                    "type": "number"
+                },
+                "avg_min_score": {
+                    "type": "number"
+                },
+                "avg_tuition": {
+                    "type": "number"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "is_211_count": {
+                    "type": "integer"
+                },
+                "is_985_count": {
+                    "type": "integer"
+                },
+                "is_double_first_class_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.AggregateResponse": {
+            "type": "object",
+            "properties": {
+                "group_by": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.AggregateItem"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -2425,6 +3175,210 @@ const docTemplate = `{
                 },
                 "university_code": {
                     "type": "string"
+                }
+            }
+        },
+        "admission.VolunteerPlan": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "stats": {
+                    "$ref": "#/definitions/admission.VolunteerPlanStats"
+                }
+            }
+        },
+        "admission.VolunteerPlanStats": {
+            "type": "object",
+            "properties": {
+                "groupCount": {
+                    "type": "integer"
+                },
+                "recordCount": {
+                    "type": "integer"
+                },
+                "schoolCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "admission.VolunteerPlansResponse": {
+            "type": "object",
+            "properties": {
+                "plans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.VolunteerPlan"
+                    }
+                }
+            }
+        },
+        "ai.ChatRequest": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ai.Message"
+                    }
+                }
+            }
+        },
+        "ai.ConversationChatRequest": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "ai.Message": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "tool_call_id": {
+                    "type": "string"
+                },
+                "tool_calls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ai.ToolCall"
+                    }
+                }
+            }
+        },
+        "ai.ToolCall": {
+            "type": "object",
+            "properties": {
+                "function": {
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "string"
+                        },
+                        "name": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "conversation.AddMessageRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                }
+            }
+        },
+        "conversation.Conversation": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "conversation.CreateConversationRequest": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "conversation.Message": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "tool_calls": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "tool_results": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "conversation.WithMessages": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/conversation.Conversation"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/conversation.Message"
+                    }
                 }
             }
         },
