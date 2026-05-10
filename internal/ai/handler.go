@@ -84,6 +84,11 @@ type ChatRequest struct {
 	Messages []Message `json:"messages"`
 }
 
+// ConversationChatRequest is the request body for conversation-scoped AI chat.
+type ConversationChatRequest struct {
+	Message string `json:"message"`
+}
+
 // SSEEvent is a server-sent event.
 type SSEEvent struct {
 	Type    string `json:"type"`
@@ -178,7 +183,7 @@ func (h *Handler) Chat(c *gin.Context) {
 // @Accept       json
 // @Produce      text/event-stream
 // @Param        id path int true "Conversation ID"
-// @Param        body body map[string]string true `{"message": "user input"}`
+// @Param        body body ConversationChatRequest true "User message"
 // @Success      200 {string} string "SSE stream"
 // @Failure      400 {object} web.Response
 // @Failure      404 {object} web.Response
@@ -196,9 +201,7 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Message string `json:"message"`
-	}
+	var req ConversationChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
 		return
