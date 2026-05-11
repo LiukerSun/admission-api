@@ -13,9 +13,23 @@ import (
 )
 
 func RateLimitMiddleware(rdb *redis.Client, limit int, window time.Duration) gin.HandlerFunc {
+	return RateLimitWithKey(rdb, "ratelimit", limit, window, func(c *gin.Context) string {
+		return extractIP(c.Request)
+	})
+}
+
+// RateLimitWithKey is a configurable rate limiter that delegates to a caller-
+// supplied key extractor. The Redis key format is "<prefix>:<extractor()>".
+// Empty keys are treated as no-op (caller-provided key extractor decides
+// fallback semantics).
+func RateLimitWithKey(rdb *redis.Client, prefix string, limit int, window time.Duration, keyFn func(*gin.Context) string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := extractIP(c.Request)
-		key := "ratelimit:" + ip
+		raw := keyFn(c)
+		if raw == "" {
+			c.Next()
+			return
+		}
+		key := prefix + ":" + raw
 		ctx := c.Request.Context()
 
 		count, err := rdb.Incr(ctx, key).Result()
@@ -44,6 +58,26 @@ func RateLimitMiddleware(rdb *redis.Client, limit int, window time.Duration) gin
 
 		c.Next()
 	}
+}
+
+// UserRateLimitMiddleware enforces a per-user, shared-bucket rate limit. All
+// middlewares constructed with the same `prefix` share a single Redis counter
+// per user, so multiple AI endpoints can be grouped under one quota by passing
+// the same prefix (e.g. "ratelimit:ai"). Falls back to the client IP when the
+// JWT middleware has not populated the user ID (defensive — should not happen
+// if mounted after JWTMiddleware).
+func UserRateLimitMiddleware(rdb *redis.Client, prefix string, limit int, window time.Duration) gin.HandlerFunc {
+	return RateLimitWithKey(rdb, prefix, limit, window, func(c *gin.Context) string {
+		raw, ok := c.Get(ContextUserIDKey)
+		if !ok {
+			return "anon:" + extractIP(c.Request)
+		}
+		uid, ok := raw.(int64)
+		if !ok || uid <= 0 {
+			return "anon:" + extractIP(c.Request)
+		}
+		return "user:" + strconv.FormatInt(uid, 10)
+	})
 }
 
 func extractIP(r *http.Request) string {

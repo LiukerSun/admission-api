@@ -34,6 +34,27 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 	}
 }
 
+// RequireUserType allows the request only if the JWT-derived user_type is in
+// the allowed set. Returns 403 when the claim is absent or unmatched. Mount
+// this AFTER JWTMiddleware so the context value is populated.
+func RequireUserType(allowed ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, exists := c.Get(ContextUserTypeKey)
+		if !exists {
+			c.JSON(http.StatusForbidden, gin.H{"code": 1003, "message": "user_type required"})
+			c.Abort()
+			return
+		}
+		s, ok := raw.(string)
+		if !ok || !slices.Contains(allowed, s) {
+			c.JSON(http.StatusForbidden, gin.H{"code": 1003, "message": "user_type not allowed"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // RequireMinRole allows access if the user's role rank is >= the minimum required role.
 // For example, RequireMinRole("premium") allows both "premium" and "admin".
 func RequireMinRole(minRole string) gin.HandlerFunc {

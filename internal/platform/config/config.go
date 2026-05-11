@@ -30,6 +30,14 @@ type Config struct {
 	SMSSendCooldownSeconds   int
 	SMSDailyLimit            int
 	SMSMaxVerifyAttempts     int
+
+	// OpenAI / compatible LLM configuration
+	OpenAIAPIKey         string
+	OpenAIBaseURL        string
+	OpenAIModel          string
+	OpenAITimeoutSeconds int
+	AICardLinkHosts      string // comma-separated allowlist for render_card link hosts
+	AIChatRateLimitPerMin int
 }
 
 // Load reads configuration from environment variables.
@@ -55,6 +63,12 @@ func Load() (*Config, error) {
 		SMSSendCooldownSeconds:   getIntEnv("SMS_SEND_COOLDOWN_SECONDS", 60),
 		SMSDailyLimit:            getIntEnv("SMS_DAILY_LIMIT", 10),
 		SMSMaxVerifyAttempts:     getIntEnv("SMS_MAX_VERIFY_ATTEMPTS", 5),
+		OpenAIAPIKey:             getEnv("OPENAI_API_KEY", ""),
+		OpenAIBaseURL:            getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIModel:              getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+		OpenAITimeoutSeconds:     getIntEnv("OPENAI_TIMEOUT_SECONDS", 120),
+		AICardLinkHosts:          getEnv("AI_CARD_LINK_HOSTS", ""),
+		AIChatRateLimitPerMin:    getIntEnv("AI_CHAT_RATE_LIMIT_PER_MIN", 30),
 	}
 
 	if cfg.JWTSecret == "" {

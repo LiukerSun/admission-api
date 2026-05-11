@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,7 +31,9 @@ import (
 
 	_ "admission-api/docs"
 	"admission-api/internal/admin"
+	"admission-api/internal/ai"
 	"admission-api/internal/analysis"
+	"admission-api/internal/conversation"
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
@@ -135,6 +138,34 @@ func run() error {
 	adminService := admin.NewService(adminStore, userStore, tokenManager, redisClient)
 	adminHandler := admin.NewHandler(adminService)
 
+	// Initialize AI conversation module
+	conversationStore := conversation.NewStore(database.Pool())
+	conversationService := conversation.NewService(conversationStore)
+	conversationHandler := conversation.NewHandler(conversationService)
+
+	var aiHandler *ai.Handler
+	if cfg.OpenAIAPIKey != "" {
+		llmClient := ai.NewOpenAIClient(ai.OpenAIConfig{
+			APIKey:  cfg.OpenAIAPIKey,
+			BaseURL: cfg.OpenAIBaseURL,
+			Model:   cfg.OpenAIModel,
+			Timeout: time.Duration(cfg.OpenAITimeoutSeconds) * time.Second,
+		})
+		toolRegistry := ai.NewToolRegistry()
+		toolRegistry.Register(ai.NewRenderChartTool())
+		toolRegistry.Register(ai.NewRenderCardTool(splitCSV(cfg.AICardLinkHosts)))
+		toolRegistry.Register(ai.NewQueryAdmissionPlanTool(analysisService))
+		toolRegistry.Register(ai.NewQueryEmploymentTool(analysisService))
+
+		agent := ai.NewAgent(llmClient, toolRegistry, ai.WithModel(cfg.OpenAIModel))
+		aiHandler = ai.NewHandler(conversationService, agent, llmClient, redisClient, ai.HandlerConfig{
+			DefaultModel: cfg.OpenAIModel,
+		})
+	} else {
+		slog.Warn("OPENAI_API_KEY not configured; AI conversation endpoints will be disabled")
+	}
+
+
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -200,6 +231,30 @@ func run() error {
 		premiumRoutes.GET("/score-match", analysisHandler.GetScoreMatch)
 		premiumRoutes.GET("/employment-data", analysisHandler.GetEmploymentData)
 
+		// AI conversation routes — accessible to all authenticated users; the
+		// streaming sub-routes are gated to candidates (user_type=student).
+		conv := authorized.Group("/conversations")
+		conv.POST("", conversationHandler.Create)
+		conv.GET("", conversationHandler.List)
+		conv.GET("/:id", conversationHandler.Get)
+		conv.DELETE("/:id", conversationHandler.Delete)
+		conv.PUT("/:id/title", conversationHandler.Rename)
+
+		if aiHandler != nil {
+			aiChat := conv.Group("")
+			aiChat.Use(middleware.RequireUserType("student"))
+			aiChat.Use(middleware.UserRateLimitMiddleware(
+				redisClient.RDB(),
+				"ratelimit:ai",
+				cfg.AIChatRateLimitPerMin,
+				1*time.Minute,
+			))
+			aiChat.POST("/:id/ai-chat", aiHandler.Chat)
+			aiChat.POST("/:id/regenerate", aiHandler.Regenerate)
+			aiChat.POST("/:id/rollback", aiHandler.Rollback)
+			aiChat.GET("/:id/suggestions", aiHandler.Suggestions)
+		}
+
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireRole("admin"))
 		adminRoutes.GET("/users/:id", adminHandler.GetUser)
@@ -250,6 +305,20 @@ func run() error {
 
 	slog.Info("server stopped")
 	return nil
+}
+
+func splitCSV(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func runMigrations(databaseURL, direction string) error {
