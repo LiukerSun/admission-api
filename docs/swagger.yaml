@@ -185,6 +185,8 @@ definitions:
         type: string
       group_code:
         type: string
+      group_major_names:
+        type: string
       group_min_rank:
         type: integer
       group_min_score:

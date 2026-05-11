@@ -38,6 +38,7 @@ type AdmissionLineResponse struct { //nolint:revive // Keeps Swagger and API nam
 	SubjectCategory             string   `json:"subject_category_code"`
 	BatchCode                   string   `json:"batch_code"`
 	GroupCode                   string   `json:"group_code"`
+	GroupMajorNames             string   `json:"group_major_names,omitempty"`
 	SubjectRequirementCode      string   `json:"subject_requirement_code,omitempty"`
 	BatchRemark                 string   `json:"batch_remark,omitempty"`
 	GroupMinScore               *int     `json:"group_min_score,omitempty"`
