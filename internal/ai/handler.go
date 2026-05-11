@@ -102,10 +102,17 @@ type ConversationChatRequest struct {
 // only to avoid a breaking shape change on the wire; new code paths do
 // not emit them.
 type SSEEvent struct {
-	Type    string `json:"type"`
-	Step    string `json:"step,omitempty"`
-	Content string `json:"content,omitempty"`
-	Data    any    `json:"data,omitempty"`
+	Type     string `json:"type"`
+	Step     string `json:"step,omitempty"`
+	Content  string `json:"content,omitempty"`
+	Data     any    `json:"data,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	Payload  any    `json:"payload,omitempty"`
+	CallID   string `json:"call_id,omitempty"`
+	ToolName string `json:"tool_name,omitempty"`
+	Success  *bool  `json:"success,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 // Handler handles AI chat endpoints.
@@ -175,8 +182,10 @@ func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, histo
 		},
 		OnToolCallStart: func(callID, toolName string) {
 			sw.write(SSEEvent{
-				Type: "tool_call_start",
-				Data: map[string]any{"call_id": callID, "tool_name": toolName},
+				Type:     "tool_call_start",
+				CallID:   callID,
+				ToolName: toolName,
+				Data:     map[string]any{"call_id": callID, "tool_name": toolName},
 			})
 		},
 		OnToolCallEnd: func(callID string, success bool, errMsg string) {
@@ -184,10 +193,11 @@ func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, histo
 			if errMsg != "" {
 				payload["error"] = errMsg
 			}
-			sw.write(SSEEvent{Type: "tool_call_end", Data: payload})
+			ok := success
+			sw.write(SSEEvent{Type: "tool_call_end", CallID: callID, Success: &ok, Error: errMsg, Data: payload})
 		},
 		OnWidget: func(widget Widget) {
-			sw.write(SSEEvent{Type: "widget", Data: widget})
+			sw.write(SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
 		},
 	}
 
