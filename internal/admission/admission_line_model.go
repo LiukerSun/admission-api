@@ -36,10 +36,13 @@ type AdmissionLineResponse struct { //nolint:revive // Keeps Swagger and API nam
 	AdmissionYear               int      `json:"admission_year"`
 	RegionCode                  string   `json:"region_code"`
 	SubjectCategory             string   `json:"subject_category_code"`
+	SubjectCategoryName         string   `json:"subject_category_name,omitempty"`
 	BatchCode                   string   `json:"batch_code"`
+	BatchName                   string   `json:"batch_name,omitempty"`
 	GroupCode                   string   `json:"group_code"`
 	GroupMajorNames             string   `json:"group_major_names,omitempty"`
 	SubjectRequirementCode      string   `json:"subject_requirement_code,omitempty"`
+	SubjectRequirementName      string   `json:"subject_requirement_name,omitempty"`
 	BatchRemark                 string   `json:"batch_remark,omitempty"`
 	GroupMinScore               *int     `json:"group_min_score,omitempty"`
 	GroupMinRank                *int     `json:"group_min_rank,omitempty"`

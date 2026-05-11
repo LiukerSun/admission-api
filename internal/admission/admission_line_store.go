@@ -141,8 +141,11 @@ func (s *admissionLineStore) ListAdmissionLines(ctx context.Context, filter *Adm
 		SELECT
 			uma.id, ag.id, uma.id,
 			u.id, u.university_code, u.name,
-			ag.admission_year, ag.region_code, ag.subject_category_code, ag.batch_code,
-			ag.group_code, COALESCE(ag.group_major_names, ''), COALESCE(ag.subject_requirement_code, ''),
+			ag.admission_year, ag.region_code,
+			ag.subject_category_code, COALESCE(sc.name, ''),
+			ag.batch_code, COALESCE(b.name, ''),
+			ag.group_code, COALESCE(ag.group_major_names, ''),
+			COALESCE(ag.subject_requirement_code, ''), COALESCE(sr.name, ''),
 			COALESCE(age.batch_remark, ''), age.group_min_score, age.group_min_rank,
 			age.equivalent_min_score_2024, age.equivalent_min_score_2023, age.equivalent_min_score_2022,
 			COALESCE(age.subject_change_2024, ''),
@@ -163,6 +166,9 @@ func (s *admissionLineStore) ListAdmissionLines(ctx context.Context, filter *Adm
 		FROM university_major_admissions uma
 		JOIN admission_groups ag ON ag.id = uma.admission_group_id
 		JOIN universities u ON u.id = ag.university_id
+		LEFT JOIN subject_categories sc ON sc.code = ag.subject_category_code
+		LEFT JOIN batches b ON b.code = ag.batch_code
+		LEFT JOIN subject_requirements sr ON sr.code = ag.subject_requirement_code
 		LEFT JOIN admission_group_extensions age ON age.admission_group_id = ag.id
 		LEFT JOIN university_major_profiles ump ON ump.university_major_admission_id = uma.id
 		LEFT JOIN LATERAL (
@@ -202,10 +208,13 @@ func (s *admissionLineStore) ListAdmissionLines(ctx context.Context, filter *Adm
 			&line.AdmissionYear,
 			&line.RegionCode,
 			&line.SubjectCategory,
+			&line.SubjectCategoryName,
 			&line.BatchCode,
+			&line.BatchName,
 			&line.GroupCode,
 			&line.GroupMajorNames,
 			&line.SubjectRequirementCode,
+			&line.SubjectRequirementName,
 			&line.BatchRemark,
 			&line.GroupMinScore,
 			&line.GroupMinRank,
