@@ -4,9 +4,27 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
+
+// parseCSV splits a comma-separated env-var into a trimmed list,
+// dropping empty segments so "" yields nil instead of [""].
+func parseCSV(v string) []string {
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
 
 // Config holds all application configuration.
 type Config struct {
@@ -31,7 +49,12 @@ type Config struct {
 	LLMAPIKey                string
 	LLMBaseURL               string
 	LLMModel                 string
-	VolunteerPlansFilePath   string
+	// CardLinkWhitelist enumerates hosts that the render_card tool is
+	// allowed to link out to. Relative links ("/...") on the same site
+	// are always allowed. Configured via env var as a comma-separated
+	// list, e.g. "admission.example.com,knowledge.example.com".
+	CardLinkWhitelist      []string
+	VolunteerPlansFilePath string
 }
 
 // Load reads configuration from environment variables.
@@ -61,6 +84,7 @@ func Load() (*Config, error) {
 		LLMAPIKey:                getEnv("LLM_API_KEY", ""),
 		LLMBaseURL:               getEnv("LLM_BASE_URL", ""),
 		LLMModel:                 getEnv("LLM_MODEL", ""),
+		CardLinkWhitelist:        parseCSV(getEnv("CARD_LINK_WHITELIST", "")),
 		VolunteerPlansFilePath:   getEnv("VOLUNTEER_PLANS_FILE_PATH", "../admission-frontend/plans.json"),
 	}
 

@@ -171,15 +171,92 @@ func (h *Handler) AddMessage(c *gin.Context) {
 	if !h.canAccessConversation(c, id, userID) {
 		return
 	}
-	// Role is hardcoded to "user" and tool_calls / tool_results are nil
-	// so this public endpoint cannot be abused to fabricate assistant or
-	// tool history.
-	msg, err := h.service.AddMessage(c.Request.Context(), id, "user", content, nil, nil)
+	// Role is hardcoded to "user" and tool_calls / tool_results / widgets
+	// are nil so this public endpoint cannot be abused to fabricate
+	// assistant or tool history.
+	msg, err := h.service.AddMessage(c.Request.Context(), id, "user", content, nil, nil, nil)
 	if err != nil {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to add message")
 		return
 	}
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(msg))
+}
+
+// RollbackRequest is the body for POST /conversations/:id/rollback.
+//
+// Inclusive defaults to true (delete the anchor row itself). Use false
+// to keep the anchor — useful when "editing" the latest user message:
+// the client first POSTs the edited content as a new user message, then
+// rolls back inclusive from the OLD user message, leaving only the new
+// edit and any messages that follow it.
+type RollbackRequest struct {
+	MessageID int64 `json:"message_id"`
+	Inclusive *bool `json:"inclusive,omitempty"`
+}
+
+// RollbackResponse describes the result of a rollback.
+type RollbackResponse struct {
+	DeletedCount    int    `json:"deleted_count"`
+	LatestMessageID *int64 `json:"latest_message_id"`
+}
+
+// Rollback godoc
+// @Summary      Rollback conversation history
+// @Description  Deletes messages at or after the specified message_id (inclusive by default). Used by the frontend "edit / regenerate" flows. Non-owners receive 404 to avoid leaking conversation existence.
+// @Tags         conversation
+// @Accept       json
+// @Produce      json
+// @Param        id path int true "Conversation ID"
+// @Param        body body RollbackRequest true "Rollback target"
+// @Success      200 {object} web.Response{data=RollbackResponse}
+// @Failure      400 {object} web.Response
+// @Failure      404 {object} web.Response
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations/{id}/rollback [post]
+func (h *Handler) Rollback(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+	var req RollbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	if req.MessageID <= 0 {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "message_id is required")
+		return
+	}
+	inclusive := true
+	if req.Inclusive != nil {
+		inclusive = *req.Inclusive
+	}
+	if !h.canAccessConversation(c, id, userID) {
+		return
+	}
+	deleted, latest, err := h.service.Rollback(c.Request.Context(), id, req.MessageID, inclusive)
+	if err != nil {
+		if err == ErrConversationNotFound {
+			// The anchor row didn't belong to this conversation. Use 404
+			// rather than 400 so the response is indistinguishable from
+			// a non-owned conversation — same reason ownsConversation
+			// returns 404.
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "message not found in conversation")
+			return
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to rollback messages")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(RollbackResponse{
+		DeletedCount:    deleted,
+		LatestMessageID: latest,
+	}))
 }
 
 // DeleteConversation godoc

@@ -23,6 +23,18 @@ func (q *queuedLLM) ChatCompletion(_ context.Context, messages []Message, _ []To
 	return resp, nil
 }
 
+// ChatCompletionStream wraps the non-streaming response so the agent's
+// streaming code path can run against the same test fixtures. Each
+// queued LLMResponse becomes one text chunk + N tool-call chunks +
+// done.
+func (q *queuedLLM) ChatCompletionStream(ctx context.Context, messages []Message, tools []ToolDefinition) (<-chan StreamChunk, error) {
+	resp, err := q.ChatCompletion(ctx, messages, tools)
+	if err != nil {
+		return nil, err
+	}
+	return synthesizeStream(ctx, resp), nil
+}
+
 type cancelingLLM struct {
 	cancel context.CancelFunc
 }
@@ -33,6 +45,43 @@ func (q *cancelingLLM) ChatCompletion(_ context.Context, messages []Message, _ [
 		Content:   "我再查一下。",
 		ToolCalls: []ToolCall{newToolCall("call-cancel", "search_universities", `{"filter":{"region_code":"230000"},"limit":5}`)},
 	}, nil
+}
+
+func (q *cancelingLLM) ChatCompletionStream(ctx context.Context, messages []Message, tools []ToolDefinition) (<-chan StreamChunk, error) {
+	resp, err := q.ChatCompletion(ctx, messages, tools)
+	if err != nil {
+		return nil, err
+	}
+	return synthesizeStream(ctx, resp), nil
+}
+
+// synthesizeStream turns a non-streaming LLMResponse into a closed
+// channel of StreamChunk values for tests that don't care about
+// token-level streaming behaviour.
+func synthesizeStream(ctx context.Context, resp *LLMResponse) <-chan StreamChunk {
+	out := make(chan StreamChunk, 4+len(resp.ToolCalls))
+	go func() {
+		defer close(out)
+		if resp.Content != "" {
+			select {
+			case out <- StreamChunk{Type: StreamChunkText, TextDelta: resp.Content}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		for _, tc := range resp.ToolCalls {
+			select {
+			case out <- StreamChunk{Type: StreamChunkToolCallDone, ToolCall: tc}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		select {
+		case out <- StreamChunk{Type: StreamChunkDone}:
+		case <-ctx.Done():
+		}
+	}()
+	return out
 }
 
 type stubAdmissionLineStore struct {
@@ -158,7 +207,7 @@ func TestToolExecutorParsesSnakeCaseFilterArguments(t *testing.T) {
 			"tag_query": "计算机"
 		},
 		"limit": 5
-	}`))
+	}`), ToolExecContext{})
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}

@@ -76,13 +76,21 @@ func (noopLLM) ChatCompletion(_ context.Context, _ []Message, _ []ToolDefinition
 	return &LLMResponse{Content: "ok"}, nil
 }
 
+func (noopLLM) ChatCompletionStream(ctx context.Context, _ []Message, _ []ToolDefinition) (<-chan StreamChunk, error) {
+	out := make(chan StreamChunk, 2)
+	out <- StreamChunk{Type: StreamChunkText, TextDelta: "ok"}
+	out <- StreamChunk{Type: StreamChunkDone}
+	close(out)
+	return out, nil
+}
+
 // stubConvServiceForAI implements just enough of conversation.Service
 // for AI handler tests. Methods that aren't expected to be called by
 // the test panic via the embedded nil interface.
 type stubConvServiceForAI struct {
 	conversation.Service
 	getFunc          func(ctx context.Context, id int64) (*conversation.Conversation, error)
-	addMessageFunc   func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*conversation.Message, error)
+	addMessageFunc   func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*conversation.Message, error)
 	listMessagesFunc func(ctx context.Context, conversationID int64) ([]*conversation.Message, error)
 }
 
@@ -90,8 +98,8 @@ func (s stubConvServiceForAI) GetConversation(ctx context.Context, id int64) (*c
 	return s.getFunc(ctx, id)
 }
 
-func (s stubConvServiceForAI) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*conversation.Message, error) {
-	return s.addMessageFunc(ctx, conversationID, role, content, toolCalls, toolResults)
+func (s stubConvServiceForAI) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*conversation.Message, error) {
+	return s.addMessageFunc(ctx, conversationID, role, content, toolCalls, toolResults, widgets)
 }
 
 func (s stubConvServiceForAI) ListMessages(ctx context.Context, conversationID int64) ([]*conversation.Message, error) {
@@ -267,6 +275,15 @@ func (r *recordingLLM) ChatCompletion(_ context.Context, _ []Message, _ []ToolDe
 	return &LLMResponse{Content: "should not be reached"}, nil
 }
 
+func (r *recordingLLM) ChatCompletionStream(ctx context.Context, _ []Message, _ []ToolDefinition) (<-chan StreamChunk, error) {
+	r.called = true
+	out := make(chan StreamChunk, 2)
+	out <- StreamChunk{Type: StreamChunkText, TextDelta: "should not be reached"}
+	out <- StreamChunk{Type: StreamChunkDone}
+	close(out)
+	return out, nil
+}
+
 // TestChatWithConversationFailsFastWhenUserMessageSaveFails proves that
 // if persisting the user's message fails, we MUST surface the failure
 // to the caller and abort. Previously the handler swallowed the error
@@ -284,7 +301,7 @@ func TestChatWithConversationFailsFastWhenUserMessageSaveFails(t *testing.T) {
 		getFunc: func(ctx context.Context, id int64) (*conversation.Conversation, error) {
 			return &conversation.Conversation{ID: id, UserID: &userID, Status: "active"}, nil
 		},
-		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*conversation.Message, error) {
+		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*conversation.Message, error) {
 			return nil, errors.New("db down")
 		},
 		listMessagesFunc: func(ctx context.Context, conversationID int64) ([]*conversation.Message, error) {

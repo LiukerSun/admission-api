@@ -18,7 +18,12 @@ type Message struct {
 	Content        string    `json:"content"`
 	ToolCalls      []byte    `json:"tool_calls,omitempty"`
 	ToolResults    []byte    `json:"tool_results,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	// Widgets is a JSONB-encoded array of structured display units the
+	// assistant produced via render_chart / render_card tools. Stored
+	// alongside the message so history replay reproduces the chat UI
+	// without re-running the LLM or re-executing tools.
+	Widgets   []byte    `json:"widgets,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type CreateConversationRequest struct {
