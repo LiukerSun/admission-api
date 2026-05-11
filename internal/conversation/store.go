@@ -238,7 +238,7 @@ func (s *store) ListMessages(ctx context.Context, conversationID int64) ([]*Mess
 	return messages, nil
 }
 
-func (s *store) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (int, *int64, error) {
+func (s *store) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (deleted int, latest *int64, err error) {
 	// Compare on (created_at, id) instead of id alone: two messages
 	// inserted in the same wall-second can sort by id in either order
 	// across servers / replicas, but the tuple comparison is total even
@@ -263,7 +263,7 @@ func (s *store) Rollback(ctx context.Context, conversationID, messageID int64, i
 	if err != nil {
 		return 0, nil, fmt.Errorf("rollback messages: %w", err)
 	}
-	deleted := int(tag.RowsAffected())
+	deleted = int(tag.RowsAffected())
 	if deleted == 0 {
 		// Either the anchor row didn't exist (wrong conversation /
 		// message), or inclusive=false with no later rows. Distinguish
@@ -279,7 +279,6 @@ func (s *store) Rollback(ctx context.Context, conversationID, messageID int64, i
 		}
 	}
 
-	var latest *int64
 	var id int64
 	err = s.pool.QueryRow(ctx,
 		`SELECT id FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,

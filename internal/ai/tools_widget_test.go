@@ -53,11 +53,11 @@ func TestIsAllowedCardLink(t *testing.T) {
 // type and points us at some rows, and we build a fully whitelisted
 // echarts option from those rows. The tests below pin three invariants:
 //
-//   1. valid arguments produce a widget with the expected option shape
-//   2. invalid arguments produce a tool result the LLM can read, NOT a
-//      widget — the SSE stream must not show a half-baked chart
-//   3. the produced option NEVER contains keys outside the whitelist
-//      (no formatter strings, no JS expressions, no arbitrary fields)
+//  1. valid arguments produce a widget with the expected option shape
+//  2. invalid arguments produce a tool result the LLM can read, NOT a
+//     widget — the SSE stream must not show a half-baked chart
+//  3. the produced option NEVER contains keys outside the whitelist
+//     (no formatter strings, no JS expressions, no arbitrary fields)
 func TestExecuteRenderChartBuildsBarOption(t *testing.T) {
 	executor := NewToolExecutor(nil, nil)
 	emitted := captureWidget()
