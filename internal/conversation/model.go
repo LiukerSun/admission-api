@@ -12,12 +12,12 @@ type Conversation struct {
 }
 
 type Message struct {
-	ID             int64     `json:"id"`
-	ConversationID int64     `json:"conversation_id"`
-	Role           string    `json:"role"`
-	Content        string    `json:"content"`
-	ToolCalls      []byte    `json:"tool_calls,omitempty"`
-	ToolResults    []byte    `json:"tool_results,omitempty"`
+	ID             int64  `json:"id"`
+	ConversationID int64  `json:"conversation_id"`
+	Role           string `json:"role"`
+	Content        string `json:"content"`
+	ToolCalls      []byte `json:"tool_calls,omitempty"`
+	ToolResults    []byte `json:"tool_results,omitempty"`
 	// Widgets is a JSONB-encoded array of structured display units the
 	// assistant produced via render_chart / render_card tools. Stored
 	// alongside the message so history replay reproduces the chat UI

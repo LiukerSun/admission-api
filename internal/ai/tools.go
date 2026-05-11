@@ -31,9 +31,9 @@ type ToolResult struct {
 //     means no external links are allowed; tools should still permit
 //     relative ("/...") hrefs to the same site.
 type ToolExecContext struct {
-	EmitWidget         func(Widget)
-	ResolveResult      func(callID string) (string, bool)
-	CardLinkWhitelist  []string
+	EmitWidget        func(Widget)
+	ResolveResult     func(callID string) (string, bool)
+	CardLinkWhitelist []string
 }
 
 // ToolExecutor executes tool calls from the LLM.
@@ -197,7 +197,7 @@ func (e *ToolExecutor) executeRenderChart(ctx context.Context, call ToolCall, ex
 		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf("Unsupported chart_type: %s", p.ChartType)}, nil
 	}
 
-	rows, err := resolveChartData(p, execCtx)
+	rows, err := resolveChartData(&p, execCtx)
 	if err != nil {
 		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf("render_chart: %v", err)}, nil
 	}
@@ -211,7 +211,7 @@ func (e *ToolExecutor) executeRenderChart(ctx context.Context, call ToolCall, ex
 		return &ToolResult{ToolCallID: call.ID, Content: "render_chart: y_fields is required for bar/line"}, nil
 	}
 
-	option := buildEchartsOption(p, rows)
+	option := buildEchartsOption(&p, rows)
 	widget := Widget{
 		ID:   NewWidgetID(),
 		Kind: "chart",
@@ -231,7 +231,7 @@ func (e *ToolExecutor) executeRenderChart(ctx context.Context, call ToolCall, ex
 // from the inline_data field. When pulling from a prior tool result, we
 // expect that result's content to be JSON with either {"top": [...]}
 // (the search_universities shape) or a top-level array.
-func resolveChartData(p chartParams, execCtx ToolExecContext) ([]map[string]any, error) {
+func resolveChartData(p *chartParams, execCtx ToolExecContext) ([]map[string]any, error) {
 	if p.DataSource == "" || p.DataSource == "inline" {
 		return p.InlineData, nil
 	}
@@ -264,7 +264,7 @@ func resolveChartData(p chartParams, execCtx ToolExecContext) ([]map[string]any,
 // from chart params and rows. ONLY the fields we add here end up in the
 // payload, so the LLM cannot smuggle formatter strings, JS expressions,
 // or unrelated keys into the rendered chart.
-func buildEchartsOption(p chartParams, rows []map[string]any) map[string]any {
+func buildEchartsOption(p *chartParams, rows []map[string]any) map[string]any {
 	option := map[string]any{
 		"title":   map[string]any{"text": sanitizeString(p.Title)},
 		"tooltip": map[string]any{"trigger": "axis"},
@@ -523,7 +523,7 @@ func DefaultTools() []ToolDefinition {
 				Description string        `json:"description"`
 				Parameters  ToolParameter `json:"parameters"`
 			}{
-				Name: "render_chart",
+				Name:        "render_chart",
 				Description: "Render a chart in the chat UI. Only use when the user explicitly asks for a visualization or when comparing several numeric series side-by-side is clearly more useful than prose. Supply data via inline_data or by referencing a prior tool_result.",
 				Parameters: ToolParameter{
 					Type: "object",

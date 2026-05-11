@@ -10,7 +10,7 @@ type Service interface {
 	DeleteConversation(ctx context.Context, id int64) error
 	AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error)
 	ListMessages(ctx context.Context, conversationID int64) ([]*Message, error)
-	Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (int, *int64, error)
+	Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (deleted int, latest *int64, err error)
 }
 
 type service struct {
@@ -49,6 +49,6 @@ func (s *service) ListMessages(ctx context.Context, conversationID int64) ([]*Me
 	return s.store.ListMessages(ctx, conversationID)
 }
 
-func (s *service) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (int, *int64, error) {
+func (s *service) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (deleted int, latest *int64, err error) {
 	return s.store.Rollback(ctx, conversationID, messageID, inclusive)
 }

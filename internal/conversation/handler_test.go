@@ -54,7 +54,7 @@ func (s stubConversationService) ListMessages(ctx context.Context, conversationI
 	return s.listMessagesFunc(ctx, conversationID)
 }
 
-func (s stubConversationService) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (int, *int64, error) {
+func (s stubConversationService) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (deleted int, latest *int64, err error) {
 	return s.rollbackFunc(ctx, conversationID, messageID, inclusive)
 }
 
