@@ -63,16 +63,21 @@ func (s *universityStore) GetUniversityProfile(ctx context.Context, universityID
 
 	var p UniversityProfileResponse
 	err := s.pool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id, university_id, profile_year,
-		       COALESCE(region_code, ''), COALESCE(city, ''),
-		       COALESCE(ownership_type_code, ''), COALESCE(school_category_code, ''), COALESCE(education_level_code, ''),
-		       is_985, is_211, is_double_first_class, is_national_key, is_provincial_key,
-		       has_postgraduate_recommendation, postgraduate_recommendation_rate,
-		       COALESCE(soft_rank, ''), COALESCE(alumni_rank, ''), COALESCE(difficulty_rank, ''),
-		       doctoral_program_count, master_program_count, national_key_subject_count,
-		       COALESCE(affiliation, ''), COALESCE(school_level_tags, ''), COALESCE(excellence_tags, '')
-		FROM university_profiles
-		WHERE university_id = $1 AND %s
+		SELECT up.id, up.university_id, up.profile_year,
+		       COALESCE(up.region_code, ''), COALESCE(up.city, ''),
+		       COALESCE(up.ownership_type_code, ''), COALESCE(ot.name, ''),
+		       COALESCE(up.school_category_code, ''), COALESCE(sc.name, ''),
+		       COALESCE(up.education_level_code, ''), COALESCE(el.name, ''),
+		       up.is_985, up.is_211, up.is_double_first_class, up.is_national_key, up.is_provincial_key,
+		       up.has_postgraduate_recommendation, up.postgraduate_recommendation_rate,
+		       COALESCE(up.soft_rank, ''), COALESCE(up.alumni_rank, ''), COALESCE(up.difficulty_rank, ''),
+		       up.doctoral_program_count, up.master_program_count, up.national_key_subject_count,
+		       COALESCE(up.affiliation, ''), COALESCE(up.school_level_tags, ''), COALESCE(up.excellence_tags, '')
+		FROM university_profiles up
+		LEFT JOIN school_ownership_types ot ON ot.code = up.ownership_type_code
+		LEFT JOIN school_categories sc ON sc.code = up.school_category_code
+		LEFT JOIN education_levels el ON el.code = up.education_level_code
+		WHERE up.university_id = $1 AND %s
 	`, yearPredicate), args...).Scan(
 		&p.ID,
 		&p.UniversityID,
@@ -80,8 +85,11 @@ func (s *universityStore) GetUniversityProfile(ctx context.Context, universityID
 		&p.RegionCode,
 		&p.City,
 		&p.OwnershipTypeCode,
+		&p.OwnershipTypeName,
 		&p.SchoolCategoryCode,
+		&p.SchoolCategoryName,
 		&p.EducationLevelCode,
+		&p.EducationLevelName,
 		&p.Is985,
 		&p.Is211,
 		&p.IsDoubleFirstClass,
