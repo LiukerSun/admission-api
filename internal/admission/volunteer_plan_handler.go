@@ -62,7 +62,7 @@ func (h *VolunteerPlanHandler) GetRichVolunteerPlan(c *gin.Context) {
 // @Description  Returns volunteer plans from plans.json.
 // @Tags         admission
 // @Produce      json
-// @Success      200 {object} web.Response{data=VolunteerPlansResponse}
+// @Success      200 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/volunteer-plans [get]
 func (h *VolunteerPlanHandler) ListVolunteerPlans(c *gin.Context) {

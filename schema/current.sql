@@ -462,3 +462,76 @@ CREATE INDEX idx_admission_major_tags_major
 CREATE INDEX idx_admission_major_tags_standard_major
     ON admission_major_tags(standard_major_id)
     WHERE standard_major_id IS NOT NULL;
+
+CREATE TABLE conversations (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_conversations_user_id
+    ON conversations(user_id, updated_at DESC);
+
+CREATE INDEX idx_conversations_status
+    ON conversations(status, updated_at DESC);
+
+CREATE TABLE conversation_messages (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    tool_calls JSONB,
+    tool_results JSONB,
+    widgets JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_conversation_messages_conversation_id
+    ON conversation_messages(conversation_id, created_at ASC);
+
+CREATE TABLE conversation_filters (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    filter_type VARCHAR(50) NOT NULL,
+    filter_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_conversation_filters_conversation_id
+    ON conversation_filters(conversation_id, created_at DESC);
+
+CREATE TABLE conversation_plan_drafts (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    status VARCHAR(32) NOT NULL DEFAULT 'generating',
+    input_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    plan_json JSONB,
+    algorithm_version VARCHAR(64) NOT NULL DEFAULT '',
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_conversation_plan_drafts_user_created
+    ON conversation_plan_drafts(user_id, created_at DESC);
+
+CREATE INDEX idx_conversation_plan_drafts_conversation_created
+    ON conversation_plan_drafts(conversation_id, created_at DESC);
+
+CREATE TABLE user_volunteer_plans (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    source_draft_id BIGINT REFERENCES conversation_plan_drafts(id) ON DELETE SET NULL,
+    plan_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, source_draft_id)
+);
+
+CREATE INDEX idx_user_volunteer_plans_user_created
+    ON user_volunteer_plans(user_id, created_at DESC);

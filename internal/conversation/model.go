@@ -1,6 +1,9 @@
 package conversation
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Conversation struct {
 	ID        int64     `json:"id"`
@@ -12,13 +15,18 @@ type Conversation struct {
 }
 
 type Message struct {
-	ID             int64     `json:"id"`
-	ConversationID int64     `json:"conversation_id"`
-	Role           string    `json:"role"`
-	Content        string    `json:"content"`
-	ToolCalls      []byte    `json:"tool_calls,omitempty"`
-	ToolResults    []byte    `json:"tool_results,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID             int64           `json:"id"`
+	ConversationID int64           `json:"conversation_id"`
+	Role           string          `json:"role"`
+	Content        string          `json:"content"`
+	ToolCalls      json.RawMessage `json:"tool_calls,omitempty"`
+	ToolResults    json.RawMessage `json:"tool_results,omitempty"`
+	// Widgets is a JSONB-encoded array of structured display units the
+	// assistant produced via render_chart / render_card tools. Stored
+	// alongside the message so history replay reproduces the chat UI
+	// without re-running the LLM or re-executing tools.
+	Widgets   json.RawMessage `json:"widgets,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 type CreateConversationRequest struct {

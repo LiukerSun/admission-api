@@ -22,7 +22,7 @@ func NewDictionaryHandler(service DictionaryService) *DictionaryHandler {
 // @Description  Returns code-name values used by admission filters and imports.
 // @Tags         admission
 // @Produce      json
-// @Success      200 {object} web.Response{data=DictionaryResponse}
+// @Success      200 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/dictionaries [get]
 func (h *DictionaryHandler) ListDictionaries(c *gin.Context) {

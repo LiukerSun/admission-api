@@ -218,3 +218,45 @@ func (c *AnthropicClient) ChatCompletion(ctx context.Context, messages []Message
 	}
 	return llmResp, nil
 }
+
+// ChatCompletionStream provides a fallback non-streaming implementation
+// for the Anthropic backend. True Anthropic streaming (with content_block_delta
+// events and partial tool-use blocks) is deferred to a later phase. To
+// keep the interface contract, we synthesize the streaming channel from
+// a single ChatCompletion call: the whole text is emitted as one
+// StreamChunkText, each tool call as a StreamChunkToolCallDone, then
+// StreamChunkDone. First-token latency therefore equals total generation
+// time on this backend — operators are warned at startup.
+func (c *AnthropicClient) ChatCompletionStream(ctx context.Context, messages []Message, tools []ToolDefinition) (<-chan StreamChunk, error) {
+	out := make(chan StreamChunk, 8)
+	go func() {
+		defer close(out)
+		resp, err := c.ChatCompletion(ctx, messages, tools)
+		if err != nil {
+			select {
+			case out <- StreamChunk{Type: StreamChunkError, Err: err}:
+			case <-ctx.Done():
+			}
+			return
+		}
+		if resp.Content != "" {
+			select {
+			case out <- StreamChunk{Type: StreamChunkText, TextDelta: resp.Content}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		for _, tc := range resp.ToolCalls {
+			select {
+			case out <- StreamChunk{Type: StreamChunkToolCallDone, ToolCall: tc}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		select {
+		case out <- StreamChunk{Type: StreamChunkDone}:
+		case <-ctx.Done():
+		}
+	}()
+	return out, nil
+}

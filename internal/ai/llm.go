@@ -58,7 +58,53 @@ type LLMResponse struct {
 	ContentBlocks []ContentBlock `json:"-"`
 }
 
+// StreamChunkType enumerates the kinds of incremental events a streaming
+// LLM completion can produce. Concrete LLM clients translate provider
+// SDK frames into these values so callers (Agent.RunStream) never see
+// provider-specific shapes.
+const (
+	StreamChunkText         = "text_delta"
+	StreamChunkToolCallDone = "tool_call_done"
+	StreamChunkDone         = "done"
+	StreamChunkError        = "error"
+)
+
+// StreamChunk is a single incremental event from ChatCompletionStream.
+//
+// Tool-call streaming semantics: providers (notably OpenAI) deliver tool
+// calls as a sequence of partial frames keyed by an index, where the id
+// and function.name typically arrive only in the first frame and the
+// arguments field is concatenated across many frames. Clients of this
+// interface are responsible for accumulating those partial frames inside
+// the LLM client implementation, and only emitting a StreamChunkToolCallDone
+// chunk once the full ID / Name / Arguments JSON for a given index has
+// been assembled. This keeps the Agent layer simple — it never has to
+// concatenate arguments fragments itself.
+type StreamChunk struct {
+	Type string
+	// TextDelta is set for StreamChunkText chunks.
+	TextDelta string
+	// ToolCall is set for StreamChunkToolCallDone chunks and contains
+	// the fully-accumulated ID, function name, and arguments JSON.
+	ToolCall ToolCall
+	// Err is set for StreamChunkError chunks. The channel will be closed
+	// after an error chunk; receivers must not expect further data.
+	Err error
+}
+
 // LLMProxy abstracts multi-provider LLM access.
+//
+// ChatCompletion is the blocking single-shot variant kept for callers
+// that do not need token-level streaming (e.g. the suggestions endpoint
+// which makes a one-off classifier-style call).
+//
+// ChatCompletionStream returns a channel of StreamChunk values. The
+// channel is closed by the implementation when the stream terminates
+// (normally with a StreamChunkDone, or after a StreamChunkError). The
+// caller must drain the channel until it is closed to avoid leaking the
+// producer goroutine and its underlying HTTP body. Cancelling ctx is
+// the standard way to abort an in-flight stream.
 type LLMProxy interface {
 	ChatCompletion(ctx context.Context, messages []Message, tools []ToolDefinition) (*LLMResponse, error)
+	ChatCompletionStream(ctx context.Context, messages []Message, tools []ToolDefinition) (<-chan StreamChunk, error)
 }
