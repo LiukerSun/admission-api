@@ -8,8 +8,9 @@ type Service interface {
 	ListConversations(ctx context.Context, userID *int64) ([]*Conversation, error)
 	ArchiveConversation(ctx context.Context, id int64) error
 	DeleteConversation(ctx context.Context, id int64) error
-	AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error)
+	AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error)
 	ListMessages(ctx context.Context, conversationID int64) ([]*Message, error)
+	Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (int, *int64, error)
 }
 
 type service struct {
@@ -40,10 +41,14 @@ func (s *service) DeleteConversation(ctx context.Context, id int64) error {
 	return s.store.UpdateConversationStatus(ctx, id, "deleted")
 }
 
-func (s *service) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error) {
-	return s.store.AddMessage(ctx, conversationID, role, content, toolCalls, toolResults)
+func (s *service) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error) {
+	return s.store.AddMessage(ctx, conversationID, role, content, toolCalls, toolResults, widgets)
 }
 
 func (s *service) ListMessages(ctx context.Context, conversationID int64) ([]*Message, error) {
 	return s.store.ListMessages(ctx, conversationID)
+}
+
+func (s *service) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (int, *int64, error) {
+	return s.store.Rollback(ctx, conversationID, messageID, inclusive)
 }
