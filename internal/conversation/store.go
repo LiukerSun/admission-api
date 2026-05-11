@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,17 @@ var ErrConversationNotFound = errors.New("conversation not found")
 // a single bad actor can't make the server load tens of thousands of
 // rows per request.
 const MaxMessagesReturned = 500
+
+func isUndefinedColumn(err error, column string) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if column == "" {
+		return strings.Contains(msg, "column") && strings.Contains(msg, "does not exist")
+	}
+	return strings.Contains(msg, fmt.Sprintf(`column "%s"`, column)) && strings.Contains(msg, "does not exist")
+}
 
 type Store interface {
 	CreateConversation(ctx context.Context, title string, userID *int64) (*Conversation, error)
@@ -189,6 +201,21 @@ func (s *store) AddMessage(ctx context.Context, conversationID int64, role, cont
 		&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ToolCalls, &msg.ToolResults, &msg.Widgets, &msg.CreatedAt,
 	)
 	if err != nil {
+		if isUndefinedColumn(err, "widgets") {
+			legacyQuery := `
+				INSERT INTO conversation_messages (conversation_id, role, content, tool_calls, tool_results)
+				VALUES ($1, $2, $3, $4, $5)
+				RETURNING id, conversation_id, role, content, tool_calls, tool_results, created_at
+			`
+			var legacy Message
+			if legacyErr := s.pool.QueryRow(ctx, legacyQuery, conversationID, role, content, toolCalls, toolResults).Scan(
+				&legacy.ID, &legacy.ConversationID, &legacy.Role, &legacy.Content, &legacy.ToolCalls, &legacy.ToolResults, &legacy.CreatedAt,
+			); legacyErr != nil {
+				return nil, fmt.Errorf("add message: %w", legacyErr)
+			}
+			_, _ = s.pool.Exec(ctx, `UPDATE conversations SET updated_at = NOW() WHERE id = $1`, conversationID)
+			return &legacy, nil
+		}
 		return nil, fmt.Errorf("add message: %w", err)
 	}
 
@@ -218,6 +245,40 @@ func (s *store) ListMessages(ctx context.Context, conversationID int64) ([]*Mess
 	`
 	rows, err := s.pool.Query(ctx, query, conversationID, MaxMessagesReturned)
 	if err != nil {
+		if isUndefinedColumn(err, "widgets") {
+			legacyQuery := `
+				WITH recent AS (
+					SELECT id, conversation_id, role, content, tool_calls, tool_results, created_at
+					FROM conversation_messages
+					WHERE conversation_id = $1
+					ORDER BY created_at DESC, id DESC
+					LIMIT $2
+				)
+				SELECT id, conversation_id, role, content, tool_calls, tool_results, created_at
+				FROM recent
+				ORDER BY created_at ASC, id ASC
+			`
+			legacyRows, legacyErr := s.pool.Query(ctx, legacyQuery, conversationID, MaxMessagesReturned)
+			if legacyErr != nil {
+				return nil, fmt.Errorf("list messages: %w", legacyErr)
+			}
+			defer legacyRows.Close()
+
+			var messages []*Message
+			for legacyRows.Next() {
+				var msg Message
+				if err := legacyRows.Scan(
+					&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ToolCalls, &msg.ToolResults, &msg.CreatedAt,
+				); err != nil {
+					return nil, fmt.Errorf("scan message: %w", err)
+				}
+				messages = append(messages, &msg)
+			}
+			if err := legacyRows.Err(); err != nil {
+				return nil, fmt.Errorf("iterate messages: %w", err)
+			}
+			return messages, nil
+		}
 		return nil, fmt.Errorf("list messages: %w", err)
 	}
 	defer rows.Close()
