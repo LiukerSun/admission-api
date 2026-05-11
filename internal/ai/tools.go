@@ -246,12 +246,18 @@ func resolveChartData(p *chartParams, execCtx ToolExecContext) ([]map[string]any
 	if !ok {
 		return nil, fmt.Errorf("tool_result %s not found in this run", id)
 	}
-	// Try the search_universities shape first; fall back to bare array.
+	// Try the search_universities shape first; fall back to aggregate_data shape, then bare array.
 	var wrapper struct {
 		Top []map[string]any `json:"top"`
 	}
 	if err := json.Unmarshal([]byte(content), &wrapper); err == nil && len(wrapper.Top) > 0 {
 		return wrapper.Top, nil
+	}
+	var aggWrapper struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(content), &aggWrapper); err == nil && len(aggWrapper.Items) > 0 {
+		return aggWrapper.Items, nil
 	}
 	var arr []map[string]any
 	if err := json.Unmarshal([]byte(content), &arr); err == nil {
