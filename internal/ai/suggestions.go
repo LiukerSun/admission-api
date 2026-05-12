@@ -72,7 +72,7 @@ func NewSuggestionsHandler(llm LLMProxy, conversationService conversation.Servic
 // @Tags         ai
 // @Produce      json
 // @Param        id path int true "Conversation ID"
-// @Success      200 {object} web.Response{data=SuggestionsResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Router       /api/v1/conversations/{id}/suggestions [get]

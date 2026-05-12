@@ -43,7 +43,7 @@ func NewAggregateHandler(service AggregateService) *AggregateHandler {
 // @Param        is_double_first_class query bool false "Filter by double-first-class status"
 // @Param        group_by query string true "Dimension to group by: province, city, subject_category, university, group"
 // @Param        metrics query string true "Comma-separated metrics: count, avg_min_score, avg_min_rank, avg_tuition, is_985_count, is_211_count, is_double_first_class_count"
-// @Success      200 {object} web.Response{data=AggregateResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/aggregate [get]

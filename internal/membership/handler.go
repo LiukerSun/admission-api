@@ -25,7 +25,7 @@ func NewHandler(service Service) *Handler {
 // @Tags         membership
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200 {object} web.Response{data=[]PlanResponse}
+// @Success      200 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/membership/plans [get]
@@ -44,7 +44,7 @@ func (h *Handler) ListPlans(c *gin.Context) {
 // @Tags         membership
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200 {object} web.Response{data=CurrentMembershipResponse}
+// @Success      200 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/membership [get]
