@@ -32,7 +32,7 @@ func isUndefinedColumn(err error, column string) bool {
 	if column == "" {
 		return strings.Contains(msg, "column") && strings.Contains(msg, "does not exist")
 	}
-	return strings.Contains(msg, fmt.Sprintf(`column "%s"`, column)) && strings.Contains(msg, "does not exist")
+	return strings.Contains(msg, fmt.Sprintf("column %q", column)) && strings.Contains(msg, "does not exist")
 }
 
 type Store interface {

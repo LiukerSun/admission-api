@@ -147,7 +147,7 @@ func newStreamWriter(c *gin.Context) *streamWriter {
 	return &streamWriter{c: c, flush: flush}
 }
 
-func (w *streamWriter) write(event SSEEvent) {
+func (w *streamWriter) write(event *SSEEvent) {
 	data, err := json.Marshal(event)
 	if err != nil {
 		// Marshal failure on an SSE event is exotic — most commonly an
@@ -178,10 +178,10 @@ func (w *streamWriter) write(event SSEEvent) {
 func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, history []Message) (*AgentResult, error) {
 	cb := AgentCallbacks{
 		OnTextDelta: func(content string) {
-			sw.write(SSEEvent{Type: "text_delta", Content: content})
+			sw.write(&SSEEvent{Type: "text_delta", Content: content})
 		},
 		OnToolCallStart: func(callID, toolName string) {
-			sw.write(SSEEvent{
+			sw.write(&SSEEvent{
 				Type:     "tool_call_start",
 				CallID:   callID,
 				ToolName: toolName,
@@ -194,17 +194,17 @@ func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, histo
 				payload["error"] = errMsg
 			}
 			ok := success
-			sw.write(SSEEvent{Type: "tool_call_end", CallID: callID, Success: &ok, Error: errMsg, Data: payload})
+			sw.write(&SSEEvent{Type: "tool_call_end", CallID: callID, Success: &ok, Error: errMsg, Data: payload})
 		},
 		OnWidget: func(widget Widget) {
-			sw.write(SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
+			sw.write(&SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
 		},
 	}
 
 	result, err := h.agent.RunStream(ctx, history, cb)
 	if err != nil {
 		slog.Error("agent run failed", "error", err)
-		sw.write(SSEEvent{Type: "error", Content: err.Error()})
+		sw.write(&SSEEvent{Type: "error", Content: err.Error()})
 		return nil, err
 	}
 	return result, nil
@@ -241,7 +241,7 @@ func (h *Handler) Chat(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	sw.write(SSEEvent{Type: "done", Data: result})
+	sw.write(&SSEEvent{Type: "done", Data: result})
 }
 
 // ChatWithConversation godoc
@@ -402,10 +402,10 @@ func (h *Handler) streamConversationTurn(c *gin.Context, convID int64) {
 	}
 	if _, err := h.conversationService.AddMessage(c.Request.Context(), convID, "assistant", result.Text, toolCallsJSON, toolResultsJSON, widgetsJSON); err != nil {
 		slog.Error("failed to persist assistant message after AI run", "error", err, "conversationID", convID)
-		sw.write(SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
+		sw.write(&SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
 	}
 
-	sw.write(SSEEvent{Type: "done", Data: result})
+	sw.write(&SSEEvent{Type: "done", Data: result})
 	slog.Info("sse stream complete")
 }
 
