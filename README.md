@@ -146,9 +146,21 @@ SMS_CODE_TTL_MINUTES=5
 SMS_SEND_COOLDOWN_SECONDS=60
 SMS_DAILY_LIMIT=10
 SMS_MAX_VERIFY_ATTEMPTS=5
+
+# LLM (AI 对话所用大模型)
+LLM_PROVIDER=anthropic
+LLM_BASE_URL=https://api.deepseek.com/anthropic
+LLM_API_KEY=
+LLM_MODEL=deepseek-v4-pro
 ```
 
 > 注意：`DATABASE_URL` 和 `REDIS_ADDR` 由应用根据 `POSTGRES_*` 和 `REDIS_PORT` 自动构建，无需手动配置。
+
+`LLM_PROVIDER` 支持 `anthropic` 和 `openai` 两种协议：
+- `anthropic`：调用 Anthropic Messages API 协议，DeepSeek 通过 `https://api.deepseek.com/anthropic` 端点兼容此协议
+- `openai`：调用 OpenAI Chat Completions 协议，可对接官方 OpenAI、DeepSeek 的 `/v1` 端点或其他 OpenAI 兼容服务
+
+`LLM_BASE_URL` 仅需填到协议根路径（不要带 `/messages` 或 `/chat/completions`），具体路径由客户端拼接。
 
 ---
 
@@ -180,6 +192,20 @@ SMS_MAX_VERIFY_ATTEMPTS=5
 | GET | `/api/v1/payment/orders/:order_no` | 查询我的支付订单详情 |
 | POST | `/api/v1/payment/orders/:order_no/pay` | 使用 mock 渠道完成支付并发放会员 |
 | POST | `/api/v1/payment/orders/:order_no/detect` | 主动检测订单支付/权益状态 |
+| POST | `/api/v1/conversations` | 创建一段 AI 对话 |
+| GET | `/api/v1/conversations` | 列出当前用户的活跃对话 |
+| GET | `/api/v1/conversations/:id` | 获取对话详情与历史消息 |
+| POST | `/api/v1/conversations/:id/messages` | 向对话追加一条用户消息（不触发 AI 回复） |
+| POST | `/api/v1/conversations/:id/archive` | 归档对话 |
+| DELETE | `/api/v1/conversations/:id` | 软删除对话 |
+| POST | `/api/v1/ai/chat` | 一次性 AI 对话，SSE 流式返回（每用户 30 次/分钟） |
+| POST | `/api/v1/conversations/:id/ai-chat` | 在指定对话内调用 AI，自动持久化消息并 SSE 流式返回（每用户 30 次/分钟） |
+
+### AI 对话接口
+
+AI 对话由 `LLM_PROVIDER` 选择的大模型驱动（详见上文配置项说明），底层通过 `internal/ai` 中的 `LLMProxy` 统一抽象 Anthropic 与 OpenAI 两种协议，并提供 `ToolExecutor` 用于让模型主动查询招生数据。
+
+`/api/v1/ai/chat` 与 `/api/v1/conversations/:id/ai-chat` 均使用 SSE（`text/event-stream`）流式返回，事件类型包括 `step_start` / `step_finish` / `text_delta` / `done`。`ai-chat` 会自动把用户消息和模型回复写入对应 `conversation`，前端只需把上次 `conversations/:id` 取到的消息渲染出来即可。
 
 ### 会员支付接口
 
