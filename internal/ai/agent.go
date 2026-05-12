@@ -31,8 +31,14 @@ const defaultSystemPrompt = `你是一个智能高考志愿填报助手，任务
 
 工具使用原则：
 - apply_filter 仅用于设置或修改筛选条件。
-- search_universities 用于查询具体院校列表。
+- search_universities 用于查询具体院校列表和录取分数。
 - aggregate_data 用于统计数据。
+- retrieve_knowledge 用于检索政策解读、填报策略、专业分析、案例参考等非结构化知识。当用户问以下类型问题时，优先使用 retrieve_knowledge：
+  * 政策类：强基计划、提前批、赋分规则、专项计划等
+  * 策略类：冲稳保、志愿排序、风险分析等
+  * 专业类：专业对比、就业前景、适合什么学生等
+  * 家庭/情绪类：经济条件限制、家庭压力、安抚建议等
+  * 如果问题同时涉及分数和策略，可同时使用 search_universities 和 retrieve_knowledge
 - 获取足够工具结果后，直接回复用户并停止工具调用。`
 
 // AgentResult contains the final output of an agent run.

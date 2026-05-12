@@ -34,6 +34,7 @@ import (
 	"admission-api/internal/ai"
 	"admission-api/internal/conversation"
 	"admission-api/internal/health"
+	"admission-api/internal/knowledge"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
 	"admission-api/internal/platform/config"
@@ -149,7 +150,8 @@ func run() error {
 	default:
 		llmProxy = ai.NewOpenAIClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
 	}
-	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore)
+	knowledgeStore := knowledge.NewStore(database.Pool())
+	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, knowledgeStore)
 	agent := ai.NewAgent(llmProxy, toolExecutor)
 	aiHandler := ai.NewHandler(agent, conversationService)
 
