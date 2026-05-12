@@ -6,15 +6,15 @@ import (
 
 // RichVolunteerPlan matches the frontend's RichVolunteerPlan interface for detailed export
 type RichVolunteerPlan struct {
-	ID          int64               `json:"id"`
-	UserID      int64               `json:"userId"`
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Groups      []VolunteerPlanGroup `json:"groups"` 
-	Stats       VolunteerPlanStats  `json:"stats"`  
-    CreatedAt   time.Time           `json:"createdAt"` 
-	UserDetails UserDetails         `json:"userDetails"`
-	PlanStatistics PlanStatistics    `json:"planStatistics"`
+	ID             int64                        `json:"id"`
+	UserID         int64                        `json:"userId"`
+	Name           string                       `json:"name"`
+	Description    string                       `json:"description"`
+	Groups         []VolunteerPlanGroup         `json:"groups"`
+	Stats          VolunteerPlanStats           `json:"stats"`
+	CreatedAt      time.Time                    `json:"createdAt"`
+	UserDetails    UserDetails                  `json:"userDetails"`
+	PlanStatistics PlanStatistics               `json:"planStatistics"`
 	DetailedGroups []DetailedVolunteerPlanGroup `json:"detailedGroups"`
 }
 
@@ -24,16 +24,16 @@ type UserDetails struct {
 }
 
 type PlanStatistics struct {
-	TotalUniversities int               `json:"totalUniversities"`
-	TotalGroups       int               `json:"totalGroups"`
-	TotalMajors       int               `json:"totalMajors"`
+	TotalUniversities int            `json:"totalUniversities"`
+	TotalGroups       int            `json:"totalGroups"`
+	TotalMajors       int            `json:"totalMajors"`
 	MajorDistribution map[string]int `json:"majorDistribution"` // e.g., { '计算机科学与技术': 10, '软件工程': 8 }
 }
 
 type ScoreTrend struct {
-	Year    int `json:"year"`
+	Year     int `json:"year"`
 	MinScore int `json:"minScore"`
-	MinRank int `json:"minRank"`
+	MinRank  int `json:"minRank"`
 }
 
 type DetailedVolunteerPlanGroup struct {
@@ -51,9 +51,9 @@ type DetailedVolunteerPlanGroup struct {
 	Majors           []VolunteerPlanMajor `json:"majors"` // Existing majors
 
 	// Additional fields for rich export
-	UniversityDetails UniversityDetails `json:"universityDetails"`
-	GroupAdmissionDetails GroupAdmissionDetails `json:"groupAdmissionDetails"`
-	DetailedMajors []DetailedVolunteerPlanMajor `json:"detailedMajors"`
+	UniversityDetails     UniversityDetails            `json:"universityDetails"`
+	GroupAdmissionDetails GroupAdmissionDetails        `json:"groupAdmissionDetails"`
+	DetailedMajors        []DetailedVolunteerPlanMajor `json:"detailedMajors"`
 }
 
 type UniversityDetails struct {
@@ -72,14 +72,14 @@ type GroupAdmissionDetails struct {
 }
 
 type DetailedVolunteerPlanMajor struct {
-	MajorCode          string `json:"majorCode"`
-	MajorName          string `json:"majorName"`
-	MajorIntro         string `json:"majorIntro"`
-	TrainingGoal       string `json:"trainingGoal"`
+	MajorCode           string `json:"majorCode"`
+	MajorName           string `json:"majorName"`
+	MajorIntro          string `json:"majorIntro"`
+	TrainingGoal        string `json:"trainingGoal"`
 	EmploymentDirection string `json:"employmentDirection"`
-	MinScore           int    `json:"minScore"`
-	MinRank            int    `json:"minRank"`
-	Tuition            int    `json:"tuition"`
-	MajorOrder         int    `json:"majorOrder"` // Added for consistency with frontend
+	MinScore            int    `json:"minScore"`
+	MinRank             int    `json:"minRank"`
+	Tuition             int    `json:"tuition"`
+	MajorOrder          int    `json:"majorOrder"` // Added for consistency with frontend
 	// Add more university major admission/profile details
 }

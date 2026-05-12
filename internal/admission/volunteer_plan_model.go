@@ -4,7 +4,7 @@ import "time"
 
 type VolunteerPlan struct {
 	ID          int64                `json:"id"`
-	UserID      int64                 `json:"userId"`
+	UserID      int64                `json:"userId"`
 	Name        string               `json:"name"`
 	Description string               `json:"description"`
 	Groups      []VolunteerPlanGroup `json:"groups"`

@@ -94,7 +94,10 @@ func (h *VolunteerPlanHandler) UpdateVolunteerPlan(c *gin.Context) {
 
 	planIDStr := c.Param("id")
 	var planID int64
-	fmt.Sscanf(planIDStr, "%d", &planID)
+	if _, err := fmt.Sscanf(planIDStr, "%d", &planID); err != nil {
+    	h.RespondError(c, http.StatusBadRequest, web.ErrCodeInvalidParam, "invalid plan ID")
+    	return
+	}
 
 	var req UpdatePlanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -122,7 +125,10 @@ func (h *VolunteerPlanHandler) UpdateGroupRemark(c *gin.Context) {
 
 	groupIDStr := c.Param("groupId")
 	var groupID int64
-	fmt.Sscanf(groupIDStr, "%d", &groupID)
+	if _, err := fmt.Sscanf(groupIDStr, "%d", &groupID); err != nil {
+    	h.RespondError(c, http.StatusBadRequest, web.ErrCodeInvalidParam, "invalid group ID")
+    	return
+	}
 
 	var req UpdateGroupRemarkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

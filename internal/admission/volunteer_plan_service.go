@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	// "time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -44,7 +43,7 @@ func (s *VolunteerPlanService) getUserDetails(ctx context.Context, userID int64)
 }
 
 // GetRichPlan fetches a detailed volunteer plan with all associated rich data
-func (s *VolunteerPlanService) GetRichPlan(ctx context.Context, userID int64, planID int64) (*RichVolunteerPlan, error) {
+func (s *VolunteerPlanService) GetRichPlan(ctx context.Context, userID, planID int64) (*RichVolunteerPlan, error) {
 	var richPlan RichVolunteerPlan
 
 	// 1. Fetch base volunteer plan
@@ -109,8 +108,8 @@ func (s *VolunteerPlanService) GetRichPlan(ctx context.Context, userID int64, pl
 		var dg DetailedVolunteerPlanGroup
 		var universityID sql.NullInt64
 		var groupID sql.NullInt64
-		var is985, is211 bool // These are now directly boolean due to COALESCE
-		var schoolCategoryName, regionName string // These are now directly string due to COALESCE
+		var is985, is211 bool                            // These are now directly boolean due to COALESCE
+		var schoolCategoryName, regionName string        // These are now directly string due to COALESCE
 		var minScore2024, minScore2023, minScore2022 int // These are now directly int due to COALESCE
 
 		err := groupRows.Scan(
@@ -166,12 +165,10 @@ func (s *VolunteerPlanService) GetRichPlan(ctx context.Context, userID int64, pl
 			slog.Error("query detailed majors failed", "planID", planID, "groupID", dg.ID, "error", err)
 			return nil, fmt.Errorf("query detailed majors: %w", err)
 		}
-		defer majorRows.Close()
-
 		var detailedMajors []DetailedVolunteerPlanMajor
 		for majorRows.Next() {
 			var dm DetailedVolunteerPlanMajor
-			var minScore, minRank, tuition int // Directly int due to COALESCE
+			var minScore, minRank, tuition int                       // Directly int due to COALESCE
 			var majorIntro, trainingGoal, employmentDirection string // Directly string due to COALESCE
 
 			err := majorRows.Scan(
@@ -180,6 +177,7 @@ func (s *VolunteerPlanService) GetRichPlan(ctx context.Context, userID int64, pl
 				&majorIntro, &trainingGoal, &employmentDirection,
 			)
 			if err != nil {
+				majorRows.Close()
 				slog.Error("scan detailed major failed", "planID", planID, "groupID", dg.ID, "error", err)
 				return nil, fmt.Errorf("scan detailed major: %w", err)
 			}
@@ -197,6 +195,7 @@ func (s *VolunteerPlanService) GetRichPlan(ctx context.Context, userID int64, pl
 				majorDistribution[dm.MajorName]++
 			}
 		}
+		majorRows.Close()
 		dg.DetailedMajors = detailedMajors
 		detailedGroups = append(detailedGroups, dg)
 	}
@@ -212,7 +211,6 @@ func (s *VolunteerPlanService) GetRichPlan(ctx context.Context, userID int64, pl
 
 	return &richPlan, nil
 }
-
 
 func (s *VolunteerPlanService) GetPlans(ctx context.Context, userID int64) (*VolunteerPlansResponse, error) {
 	// 1. 获取该用户的所有方案
@@ -298,7 +296,7 @@ func (s *VolunteerPlanService) GetPlans(ctx context.Context, userID int64) (*Vol
 	return &VolunteerPlansResponse{Plans: plans}, nil
 }
 
-func (s *VolunteerPlanService) UpdatePlan(ctx context.Context, userID int64, planID int64, name string, description string) error {
+func (s *VolunteerPlanService) UpdatePlan(ctx context.Context, userID, planID int64, name string, description string) error {
 	result, err := s.pool.Exec(ctx, `
 		UPDATE user_volunteer_plans
 		SET name = $1, description = $2, updated_at = NOW()
@@ -313,7 +311,7 @@ func (s *VolunteerPlanService) UpdatePlan(ctx context.Context, userID int64, pla
 	return nil
 }
 
-func (s *VolunteerPlanService) UpdateGroupRemark(ctx context.Context, userID int64, groupID int64, remark string) error {
+func (s *VolunteerPlanService) UpdateGroupRemark(ctx context.Context, userID, groupID int64, remark string) error {
 	// 验证该 group 是否属于该用户的方案
 	result, err := s.pool.Exec(ctx, `
 		UPDATE user_volunteer_groups
