@@ -3,6 +3,7 @@ package web
 const (
 	ErrCodeUnknown      = 0
 	ErrCodeBadRequest   = 1001
+	ErrCodeInvalidParam = 1001 // Alias for BadRequest or specific param error
 	ErrCodeUnauthorized = 1002
 	ErrCodeForbidden    = 1003
 	ErrCodeNotFound     = 1004

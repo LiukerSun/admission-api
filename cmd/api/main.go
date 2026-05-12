@@ -161,7 +161,7 @@ func run() error {
 	aggregateStore := admission.NewAggregateStore(database.Pool())
 	aggregateService := admission.NewAggregateService(aggregateStore)
 	aggregateHandler := admission.NewAggregateHandler(aggregateService)
-	volunteerPlanService := admission.NewVolunteerPlanService(cfg.VolunteerPlansFilePath)
+	volunteerPlanService := admission.NewVolunteerPlanService(database.Pool())
 	volunteerPlanHandler := admission.NewVolunteerPlanHandler(volunteerPlanService)
 	conversationStore := conversation.NewStore(database.Pool())
 	conversationService := conversation.NewService(conversationStore)
@@ -213,7 +213,6 @@ func run() error {
 		api.GET("/admission/universities/:id/profile", universityHandler.GetUniversityProfile)
 		api.GET("/admission/admission-lines", admissionLineHandler.ListAdmissionLines)
 		api.GET("/admission/aggregate", aggregateHandler.Aggregate)
-		api.GET("/admission/volunteer-plans", volunteerPlanHandler.ListVolunteerPlans)
 
 		authorized := api.Group("")
 		authorized.Use(middleware.JWTMiddleware(jwtConfig))
@@ -224,6 +223,10 @@ func run() error {
 			}
 			return u.Status, nil
 		}))
+		authorized.GET("/admission/volunteer-plans", volunteerPlanHandler.ListVolunteerPlans)
+		authorized.GET("/admission/volunteer-plans/:id/rich-details", volunteerPlanHandler.GetRichVolunteerPlan)
+		authorized.PUT("/admission/volunteer-plans/:id", volunteerPlanHandler.UpdateVolunteerPlan)
+		authorized.PUT("/admission/volunteer-plans/groups/:groupId/remark", volunteerPlanHandler.UpdateGroupRemark)
 		authorized.GET("/me", userHandler.Me)
 		authorized.PUT("/me/password", userHandler.ChangePassword)
 		authorized.POST("/me/phone/send-code", userHandler.SendPhoneVerificationCode)
