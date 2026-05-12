@@ -33,7 +33,7 @@ func NewHandler(service Service) *Handler {
 // @Accept       json
 // @Produce      json
 // @Param        body body CreateConversationRequest true "Conversation creation request"
-// @Success      200 {object} web.Response{data=Conversation}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/conversations [post]
@@ -62,7 +62,7 @@ func (h *Handler) CreateConversation(c *gin.Context) {
 // @Tags         conversation
 // @Produce      json
 // @Param        id path int true "Conversation ID"
-// @Success      200 {object} web.Response{data=WithMessages}
+// @Success      200 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/conversations/{id} [get]
@@ -107,7 +107,7 @@ func (h *Handler) GetConversation(c *gin.Context) {
 // @Tags         conversation
 // @Produce      json
 // @Param        user_id query int false "User ID"
-// @Success      200 {object} web.Response{data=[]Conversation}
+// @Success      200 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/conversations [get]
 func (h *Handler) ListConversations(c *gin.Context) {
@@ -138,7 +138,7 @@ func (h *Handler) ListConversations(c *gin.Context) {
 // @Produce      json
 // @Param        id path int true "Conversation ID"
 // @Param        body body AddMessageRequest true "Message"
-// @Success      200 {object} web.Response{data=Message}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Failure      500 {object} web.Response
@@ -208,7 +208,7 @@ type RollbackResponse struct {
 // @Produce      json
 // @Param        id path int true "Conversation ID"
 // @Param        body body RollbackRequest true "Rollback target"
-// @Success      200 {object} web.Response{data=RollbackResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Failure      500 {object} web.Response

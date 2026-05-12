@@ -23,7 +23,7 @@ func NewHandler(database *db.DB) *Handler {
 // @Tags         health
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  web.Response{data=map[string]string}
+// @Success      200  {object}  web.Response
 // @Failure      503  {object}  web.Response
 // @Router       /health [get]
 func (h *Handler) Check(c *gin.Context) {
