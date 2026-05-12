@@ -1,7 +1,9 @@
 package admission
 
 import (
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"admission-api/internal/platform/web"
 
@@ -37,7 +39,31 @@ func (h *RecommendationHandler) Recommend(c *gin.Context) {
 	}
 	resp, err := h.service.Recommend(c.Request.Context(), &req)
 	if err != nil {
-		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, err.Error())
+		// validateRequest 的错误属于用户输入问题 → 400；其余按服务侧 500 处理。
+		// 两路都 log，方便定位 500 究竟挂在哪一步。
+		status := http.StatusInternalServerError
+		msg := err.Error()
+		if strings.Contains(msg, "is required") ||
+			strings.Contains(msg, "must be positive") ||
+			strings.Contains(msg, "nil request") {
+			status = http.StatusBadRequest
+		}
+		// "no admission data for region=X category=Y" 是用户填了一个 DB 里没数据
+		// 的省份/科类组合，对用户友好地回 400 + 中文提示，而不是 500。
+		if strings.Contains(msg, "no admission data") {
+			status = http.StatusBadRequest
+			msg = "暂不支持该省份/科类组合的志愿推荐（目前仅黑龙江物理类/历史类数据完备）"
+		}
+		slog.Error("recommendation request failed",
+			"error", msg,
+			"status", status,
+			"region", req.RegionCode,
+			"subject_category", req.SubjectCategoryCode,
+			"rank", req.ProvincialRank,
+			"plan_size", req.PlanSize,
+			"enable_llm_tuning", req.EnableLLMTuning,
+		)
+		h.RespondError(c, status, web.ErrCodeInternal, msg)
 		return
 	}
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
