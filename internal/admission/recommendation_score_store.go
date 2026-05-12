@@ -68,45 +68,67 @@ func (s *recommendationScoreStore) PendingForRefresh(ctx context.Context, maxAge
 		limit = 50
 	}
 	cutoff := time.Now().Add(-maxAge)
+	// 一个 (university, local_major_code) 在不同 admission_group / 年份会出现多次 uma 行，
+	// 但 precomputed_scores 表是按 (university_id, local_major_code) 唯一键，
+	// 所以这里用 DISTINCT ON 去重，避免对同一对学校×专业重复调用 LLM 评估浪费 token。
+	// 取 uma.id 最大的那一行作为代表（即最新一条 admission_group 数据），用它的 major_intro 等元信息。
 	const query = `
+		WITH latest_profile AS (
+			SELECT DISTINCT ON (up.university_id)
+				up.university_id,
+				up.city,
+				up.region_code,
+				up.university_tier,
+				up.is_985,
+				up.is_211,
+				up.is_double_first_class
+			FROM university_profiles up
+			ORDER BY up.university_id, up.profile_year DESC
+		),
+		distinct_uma AS (
+			SELECT DISTINCT ON (u.id, uma.local_major_code)
+				u.id           AS university_id,
+				u.name         AS university_name,
+				uma.id         AS uma_id,
+				uma.local_major_code,
+				uma.local_major_name,
+				uma.major_intro,
+				uma.employment_direction
+			FROM university_major_admissions uma
+			JOIN admission_groups ag ON ag.id = uma.admission_group_id
+			JOIN universities u ON u.id = ag.university_id
+			ORDER BY u.id, uma.local_major_code, uma.id DESC
+		)
 		SELECT
-			u.id, u.name,
+			d.university_id, d.university_name,
 			COALESCE(up.university_tier, ''),
 			COALESCE(up.city, ''), COALESCE(up.region_code, ''),
 			COALESCE(up.is_985, false), COALESCE(up.is_211, false), COALESCE(up.is_double_first_class, false),
-			uma.local_major_code, uma.local_major_name,
+			d.local_major_code, d.local_major_name,
 			COALESCE(ump.discipline_category, ''),
 			COALESCE(ump.first_level_discipline, ''),
-			COALESCE(uma.major_intro, ''),
-			COALESCE(uma.employment_direction, ''),
+			COALESCE(d.major_intro, ''),
+			COALESCE(d.employment_direction, ''),
 			COALESCE(STRING_AGG(DISTINCT
 				CONCAT_WS('|',
 					NULLIF(tag.category_name, ''),
 					NULLIF(tag.class_name, ''),
 					NULLIF(tag.major_name, '')
 				), ',') FILTER (WHERE tag.id IS NOT NULL), '')
-		FROM university_major_admissions uma
-		JOIN admission_groups ag ON ag.id = uma.admission_group_id
-		JOIN universities u ON u.id = ag.university_id
-		LEFT JOIN university_major_profiles ump ON ump.university_major_admission_id = uma.id
-		LEFT JOIN admission_major_tags tag ON tag.university_major_admission_id = uma.id
-		LEFT JOIN LATERAL (
-			SELECT latest_up.*
-			FROM university_profiles latest_up
-			WHERE latest_up.university_id = u.id
-			ORDER BY latest_up.profile_year DESC
-			LIMIT 1
-		) up ON true
+		FROM distinct_uma d
+		LEFT JOIN university_major_profiles ump ON ump.university_major_admission_id = d.uma_id
+		LEFT JOIN admission_major_tags tag ON tag.university_major_admission_id = d.uma_id
+		LEFT JOIN latest_profile up ON up.university_id = d.university_id
 		LEFT JOIN recommendation_precomputed_scores ps
-			ON ps.university_id = u.id AND ps.local_major_code = uma.local_major_code
+			ON ps.university_id = d.university_id AND ps.local_major_code = d.local_major_code
 		WHERE ps.id IS NULL OR ps.evaluated_at < $1
-		GROUP BY u.id, u.name, up.university_tier, up.city, up.region_code,
+		GROUP BY d.university_id, d.university_name, up.university_tier, up.city, up.region_code,
 			up.is_985, up.is_211, up.is_double_first_class,
-			uma.local_major_code, uma.local_major_name,
+			d.local_major_code, d.local_major_name,
 			ump.discipline_category, ump.first_level_discipline,
-			uma.major_intro, uma.employment_direction,
-			ps.id
-		ORDER BY ps.evaluated_at NULLS FIRST, u.id, uma.local_major_code
+			d.major_intro, d.employment_direction,
+			ps.evaluated_at
+		ORDER BY ps.evaluated_at NULLS FIRST, d.university_id, d.local_major_code
 		LIMIT $2
 	`
 	rows, err := s.pool.Query(ctx, query, cutoff, limit)

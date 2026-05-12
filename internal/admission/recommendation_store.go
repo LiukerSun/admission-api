@@ -175,7 +175,26 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 		conditions = append(conditions, fmt.Sprintf("(up.city IS NULL OR up.city <> ALL($%d))", len(args)))
 	}
 
+	// 候选池硬上限：算法最终只挑 40 条，候选 5000 足够覆盖各种偏好/能力门槛过滤后的余量；
+	// 远超就开始浪费 PG/内存。前面已经按位次窗口、批次、科类、省/市排除做了 cheap 过滤。
+	const candidateHardLimit = 5000
+
 	query := fmt.Sprintf(`
+		WITH latest_profile AS (
+			SELECT DISTINCT ON (up.university_id)
+				up.university_id,
+				up.city,
+				up.region_code,
+				up.university_tier,
+				up.is_985,
+				up.is_211,
+				up.is_double_first_class,
+				up.is_national_key,
+				up.soft_rank,
+				up.postgraduate_recommendation_rate
+			FROM university_profiles up
+			ORDER BY up.university_id, up.profile_year DESC
+		)
 		SELECT
 			uma.id, ag.id,
 			u.id, u.university_code, u.name,
@@ -215,13 +234,7 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 		LEFT JOIN admission_major_tags tag ON tag.university_major_admission_id = uma.id
 		LEFT JOIN recommendation_precomputed_scores ps
 			ON ps.university_id = u.id AND ps.local_major_code = uma.local_major_code
-		LEFT JOIN LATERAL (
-			SELECT latest_up.*
-			FROM university_profiles latest_up
-			WHERE latest_up.university_id = u.id
-			ORDER BY latest_up.profile_year DESC
-			LIMIT 1
-		) up ON true
+		LEFT JOIN latest_profile up ON up.university_id = u.id
 		WHERE %s
 		GROUP BY uma.id, ag.id, u.id, up.city, up.region_code,
 			up.university_tier,
@@ -235,7 +248,8 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 			ump.discipline_category, ump.first_level_discipline,
 			ump.soft_major_grade, ump.major_rank, ump.major_evaluation_score, ump.is_national_feature
 		ORDER BY uma.min_rank ASC, u.name
-	`, strings.Join(conditions, " AND "))
+		LIMIT %d
+	`, strings.Join(conditions, " AND "), candidateHardLimit)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

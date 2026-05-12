@@ -106,7 +106,7 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 		return nil, err
 	}
 
-	strategy, strategyReason := decideStrategy(req)
+	strategy, strategyReason := decideStrategy(req, md)
 
 	filtered, filterNotes := filterByPreference(candidates, req, md)
 	notes := make([]string, 0, len(filterNotes))
@@ -283,15 +283,19 @@ func (s *recommendationService) resolveAdmissionYear(ctx context.Context, req *R
 }
 
 // decideStrategy implements 逻辑二: STEM intent → major-first, humanities → school-first.
-// 用户显式指定时直接采用。
-func decideStrategy(req *RecommendationRequest) (strategy, reason string) {
+// 关键字来自 recommendation_strategy_keywords 表（migration 010），便于业务运营调整无需发版。
+// 用户显式指定 PriorityStrategy 时直接采用。
+func decideStrategy(req *RecommendationRequest, md *RecommendationMetadata) (strategy, reason string) {
 	if req.PriorityStrategy == "school" || req.PriorityStrategy == "major" {
 		return req.PriorityStrategy, "用户显式指定"
 	}
-	stem := containsAny(req.PreferredMajors,
-		"计算机", "电子", "电气", "自动化", "机械", "通信", "软件", "人工智能", "数学", "物理", "土木", "航空", "材料")
-	humanities := containsAny(req.PreferredMajors,
-		"法学", "汉语言", "新闻", "金融", "会计", "经济", "管理", "外语", "教育", "心理")
+	var stemKeywords, humanitiesKeywords []string
+	if md != nil {
+		stemKeywords = md.StrategyKeywords["stem"]
+		humanitiesKeywords = md.StrategyKeywords["humanities"]
+	}
+	stem := containsAny(req.PreferredMajors, stemKeywords...)
+	humanities := containsAny(req.PreferredMajors, humanitiesKeywords...)
 	switch {
 	case stem && !humanities:
 		return "major", "理工类专业有专业壁垒，专业重要性 > 学校牌子"
@@ -345,11 +349,28 @@ func filterByPreference(candidates []RecommendationCandidate, req *Recommendatio
 
 	noteSubjects := map[string]bool{}
 
-	// 张雪峰式避雷
+	// 张雪峰式避雷：把用户给的关键字精确映射到对应的 CHSI 大类，避免一刀切。
+	//   "生化环材" → 五大类全部
+	//   "化学"     → 化学 + 化工
+	//   "生物"     → 生物科学类
+	//   "材料"     → 材料类
+	//   "环境"     → 环境科学与工程类
+	// 单关键字粒度匹配后只屏蔽用户真正点名的方向。
+	keywordToCats := map[string][]string{
+		"生化环材": {chsiCategoryChemistry, chsiCategoryChemicalEng, chsiCategoryMaterials, chsiCategoryEnvironmental, chsiCategoryBio},
+		"化学":   {chsiCategoryChemistry, chsiCategoryChemicalEng},
+		"生物":   {chsiCategoryBio},
+		"材料":   {chsiCategoryMaterials},
+		"环境":   {chsiCategoryEnvironmental},
+	}
 	zhangAvoid := map[string]struct{}{}
-	if containsAny(req.ExcludedKeywords, "生化环材") || containsAny(req.ExcludedKeywords, "化学") {
-		for _, c := range []string{chsiCategoryChemistry, chsiCategoryChemicalEng, chsiCategoryMaterials, chsiCategoryEnvironmental, chsiCategoryBio} {
-			zhangAvoid[c] = struct{}{}
+	for _, kw := range req.ExcludedKeywords {
+		for trigger, cats := range keywordToCats {
+			if strings.Contains(kw, trigger) {
+				for _, c := range cats {
+					zhangAvoid[c] = struct{}{}
+				}
+			}
 		}
 	}
 
@@ -459,14 +480,27 @@ func scoreCandidates(candidates []RecommendationCandidate, req *RecommendationRe
 	return scored
 }
 
+// personalizationClampMin / personalizationClampMax bound each runtime personalization
+// modifier before it multiplies the base. Without this, stacking 4 distinct ×1.2 bonuses
+// (preferred city + preferred major + family resource + career plan) compounds to ~2.07x
+// and a single ×1.2 bonus on a 985 could rank it above 清北 (school_base 2.0 vs 1.5).
+// Clamping to [0.7, 1.3] caps each dimension's runtime effect at ±30%, keeping the base
+// (which reflects objective tier / precomputed quality) as the dominant signal.
+const (
+	personalizationClampMin = 0.7
+	personalizationClampMax = 1.3
+)
+
 // scoreBreakdown computes the five sub-scores.
 //
-// Each dimension is `precomputed_base × personalization_modifier`:
+// Each dimension is `precomputed_base × clamp(personalization_modifier)`:
 //   - Base lives in `recommendation_precomputed_scores` (city/school/major/
 //     ability_improvement/future_competitiveness). When NULL, falls back to
 //     the legacy on-the-fly formula so partial population is fine.
 //   - Personalization is the runtime overlay: preferred cities, preferred
 //     majors, family resources, holland, career plans, single-subject ability fit.
+//     Clamped to [0.7, 1.3] per dimension to keep the runtime signal from
+//     overwhelming the objective base.
 func scoreBreakdown(c *RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata) ScoreBreakdown {
 	cityBase := defaultFloatPtr(c.PrecomputedCityScore, fallbackCityBase(c, md))
 	schoolBase := defaultFloatPtr(c.PrecomputedSchoolScore, fallbackSchoolBase(c))
@@ -474,11 +508,11 @@ func scoreBreakdown(c *RecommendationCandidate, req *RecommendationRequest, md *
 	abilityBase := defaultFloatPtr(c.PrecomputedAbilityImprovementScore, 1.0)
 	futureBase := defaultFloatPtr(c.PrecomputedFutureCompetitivenessScore, fallbackFutureBase(c))
 
-	city := cityBase * cityPersonalization(c, req, md)
-	school := schoolBase * schoolPersonalization(c)
-	major := majorBase * majorPersonalization(c, req, md)
-	ability := abilityBase * abilityFitScore(c, req, md)
-	future := futureBase * futurePersonalization(c)
+	city := cityBase * clampPersonalization(cityPersonalization(c, req, md))
+	school := schoolBase * clampPersonalization(schoolPersonalization(c))
+	major := majorBase * clampPersonalization(majorPersonalization(c, req, md))
+	ability := abilityBase * clampPersonalization(abilityFitScore(c, req, md))
+	future := futureBase * clampPersonalization(futurePersonalization(c))
 
 	return ScoreBreakdown{
 		CityScore:                  round(city, 3),
@@ -621,6 +655,19 @@ func defaultFloatPtr(p *float64, fallback float64) float64 {
 	return *p
 }
 
+// clampPersonalization keeps any single dimension's runtime modifier within
+// [personalizationClampMin, personalizationClampMax]. See personalizationClampMin
+// for the rationale.
+func clampPersonalization(v float64) float64 {
+	if v < personalizationClampMin {
+		return personalizationClampMin
+	}
+	if v > personalizationClampMax {
+		return personalizationClampMax
+	}
+	return v
+}
+
 // estimateProbability is a lightweight heuristic. With more data we'd train a logistic
 // model; for now we use the gap between historical_min_rank and the student's rank.
 // The planLabel argument is kept for future use (e.g. plan-specific risk modeling).
@@ -702,34 +749,6 @@ func buildWarnings(c *RecommendationCandidate, req *RecommendationRequest, md *R
 		w = append(w, "本省招生计划很少，录取分数波动大")
 	}
 	return w
-}
-
-func pickTopK(scored []scoredItem, k int) []RecommendationItem {
-	if k <= 0 {
-		return nil
-	}
-	out := make([]RecommendationItem, 0, k)
-	// 按"院校专业组" (university × group_code) 去重——这是黑龙江新高考的志愿单位。
-	// 同一专业组里多个专业，只保留综合分最高的那一个。
-	seenGroups := map[string]struct{}{}
-	usedSchools := map[string]int{}
-	for i := range scored {
-		it := &scored[i].item
-		groupKey := it.UniversityCode + "|" + it.GroupCode
-		if _, dup := seenGroups[groupKey]; dup {
-			continue
-		}
-		if usedSchools[it.UniversityCode] >= maxGroupsPerSchool {
-			continue
-		}
-		out = append(out, *it)
-		seenGroups[groupKey] = struct{}{}
-		usedSchools[it.UniversityCode]++
-		if len(out) >= k {
-			break
-		}
-	}
-	return out
 }
 
 func ensureSafeQuality(items []RecommendationItem, _ *RecommendationRequest) []RecommendationItem {

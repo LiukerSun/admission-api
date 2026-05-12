@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"admission-api/internal/admission"
@@ -42,6 +43,8 @@ func (t *RecommendationTuner) Tune(ctx context.Context, req *admission.Recommend
 		{Role: "user", Content: user},
 	}, nil)
 	if err != nil {
+		slog.Warn("recommendation tuner llm call failed", "error", err)
+		resp.Notes = append(resp.Notes, "AI 复核暂不可用，仅返回算法结果")
 		return resp, nil
 	}
 	parsed := parseTunerOutput(out.Content)

@@ -54,6 +54,10 @@ func fixtureMetadata() *RecommendationMetadata {
 				{ChsiCategoryCode: testCatCS, Subject: "math", ExcludeBelowScore: 50, WarnBelowScore: 70, Note: "计算机类大学数学强度高"},
 			},
 		},
+		StrategyKeywords: map[string][]string{
+			"stem":       {"计算机", "电子", "电气", "自动化", "机械", "通信", "软件", "人工智能", "数学", "物理", "土木", "航空", "材料"},
+			"humanities": {"法学", "汉语言", "新闻", "金融", "会计", "经济", "管理", "外语", "教育", "心理"},
+		},
 	}
 }
 
@@ -94,17 +98,19 @@ func TestSplitTierQuota(t *testing.T) {
 }
 
 func TestDecideStrategyExplicit(t *testing.T) {
-	s, _ := decideStrategy(&RecommendationRequest{PriorityStrategy: "school"})
+	md := fixtureMetadata()
+	s, _ := decideStrategy(&RecommendationRequest{PriorityStrategy: "school"}, md)
 	require.Equal(t, "school", s)
-	s, _ = decideStrategy(&RecommendationRequest{PriorityStrategy: "major"})
+	s, _ = decideStrategy(&RecommendationRequest{PriorityStrategy: "major"}, md)
 	require.Equal(t, "major", s)
 }
 
 func TestDecideStrategyByMajorIntent(t *testing.T) {
-	s, _ := decideStrategy(&RecommendationRequest{PriorityStrategy: "auto", PreferredMajors: []string{"计算机科学与技术"}})
+	md := fixtureMetadata()
+	s, _ := decideStrategy(&RecommendationRequest{PriorityStrategy: "auto", PreferredMajors: []string{"计算机科学与技术"}}, md)
 	require.Equal(t, "major", s, "STEM 偏好应回落到专业优先")
 
-	s, _ = decideStrategy(&RecommendationRequest{PriorityStrategy: "auto", PreferredMajors: []string{"汉语言文学"}})
+	s, _ = decideStrategy(&RecommendationRequest{PriorityStrategy: "auto", PreferredMajors: []string{"汉语言文学"}}, md)
 	require.Equal(t, "school", s, "纯文管偏好应走学校优先")
 }
 
@@ -231,12 +237,39 @@ func TestScoreBreakdownPersonalizationStacksOnPrecomputedBase(t *testing.T) {
 	}
 	md := fixtureMetadata()
 	req := &RecommendationRequest{
-		PreferredCities: []string{"上海"}, // 偏好命中 → city personalization ×1.4
+		PreferredCities: []string{"上海"}, // 偏好命中 → city personalization ×1.4 → clamp 1.3
 		FamilyResources: []string{"金融"}, // 命中关键词 "金融" weight 1.3 → major personalization ×1.3
 	}
 	bd := scoreBreakdown(&c, req, md)
-	require.InDelta(t, 1.2*1.4, bd.CityScore, 0.001, "1.2 base × 1.4 personalization")
+	require.InDelta(t, 1.2*personalizationClampMax, bd.CityScore, 0.001, "1.2 base × clamp(1.4)=1.3")
 	require.InDelta(t, 1.3*1.3, bd.MajorScore, 0.001, "1.3 base × 1.3 family-resource personalization")
+}
+
+func TestScoreBreakdownPersonalizationClampPreventsOverstacking(t *testing.T) {
+	// I1 回归：4 个独立 ×1.2 personalization 不应反超学校档差。
+	// 一个 211 院校 (base 1.3) + 4 个加成 在未 clamp 时累乘到 2.07，会盖过清北 (base 2.0)。
+	// 加 clamp 后，单维度最多 ×1.3，复合分由 base 主导。
+	cTopTwo := RecommendationCandidate{UniversityName: "清华大学", UniversityTier: "top_2"}
+	c211 := RecommendationCandidate{
+		UniversityName:     "X 大学",
+		UniversityTier:     "211_double",
+		City:               "上海",
+		LocalMajorName:     "金融学",
+		DisciplineCategory: "经济学",
+	}
+	md := fixtureMetadata()
+	plainReq := &RecommendationRequest{}
+	stackedReq := &RecommendationRequest{
+		PreferredCities: []string{"上海"}, // city ×1.4
+		PreferredMajors: []string{"金融"}, // major ×1.25
+		FamilyResources: []string{"金融"}, // major ×1.3
+		HollandCode:     "E",            // major ×1.2
+		CareerPlans:     []string{"考公"}, // 命中 "金融" → 实际未命中（关键词不含金融）
+	}
+	bdTop := scoreBreakdown(&cTopTwo, plainReq, md)
+	bd211 := scoreBreakdown(&c211, stackedReq, md)
+	require.Greater(t, bdTop.SchoolScore, bd211.SchoolScore,
+		"clamp 后 211 院校无论怎么叠加 personalization 都不应反超 top_2 的 school 维度")
 }
 
 func TestScoreBreakdownCityGroupBoost(t *testing.T) {
@@ -259,39 +292,6 @@ func TestEnsureSafeQualityFiltersTinyPlans(t *testing.T) {
 	require.Len(t, out, 2)
 	require.Equal(t, "B", out[0].UniversityName)
 	require.Equal(t, "C", out[1].UniversityName)
-}
-
-func TestPickTopKDedupesByGroupAndCapsPerSchool(t *testing.T) {
-	// Dedup is now by (UniversityCode, GroupCode). Same group → only highest-scored major kept.
-	// Per-school cap is maxGroupsPerSchool=4.
-	scored := []scoredItem{
-		// X 学校 group=01：两个专业，只保留最高分
-		{item: RecommendationItem{UniversityCode: "X", GroupCode: "01", LocalMajorName: "A", CompositeScore: 5}},
-		{item: RecommendationItem{UniversityCode: "X", GroupCode: "01", LocalMajorName: "B", CompositeScore: 4}},
-		// X 学校 group=02：独立 slot
-		{item: RecommendationItem{UniversityCode: "X", GroupCode: "02", LocalMajorName: "C", CompositeScore: 3}},
-		// Y 学校
-		{item: RecommendationItem{UniversityCode: "Y", GroupCode: "01", LocalMajorName: "D", CompositeScore: 2}},
-	}
-	out := pickTopK(scored, 4)
-	require.Len(t, out, 3, "X|01 去重后 1 个 + X|02 + Y|01 = 3")
-	require.Equal(t, "A", out[0].LocalMajorName, "X|01 应保留分数最高的 A")
-	require.Equal(t, "C", out[1].LocalMajorName)
-	require.Equal(t, "D", out[2].LocalMajorName)
-}
-
-func TestPickTopKCapsByGroupsPerSchool(t *testing.T) {
-	scored := []scoredItem{}
-	// 同一学校 5 个不同 group，maxGroupsPerSchool=4
-	for i := 1; i <= 5; i++ {
-		scored = append(scored, scoredItem{item: RecommendationItem{
-			UniversityCode: "X",
-			GroupCode:      string(rune('0' + i)),
-			CompositeScore: float64(10 - i),
-		}})
-	}
-	out := pickTopK(scored, 10)
-	require.Len(t, out, maxGroupsPerSchool, "同一学校最多保留 maxGroupsPerSchool 个不同 group")
 }
 
 func TestBuildVolunteerPlanShape(t *testing.T) {

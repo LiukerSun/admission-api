@@ -160,7 +160,14 @@ func run() error {
 	recommendationHandler := admission.NewRecommendationHandler(recommendationService)
 
 	recommendationScoreStore := admission.NewRecommendationScoreStore(database.Pool())
-	var scoreEvaluator admission.ScoreEvaluator = admission.AlgorithmicScoreEvaluator{}
+	// AlgorithmicScoreEvaluator 需要 metadata snapshot 来跑 fallback 公式（城市群匹配等）。
+	// Load 失败不阻塞启动——只是 fallback 评估器拿到空 metadata，退化成全 1.0。
+	startupMD, mdErr := recommendationMetadataStore.Load(context.Background())
+	if mdErr != nil {
+		slog.Warn("load recommendation metadata at startup failed; algorithmic evaluator will use empty snapshot", "error", mdErr)
+		startupMD = &admission.RecommendationMetadata{}
+	}
+	var scoreEvaluator admission.ScoreEvaluator = admission.NewAlgorithmicScoreEvaluator(startupMD)
 	if cfg.LLMAPIKey != "" {
 		scoreEvaluator = ai.NewLLMScoreEvaluator(llmProxy, cfg.LLMModel)
 	}
@@ -231,7 +238,9 @@ func run() error {
 		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)
 		authorized.POST("/payment/orders/:order_no/pay", paymentHandler.PayMock)
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
-		authorized.POST("/admission/recommendations", recommendationHandler.Recommend)
+		authorized.POST("/admission/recommendations",
+			middleware.RateLimitByUser(redisClient.RDB(), 6, 1*time.Minute),
+			recommendationHandler.Recommend)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireAdmin())

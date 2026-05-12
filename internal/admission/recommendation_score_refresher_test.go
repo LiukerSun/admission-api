@@ -106,7 +106,10 @@ func (s stubFlakyEvaluator) Evaluate(_ context.Context, _ *PrecomputedScoreRow) 
 }
 
 func TestAlgorithmicEvaluatorScoresKnownTier(t *testing.T) {
-	e := AlgorithmicScoreEvaluator{}
+	// 使用与 service.fallback*Base 相同的公式：清华 (top_2 tier) → school=2.0，
+	// 北京在 metadata 的城市群里 → city=1.1。
+	md := fixtureMetadata()
+	e := NewAlgorithmicScoreEvaluator(md)
 	res, err := e.Evaluate(context.Background(), &PrecomputedScoreRow{
 		UniversityName: "清华大学",
 		UniversityTier: "top_2",
@@ -117,4 +120,28 @@ func TestAlgorithmicEvaluatorScoresKnownTier(t *testing.T) {
 	require.Equal(t, 2.0, res.SchoolScore)
 	require.Equal(t, 1.1, res.CityScore)
 	require.Equal(t, "algorithm", e.Source())
+}
+
+func TestAlgorithmicEvaluatorMatchesServiceFallback(t *testing.T) {
+	// I4 回归：AlgorithmicScoreEvaluator 写入的 base 必须与 service 端 fallback*Base 公式
+	// 计算结果一致，否则 "种子行" 和 "未种子直接 fallback" 两条路径会给出不同的 composite。
+	md := fixtureMetadata()
+	row := &PrecomputedScoreRow{
+		UniversityTier:     "211_double",
+		City:               "上海",
+		Is211:              true,
+		DisciplineCategory: "工学",
+	}
+	c := &RecommendationCandidate{
+		City:               row.City,
+		UniversityTier:     row.UniversityTier,
+		Is211:              row.Is211,
+		DisciplineCategory: row.DisciplineCategory,
+	}
+
+	res, err := NewAlgorithmicScoreEvaluator(md).Evaluate(context.Background(), row)
+	require.NoError(t, err)
+	require.Equal(t, fallbackCityBase(c, md), res.CityScore)
+	require.Equal(t, fallbackSchoolBase(c), res.SchoolScore)
+	require.Equal(t, fallbackFutureBase(c), res.FutureCompetitivenessScore)
 }

@@ -23,6 +23,11 @@ type RecommendationMetadata struct {
 
 	// AbilityRules[chsi_category_code] = subject thresholds.
 	AbilityRules map[string][]AbilityRule
+
+	// StrategyKeywords[intent_code] = list of keywords ("stem" / "humanities").
+	// Drives decideStrategy: presence of a STEM keyword in PreferredMajors pushes
+	// the strategy to "major" (专业优先); humanities pushes to "school".
+	StrategyKeywords map[string][]string
 }
 
 type KeywordWeight struct {
@@ -58,6 +63,7 @@ func (s *recommendationMetadataStore) Load(ctx context.Context) (*Recommendation
 		FamilyResourceKeywords: map[string][]KeywordWeight{},
 		HollandKeywords:        map[string][]KeywordWeight{},
 		AbilityRules:           map[string][]AbilityRule{},
+		StrategyKeywords:       map[string][]string{},
 	}
 
 	if err := s.loadCityGroups(ctx, md); err != nil {
@@ -70,6 +76,9 @@ func (s *recommendationMetadataStore) Load(ctx context.Context) (*Recommendation
 		return nil, err
 	}
 	if err := s.loadAbilityRules(ctx, md); err != nil {
+		return nil, err
+	}
+	if err := s.loadStrategyKeywords(ctx, md); err != nil {
 		return nil, err
 	}
 	return md, nil
@@ -132,6 +141,25 @@ func (s *recommendationMetadataStore) loadHollandKeywords(ctx context.Context, m
 			return fmt.Errorf("scan holland row: %w", err)
 		}
 		md.HollandKeywords[code] = append(md.HollandKeywords[code], KeywordWeight{Keyword: keyword, Weight: weight})
+	}
+	return rows.Err()
+}
+
+func (s *recommendationMetadataStore) loadStrategyKeywords(ctx context.Context, md *RecommendationMetadata) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT intent_code, keyword
+		FROM recommendation_strategy_keywords
+	`)
+	if err != nil {
+		return fmt.Errorf("load strategy keywords: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var intent, keyword string
+		if err := rows.Scan(&intent, &keyword); err != nil {
+			return fmt.Errorf("scan strategy keyword row: %w", err)
+		}
+		md.StrategyKeywords[intent] = append(md.StrategyKeywords[intent], keyword)
 	}
 	return rows.Err()
 }
