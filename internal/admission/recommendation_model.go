@@ -48,8 +48,9 @@ type RecommendationRequest struct { //nolint:revive // Keeps Swagger and API nam
 	// 经济
 	BudgetTuitionMax *int `json:"budget_tuition_max,omitempty"` // 学费上限
 
-	// 输出规模——黑龙江新高考一次最多 40 个院校专业组
-	PlanSize int `json:"plan_size,omitempty"` // 每套志愿的条数；默认 40，上限 40
+	// 输出规模。HLJ 新高考一次 40 个院校专业组，所以 default=40；上限放宽到 500
+	// 允许"批量分析"使用方式，常规用户不必关心。
+	PlanSize int `json:"plan_size,omitempty"` // 每套志愿的条数；默认 40，上限 500
 
 	// 可选: 是否调用大模型做最终调优
 	EnableLLMTuning bool `json:"enable_llm_tuning,omitempty"`

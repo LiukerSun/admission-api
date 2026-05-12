@@ -45,8 +45,9 @@ const (
 )
 
 const (
-	// 黑龙江新高考一次报 40 个院校专业组志愿。一张表里混合冲/稳/保。
-	planSizeCap     = 40
+	// 一张表里混合冲/稳/保。defaultPlanSize 跟 HLJ 政策一致：40 个院校专业组；
+	// planSizeCap 仅作为防 OOM 的硬上限，远高于政策值，允许用户做"批量分析"场景。
+	planSizeCap     = 500
 	defaultPlanSize = 40
 
 	// 一张表里冲/稳/保的位次窗口，按学生位次 R 的比例计算。
