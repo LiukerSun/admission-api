@@ -175,10 +175,14 @@ func TestPickBucketSharedDedupeAcrossTiers(t *testing.T) {
 }
 
 func TestEstimateProbability(t *testing.T) {
-	c := RecommendationCandidate{MinRank: intPtr(15000)}
+	// 比例阈值（gap/R）：
+	//   1.5+ → 0.95, 0.5+ → 0.85, 0.2+ → 0.7, 0+ → 0.55,
+	//   -0.1+ → 0.4, -0.3+ → 0.25, else → 0.1
 	req := &RecommendationRequest{ProvincialRank: 10000}
+	// rank 25000 → ratio = 1.5 → 0.95
+	c := RecommendationCandidate{MinRank: intPtr(25000)}
 	require.InDelta(t, 0.95, estimateProbability(&c, req, "safe"), 0.001)
-
+	// rank 8500 → ratio = -0.15 → 0.25
 	c2 := RecommendationCandidate{MinRank: intPtr(8500)}
 	require.InDelta(t, 0.25, estimateProbability(&c2, req, "rush"), 0.001)
 }
@@ -414,13 +418,13 @@ func TestRecommendMergesTiersIntoSingleList(t *testing.T) {
 	require.Equal(t, 1, resp.MatchCount)
 	require.Equal(t, 1, resp.SafeCount)
 
-	// 顶层 RankWindow 含三段位次窗口
-	require.Equal(t, 1, resp.RankWindow.RushMin)
-	require.Equal(t, 8000, resp.RankWindow.RushMax)
-	require.Equal(t, 7000, resp.RankWindow.MatchMin)
-	require.Equal(t, 13000, resp.RankWindow.MatchMax)
-	require.Equal(t, 12000, resp.RankWindow.SafeMin)
-	require.Equal(t, 25000, resp.RankWindow.SafeMax)
+	// 顶层 RankWindow 含三段位次窗口（按 R=10000 的比例：50%-85% / ±15% / 115%-200%）。
+	require.Equal(t, 5000, resp.RankWindow.RushMin)
+	require.Equal(t, 8500, resp.RankWindow.RushMax)
+	require.Equal(t, 8500, resp.RankWindow.MatchMin)
+	require.Equal(t, 11500, resp.RankWindow.MatchMax)
+	require.Equal(t, 11500, resp.RankWindow.SafeMin)
+	require.Equal(t, 20000, resp.RankWindow.SafeMax)
 
 	require.NotNil(t, resp.VolunteerPlan)
 	require.Equal(t, 3, resp.VolunteerPlan.Stats.RecordCount)
@@ -458,13 +462,16 @@ func TestRecommendAbilityGateExcludesElectronic(t *testing.T) {
 	}
 }
 
-func TestRecommendRushUnderflowSpillsToMatch(t *testing.T) {
-	// 学生位次 1500（极高分）→ rushW = [1500-15000, 1500-2000] = clamp [1, 1]
-	// rush 桶里几乎不可能有候选；剩余配额（默认 10）应转给 match。
+func TestRecommendRushUnderflowSpillsToLowerBuckets(t *testing.T) {
+	// 学生位次 1500（高分段）→ 比例窗口：
+	//   rush  = [1500*0.5, 1500*0.85] = [750, 1275]
+	//   match = [1500*0.85, 1500*1.15] = [1275, 1725]
+	//   safe  = [1500*1.15, 1500*2]   = [1725, 3000]
+	// 候选 rank 都 ≥ 2000，落在 safe；rush/match 没候选，rush 名额回填给 match，
+	// match 自己也空，再回填给 safe。验证名额单向下沉、且 notes 提示冲档为空。
 	stub := &stubRecommendationStore{
 		year: 2024,
 		candidates: []RecommendationCandidate{
-			// 落在 match 窗口 [R-3000, R+3000] = [1, 4500]
 			{UniversityMajorAdmissionID: 3001,
 				UniversityID: 1, UniversityCode: "U1", UniversityName: "A", City: "上海",
 				GroupCode: "001", LocalMajorName: "M1", MinRank: intPtr(2000), PlanCount: intPtr(20)},
@@ -473,10 +480,7 @@ func TestRecommendRushUnderflowSpillsToMatch(t *testing.T) {
 				GroupCode: "002", LocalMajorName: "M2", MinRank: intPtr(2500), PlanCount: intPtr(20)},
 			{UniversityMajorAdmissionID: 3003,
 				UniversityID: 3, UniversityCode: "U3", UniversityName: "C", City: "西安",
-				GroupCode: "003", LocalMajorName: "M3", MinRank: intPtr(3000), PlanCount: intPtr(20)},
-			{UniversityMajorAdmissionID: 3004,
-				UniversityID: 4, UniversityCode: "U4", UniversityName: "D", City: "成都",
-				GroupCode: "004", LocalMajorName: "M4", MinRank: intPtr(3500), PlanCount: intPtr(20)},
+				GroupCode: "003", LocalMajorName: "M3", MinRank: intPtr(2800), PlanCount: intPtr(20)},
 		},
 	}
 	svc := NewRecommendationService(stub, newStubMetadataStore(), nil)
@@ -487,9 +491,67 @@ func TestRecommendRushUnderflowSpillsToMatch(t *testing.T) {
 		ProvincialRank:      1500,
 	})
 	require.NoError(t, err)
-	require.Equal(t, 0, resp.RushCount, "极高分位次 rush 窗口被 clamp 成空")
-	require.Equal(t, 4, resp.MatchCount, "rush 名额应回填到 match")
+	require.Equal(t, 0, resp.RushCount, "rush 窗口没候选")
+	require.Equal(t, 0, resp.MatchCount, "match 窗口也没候选")
+	require.Equal(t, 3, resp.SafeCount, "rush+match 名额应全部下沉到 safe")
 	require.Contains(t, resp.Notes[0], "冲", "应在 notes 中提示用户冲档为空")
+}
+
+func TestRecommendHighRankStudentDoesNotPullTopSchools(t *testing.T) {
+	// N1 升级回归：R=2555 时，老逻辑会把 rush 窗口 clamp 到 [1, 555] 把清北 (rank≈45) 全卷进推荐。
+	// 比例窗口下 rush 应该是 [1278, 2172]，绝对不允许把 rank<700 的院校放进来。
+	stub := &stubRecommendationStore{
+		year: 2024,
+		candidates: []RecommendationCandidate{
+			// 清北档：rank 45，远远超出学生水平 — 不应进任何桶
+			{UniversityMajorAdmissionID: 9001,
+				UniversityID: 90, UniversityCode: "PKU", UniversityName: "北京大学",
+				GroupCode: "001", LocalMajorCode: "01", LocalMajorName: "计算机",
+				MinRank: intPtr(45), PlanCount: intPtr(10), UniversityTier: "top_2"},
+			// 偏鼓励：rank 1500，落在 rush 窗口
+			{UniversityMajorAdmissionID: 9002,
+				UniversityID: 91, UniversityCode: "BIT", UniversityName: "B 大学",
+				GroupCode: "002", LocalMajorCode: "02", LocalMajorName: "通信",
+				MinRank: intPtr(1500), PlanCount: intPtr(10), UniversityTier: "211_double"},
+			// 稳：rank 2500，靠近学生位次
+			{UniversityMajorAdmissionID: 9003,
+				UniversityID: 92, UniversityCode: "USTC", UniversityName: "C 大学",
+				GroupCode: "003", LocalMajorCode: "03", LocalMajorName: "电子",
+				MinRank: intPtr(2500), PlanCount: intPtr(10), UniversityTier: "985_other"},
+			// 保：rank 3500，下沉一档
+			{UniversityMajorAdmissionID: 9004,
+				UniversityID: 93, UniversityCode: "TJU", UniversityName: "D 大学",
+				GroupCode: "004", LocalMajorCode: "04", LocalMajorName: "材料",
+				MinRank: intPtr(3500), PlanCount: intPtr(10), UniversityTier: "985_other"},
+		},
+	}
+	svc := NewRecommendationService(stub, newStubMetadataStore(), nil)
+	resp, err := svc.Recommend(context.Background(), &RecommendationRequest{
+		RegionCode:          "230000",
+		SubjectCategoryCode: "physics",
+		TotalScore:          680,
+		ProvincialRank:      2555,
+	})
+	require.NoError(t, err)
+	for _, it := range resp.Items {
+		require.NotEqual(t, "北京大学", it.UniversityName,
+			"R=2555 学生的推荐表里不应该出现 rank=45 的清北档")
+	}
+	// match 应大致围绕 R 居中：[R*0.85, R*1.15]，对 R=2555 ≈ [2171, 2938]。
+	require.InDelta(t, 2171, resp.RankWindow.MatchMin, 1)
+	require.InDelta(t, 2938, resp.RankWindow.MatchMax, 1)
+}
+
+func TestEstimateProbabilityScalesWithStudentRank(t *testing.T) {
+	// 比例概率：同样 gap 在高分段是巨大相对差距，在低分段是微小波动。
+	// R=2000，校 rank=4000 → ratio=1.0 → 0.85（相比之下学校录的人比你多两倍）
+	// R=60000，校 rank=62000 → ratio≈0.03 → 0.55（基本是同档）
+	gapHigh := RecommendationCandidate{MinRank: intPtr(4000)}
+	require.InDelta(t, 0.85, estimateProbability(&gapHigh, &RecommendationRequest{ProvincialRank: 2000}, ""), 0.001,
+		"高分段 (R=2000) 校 rank=4000 → ratio=1.0，应该相当稳")
+	gapLow := RecommendationCandidate{MinRank: intPtr(62000)}
+	require.InDelta(t, 0.55, estimateProbability(&gapLow, &RecommendationRequest{ProvincialRank: 60000}, ""), 0.001,
+		"中分段 (R=60000) 校 rank=62000 → ratio≈0.03，仅算持平")
 }
 
 func TestRecommendValidatesRequest(t *testing.T) {

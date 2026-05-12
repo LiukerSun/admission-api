@@ -49,15 +49,18 @@ const (
 	planSizeCap     = 40
 	defaultPlanSize = 40
 
-	// 一张表里冲/稳/保的位次窗口（相对学生位次 R）：
-	//   冲 [R-15000, R-2000]   — 比 R 靠前的院校专业组（更难录），激进
-	//   稳 [R-3000,  R+3000]   — 围绕 R，按实际位次稳取
-	//   保 [R+2000,  R+15000]  — 比 R 靠后的院校专业组（基本能录），兜底
-	rushPlanMinGapBelow = 15000 // R - 15000
-	rushPlanMaxGapBelow = 2000  // R - 2000
-	matchPlanGap        = 3000  // R ± 3000
-	safePlanMinGapAbove = 2000  // R + 2000
-	safePlanMaxGapAbove = 15000 // R + 15000
+	// 一张表里冲/稳/保的位次窗口，按学生位次 R 的比例计算。
+	// 原来用绝对差（R-15000 ~ R-2000）只在 R 较大时合理；
+	// R=2555 这种高分段时，下界被 clamp 到 1，把全省前 555 名的清北档全卷进冲档。
+	// 改为比例可在 R=2555 / R=30000 / R=100000 三段都给出合理窗口。
+	//   冲 [R*(1-rushGapMaxRatio), R*(1-rushGapMinRatio)] — 比 R 强 15%~50%
+	//   稳 [R*(1-matchGapRatio),   R*(1+matchGapRatio)]   — R ±15%
+	//   保 [R*(1+safeGapMinRatio), R*(1+safeGapMaxRatio)] — 比 R 弱 15%~100%
+	rushGapMinRatio = 0.15
+	rushGapMaxRatio = 0.50
+	matchGapRatio   = 0.15
+	safeGapMinRatio = 0.15
+	safeGapMaxRatio = 1.00
 
 	// 黑龙江志愿单位是"院校专业组"——同一 (university, group_code) 在真实志愿表里就是
 	// 一个志愿位。所以这里按 group 去重；同一学校多个 group 算多个志愿位。
@@ -89,9 +92,8 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 
 	// 一张志愿表（≤40 条）按位次轴分成冲/稳/保三段。每段独立查 DB 是为了能各自 LIMIT，
 	// 避免"一次大查询 LIMIT 5000 + ORDER BY min_rank ASC"把高位次（保档）整段截没。
-	rushW := clampBucketWindow(req.ProvincialRank-rushPlanMinGapBelow, req.ProvincialRank-rushPlanMaxGapBelow)
-	matchW := clampBucketWindow(req.ProvincialRank-matchPlanGap, req.ProvincialRank+matchPlanGap)
-	safeW := clampBucketWindow(req.ProvincialRank+safePlanMinGapAbove, req.ProvincialRank+safePlanMaxGapAbove)
+	// 窗口按学生位次 R 的比例计算——见 rushGapMin/MaxRatio 等常量上的说明。
+	rushW, matchW, safeW := computeBucketWindows(req.ProvincialRank)
 
 	baseQ := CandidateQuery{
 		AdmissionYear:          year,
@@ -267,6 +269,26 @@ func clampBucketWindow(minRank, maxRank int) bucketWindow {
 		maxRank = minRank
 	}
 	return bucketWindow{Min: minRank, Max: maxRank}
+}
+
+// computeBucketWindows turns the student's provincial rank into the three
+// 冲/稳/保 windows. Uses ratios on top of R so high-rank students (small R)
+// don't collapse the rush window into "top 555 in the province" (which was
+// the symptom in the original absolute-gap formulation).
+//
+// Each bound is rounded down so windows do not overlap their neighbour by a
+// rounding artefact. Match window grows by one rank on the upper end so
+// safe.Min and match.Max meet exactly when ratios are equal.
+func computeBucketWindows(rank int) (rush, match, safe bucketWindow) {
+	rushMin := int(float64(rank) * (1 - rushGapMaxRatio))
+	rushMax := int(float64(rank) * (1 - rushGapMinRatio))
+	matchMin := int(float64(rank) * (1 - matchGapRatio))
+	matchMax := int(float64(rank) * (1 + matchGapRatio))
+	safeMin := int(float64(rank) * (1 + safeGapMinRatio))
+	safeMax := int(float64(rank) * (1 + safeGapMaxRatio))
+	return clampBucketWindow(rushMin, rushMax),
+		clampBucketWindow(matchMin, matchMax),
+		clampBucketWindow(safeMin, safeMax)
 }
 
 // splitTierQuota 按 1:2:1 把总志愿表条数拆给冲/稳/保。
@@ -737,30 +759,36 @@ func clampPersonalization(v float64) float64 {
 }
 
 // estimateProbability is a lightweight heuristic. With more data we'd train a logistic
-// model; for now we use the gap between historical_min_rank and the student's rank.
+// model; for now we compare gap to the student's rank as a ratio so the buckets
+// scale across high-rank and low-rank students.
+//
+//	ratio = (historical_min_rank - student_rank) / student_rank
+//	  ratio > 0  → school admits a lower-ranked student than us → easier
+//	  ratio < 0  → school admits a higher-ranked student than us → harder
+//
 // The planLabel argument is kept for future use (e.g. plan-specific risk modeling).
 func estimateProbability(c *RecommendationCandidate, req *RecommendationRequest, _ string) float64 {
-	if c.MinRank == nil {
+	if c.MinRank == nil || req.ProvincialRank <= 0 {
 		return 0.5
 	}
-	gap := *c.MinRank - req.ProvincialRank
+	ratio := float64(*c.MinRank-req.ProvincialRank) / float64(req.ProvincialRank)
 	switch {
-	case gap >= 4000:
+	case ratio >= 1.5:
 		return 0.95
-	case gap >= 2000:
+	case ratio >= 0.5:
 		return 0.85
-	case gap >= 500:
+	case ratio >= 0.2:
 		return 0.7
-	case gap >= 0:
+	case ratio >= 0:
 		return 0.55
-	case gap >= -1000:
+	case ratio >= -0.1:
 		return 0.4
-	case gap >= -2000:
+	case ratio >= -0.3:
 		return 0.25
 	default:
 		return 0.1
 	}
-	// 注：tier 仅用于解释性，概率纯粹由 rank 差决定
+	// 注：tier 仅用于解释性，概率纯粹由 rank ratio 决定
 }
 
 func buildReason(c *RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata, bd *ScoreBreakdown, _ string) string {
