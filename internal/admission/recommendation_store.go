@@ -99,6 +99,13 @@ type CandidateQuery struct {
 	BudgetTuitionMax       *int
 	ExcludedProvinces      []string
 	ExcludedCities         []string
+	// Limit, when > 0, caps the number of rows returned. The query orders
+	// by min_rank ASC, so the cap keeps the lower-rank (more competitive)
+	// candidates within the window. Callers should issue one query per rank
+	// bucket (rush / match / safe) with its own Limit; otherwise a single
+	// wide window's LIMIT would silently drop the high-rank end (the safe
+	// bucket).
+	Limit int
 }
 
 type recommendationStore struct {
@@ -175,9 +182,11 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 		conditions = append(conditions, fmt.Sprintf("(up.city IS NULL OR up.city <> ALL($%d))", len(args)))
 	}
 
-	// 候选池硬上限：算法最终只挑 40 条，候选 5000 足够覆盖各种偏好/能力门槛过滤后的余量；
-	// 远超就开始浪费 PG/内存。前面已经按位次窗口、批次、科类、省/市排除做了 cheap 过滤。
-	const candidateHardLimit = 5000
+	limitClause := ""
+	if q.Limit > 0 {
+		args = append(args, q.Limit)
+		limitClause = fmt.Sprintf("LIMIT $%d", len(args))
+	}
 
 	query := fmt.Sprintf(`
 		WITH latest_profile AS (
@@ -248,8 +257,8 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 			ump.discipline_category, ump.first_level_discipline,
 			ump.soft_major_grade, ump.major_rank, ump.major_evaluation_score, ump.is_national_feature
 		ORDER BY uma.min_rank ASC, u.name
-		LIMIT %d
-	`, strings.Join(conditions, " AND "), candidateHardLimit)
+		%s
+	`, strings.Join(conditions, " AND "), limitClause)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

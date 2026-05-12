@@ -3,9 +3,11 @@ package admission
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // RecommendationService is the orchestrator for the volunteer recommendation algorithm.
@@ -85,23 +87,22 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 		return nil, err
 	}
 
-	// 一张志愿表（≤40 条）按位次轴分成冲/稳/保三段，每段独立取候选再合并。
+	// 一张志愿表（≤40 条）按位次轴分成冲/稳/保三段。每段独立查 DB 是为了能各自 LIMIT，
+	// 避免"一次大查询 LIMIT 5000 + ORDER BY min_rank ASC"把高位次（保档）整段截没。
 	rushW := clampBucketWindow(req.ProvincialRank-rushPlanMinGapBelow, req.ProvincialRank-rushPlanMaxGapBelow)
 	matchW := clampBucketWindow(req.ProvincialRank-matchPlanGap, req.ProvincialRank+matchPlanGap)
 	safeW := clampBucketWindow(req.ProvincialRank+safePlanMinGapAbove, req.ProvincialRank+safePlanMaxGapAbove)
 
-	// 一次性把覆盖三段窗口的候选池都捞下来，按桶在内存里打分挑选
-	candidates, err := s.store.FetchCandidates(ctx, &CandidateQuery{
+	baseQ := CandidateQuery{
 		AdmissionYear:          year,
 		RegionCode:             req.RegionCode,
 		SubjectCategoryCode:    req.SubjectCategoryCode,
 		SubjectRequirementCode: req.SubjectRequirementCode,
-		RankMin:                rushW.Min,
-		RankMax:                safeW.Max,
 		BudgetTuitionMax:       req.BudgetTuitionMax,
 		ExcludedProvinces:      req.ExcludedProvinces,
 		ExcludedCities:         req.ExcludedCities,
-	})
+	}
+	candidates, err := s.fetchBucketCandidates(ctx, baseQ, rushW, matchW, safeW)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +166,49 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 		}
 	}
 	return resp, nil
+}
+
+// fetchBucketCandidates 分别查冲/稳/保三段，每段独立 LIMIT，合并后按 uma.id 去重。
+// 三段窗口在边界处有 1000 位次的重叠（match 与 rush/safe 各 1000），重叠区候选会被两段都取到，
+// 这里去重一次避免后续 scoreCandidates 重复打分。
+const (
+	rushBucketLimit  = 2000
+	matchBucketLimit = 2000
+	safeBucketLimit  = 1000
+)
+
+func (s *recommendationService) fetchBucketCandidates(ctx context.Context, baseQ CandidateQuery, rushW, matchW, safeW bucketWindow) ([]RecommendationCandidate, error) {
+	type bucketSpec struct {
+		window bucketWindow
+		limit  int
+	}
+	specs := []bucketSpec{
+		{rushW, rushBucketLimit},
+		{matchW, matchBucketLimit},
+		{safeW, safeBucketLimit},
+	}
+
+	merged := make([]RecommendationCandidate, 0, rushBucketLimit+matchBucketLimit+safeBucketLimit)
+	seen := make(map[int64]struct{}, cap(merged))
+	for _, spec := range specs {
+		q := baseQ
+		q.RankMin = spec.window.Min
+		q.RankMax = spec.window.Max
+		q.Limit = spec.limit
+		rows, err := s.store.FetchCandidates(ctx, &q)
+		if err != nil {
+			return nil, err
+		}
+		for i := range rows {
+			id := rows[i].UniversityMajorAdmissionID
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			merged = append(merged, rows[i])
+		}
+	}
+	return merged, nil
 }
 
 // pickBucket 从全量候选中筛出位次落在 window 内的，按 strategy 打分，挑出 quota 条带上 tier 标签。
@@ -282,18 +326,26 @@ func (s *recommendationService) resolveAdmissionYear(ctx context.Context, req *R
 	return year, nil
 }
 
+// fallbackStemKeywords / fallbackHumanitiesKeywords mirror the seeds in
+// migration 010. They kick in when recommendation_strategy_keywords is empty
+// (migration not yet run, or DB seed wiped), so decideStrategy doesn't silently
+// degrade to "always 默认 major" — which would lose the humanities → school
+// branch entirely.
+var (
+	fallbackStemKeywords       = []string{"计算机", "电子", "电气", "自动化", "机械", "通信", "软件", "人工智能", "数学", "物理", "土木", "航空", "材料"}
+	fallbackHumanitiesKeywords = []string{"法学", "汉语言", "新闻", "金融", "会计", "经济", "管理", "外语", "教育", "心理"}
+	strategyFallbackWarnOnce   sync.Once
+)
+
 // decideStrategy implements 逻辑二: STEM intent → major-first, humanities → school-first.
-// 关键字来自 recommendation_strategy_keywords 表（migration 010），便于业务运营调整无需发版。
+// 关键字优先来自 recommendation_strategy_keywords 表（migration 010），便于业务运营调整无需发版。
+// 表为空时回退到 fallbackStemKeywords / fallbackHumanitiesKeywords 并打一次 warn 日志。
 // 用户显式指定 PriorityStrategy 时直接采用。
 func decideStrategy(req *RecommendationRequest, md *RecommendationMetadata) (strategy, reason string) {
 	if req.PriorityStrategy == "school" || req.PriorityStrategy == "major" {
 		return req.PriorityStrategy, "用户显式指定"
 	}
-	var stemKeywords, humanitiesKeywords []string
-	if md != nil {
-		stemKeywords = md.StrategyKeywords["stem"]
-		humanitiesKeywords = md.StrategyKeywords["humanities"]
-	}
+	stemKeywords, humanitiesKeywords := strategyKeywords(md)
 	stem := containsAny(req.PreferredMajors, stemKeywords...)
 	humanities := containsAny(req.PreferredMajors, humanitiesKeywords...)
 	switch {
@@ -304,6 +356,22 @@ func decideStrategy(req *RecommendationRequest, md *RecommendationMetadata) (str
 	default:
 		return "major", "未指明强偏好，默认按专业优先（保留‘卡档边缘’时再切换到学校优先）"
 	}
+}
+
+// strategyKeywords returns the STEM / humanities keyword lists from metadata if
+// either is populated, otherwise the hardcoded fallback (with a single warn).
+func strategyKeywords(md *RecommendationMetadata) (stem, humanities []string) {
+	if md != nil {
+		stem = md.StrategyKeywords["stem"]
+		humanities = md.StrategyKeywords["humanities"]
+	}
+	if len(stem) == 0 && len(humanities) == 0 {
+		strategyFallbackWarnOnce.Do(func() {
+			slog.Warn("recommendation_strategy_keywords is empty; using hardcoded fallback. Run migration 010 to populate.")
+		})
+		return fallbackStemKeywords, fallbackHumanitiesKeywords
+	}
+	return stem, humanities
 }
 
 // filterByPreference applies in-memory排除法 + 匹配法.

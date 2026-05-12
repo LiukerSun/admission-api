@@ -2,6 +2,7 @@ package admission
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -318,10 +319,33 @@ func TestBuildVolunteerPlanShape(t *testing.T) {
 type stubRecommendationStore struct {
 	candidates []RecommendationCandidate
 	year       int
+	// callCount tracks how many FetchCandidates calls were issued; helps verify
+	// the service really does query each bucket window separately.
+	callCount int
 }
 
-func (s *stubRecommendationStore) FetchCandidates(_ context.Context, _ *CandidateQuery) ([]RecommendationCandidate, error) {
-	return s.candidates, nil
+// FetchCandidates filters in-memory by RankMin/RankMax/Limit so each bucket
+// query returns only the candidates that would actually come back from PG.
+// Mirrors enough of the real SQL to keep service-level tests honest.
+func (s *stubRecommendationStore) FetchCandidates(_ context.Context, q *CandidateQuery) ([]RecommendationCandidate, error) {
+	s.callCount++
+	out := make([]RecommendationCandidate, 0, len(s.candidates))
+	for _, c := range s.candidates {
+		if c.MinRank == nil {
+			continue
+		}
+		if q.RankMin > 0 && *c.MinRank < q.RankMin {
+			continue
+		}
+		if q.RankMax > 0 && *c.MinRank > q.RankMax {
+			continue
+		}
+		out = append(out, c)
+		if q.Limit > 0 && len(out) >= q.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 func (s *stubRecommendationStore) LatestAdmissionYear(_ context.Context, _, _ string) (int, error) {
 	return s.year, nil
@@ -336,22 +360,26 @@ func TestRecommendMergesTiersIntoSingleList(t *testing.T) {
 		year: 2024,
 		candidates: []RecommendationCandidate{
 			// 仅 rush 窗口
-			{UniversityID: 1, UniversityCode: "U1", UniversityName: "A大学", City: "上海",
+			{UniversityMajorAdmissionID: 1001,
+				UniversityID: 1, UniversityCode: "U1", UniversityName: "A大学", City: "上海",
 				GroupCode: "001", LocalMajorCode: "01", LocalMajorName: "计算机科学",
 				MinRank: intPtr(5000), MinScore: intPtr(640), PlanCount: intPtr(10),
 				Is985: true, UniversityTier: "985_other", TagCategoryCodes: testCatCS},
 			// 仅 match 窗口
-			{UniversityID: 2, UniversityCode: "U2", UniversityName: "B大学", City: "南京",
+			{UniversityMajorAdmissionID: 1002,
+				UniversityID: 2, UniversityCode: "U2", UniversityName: "B大学", City: "南京",
 				GroupCode: "002", LocalMajorCode: "02", LocalMajorName: "电子信息",
 				MinRank: intPtr(10000), MinScore: intPtr(600), PlanCount: intPtr(15),
 				Is211: true, UniversityTier: "211_double", TagCategoryCodes: testCatElectronic},
 			// 仅 safe 窗口
-			{UniversityID: 3, UniversityCode: "U3", UniversityName: "C大学", City: "西安",
+			{UniversityMajorAdmissionID: 1003,
+				UniversityID: 3, UniversityCode: "U3", UniversityName: "C大学", City: "西安",
 				GroupCode: "003", LocalMajorCode: "03", LocalMajorName: "汉语言文学",
 				MinRank: intPtr(20000), MinScore: intPtr(560), PlanCount: intPtr(20),
 				TagCategoryCodes: testCatChinese},
 			// 全部窗口外
-			{UniversityID: 4, UniversityCode: "U4", UniversityName: "D大学",
+			{UniversityMajorAdmissionID: 1004,
+				UniversityID: 4, UniversityCode: "U4", UniversityName: "D大学",
 				MinRank: intPtr(80000)},
 		},
 	}
@@ -403,11 +431,13 @@ func TestRecommendAbilityGateExcludesElectronic(t *testing.T) {
 	stub := &stubRecommendationStore{
 		year: 2024,
 		candidates: []RecommendationCandidate{
-			{UniversityID: 1, UniversityCode: "U1", UniversityName: "A", City: "北京",
+			{UniversityMajorAdmissionID: 2001,
+				UniversityID: 1, UniversityCode: "U1", UniversityName: "A", City: "北京",
 				GroupCode: "001", LocalMajorName: "电子信息工程",
 				MinRank: intPtr(9500), PlanCount: intPtr(10),
 				TagCategoryCodes: testCatElectronic},
-			{UniversityID: 2, UniversityCode: "U2", UniversityName: "B", City: "上海",
+			{UniversityMajorAdmissionID: 2002,
+				UniversityID: 2, UniversityCode: "U2", UniversityName: "B", City: "上海",
 				GroupCode: "002", LocalMajorName: "汉语言文学",
 				MinRank: intPtr(9700), PlanCount: intPtr(10),
 				TagCategoryCodes: testCatChinese},
@@ -435,13 +465,17 @@ func TestRecommendRushUnderflowSpillsToMatch(t *testing.T) {
 		year: 2024,
 		candidates: []RecommendationCandidate{
 			// 落在 match 窗口 [R-3000, R+3000] = [1, 4500]
-			{UniversityID: 1, UniversityCode: "U1", UniversityName: "A", City: "上海",
+			{UniversityMajorAdmissionID: 3001,
+				UniversityID: 1, UniversityCode: "U1", UniversityName: "A", City: "上海",
 				GroupCode: "001", LocalMajorName: "M1", MinRank: intPtr(2000), PlanCount: intPtr(20)},
-			{UniversityID: 2, UniversityCode: "U2", UniversityName: "B", City: "南京",
+			{UniversityMajorAdmissionID: 3002,
+				UniversityID: 2, UniversityCode: "U2", UniversityName: "B", City: "南京",
 				GroupCode: "002", LocalMajorName: "M2", MinRank: intPtr(2500), PlanCount: intPtr(20)},
-			{UniversityID: 3, UniversityCode: "U3", UniversityName: "C", City: "西安",
+			{UniversityMajorAdmissionID: 3003,
+				UniversityID: 3, UniversityCode: "U3", UniversityName: "C", City: "西安",
 				GroupCode: "003", LocalMajorName: "M3", MinRank: intPtr(3000), PlanCount: intPtr(20)},
-			{UniversityID: 4, UniversityCode: "U4", UniversityName: "D", City: "成都",
+			{UniversityMajorAdmissionID: 3004,
+				UniversityID: 4, UniversityCode: "U4", UniversityName: "D", City: "成都",
 				GroupCode: "004", LocalMajorName: "M4", MinRank: intPtr(3500), PlanCount: intPtr(20)},
 		},
 	}
@@ -462,4 +496,122 @@ func TestRecommendValidatesRequest(t *testing.T) {
 	svc := NewRecommendationService(&stubRecommendationStore{year: 2024}, newStubMetadataStore(), nil)
 	_, err := svc.Recommend(context.Background(), &RecommendationRequest{})
 	require.Error(t, err)
+}
+
+func TestRecommendKeepsSafeBucketWhenCandidatesExceedLimit(t *testing.T) {
+	// N1 回归：当候选总数 > 5000 时，原来"一次大查询 LIMIT 5000 ORDER BY min_rank ASC"
+	// 会把保档（高位次）整段砍掉。修复后改为分桶独立 LIMIT，保档桶必须能拿到候选。
+	//
+	// 学生位次 10000：
+	//   rushW  = [1, 8000]      → 放 rushBucketLimit+200 条候选
+	//   matchW = [7000, 13000]  → 放 100 条
+	//   safeW  = [12000, 25000] → 放 100 条
+	// 验证保档桶不会因为冲档候选爆量而被挤掉。
+	cands := []RecommendationCandidate{}
+	for i := 0; i < rushBucketLimit+200; i++ {
+		cands = append(cands, RecommendationCandidate{
+			UniversityMajorAdmissionID: int64(100000 + i),
+			UniversityID:               int64(i),
+			UniversityCode:             fmt.Sprintf("R%05d", i),
+			GroupCode:                  "01",
+			LocalMajorCode:             fmt.Sprintf("M%05d", i),
+			LocalMajorName:             "占位",
+			MinRank:                    intPtr(1 + i),
+			PlanCount:                  intPtr(10),
+		})
+	}
+	for i := 0; i < 100; i++ {
+		cands = append(cands, RecommendationCandidate{
+			UniversityMajorAdmissionID: int64(200000 + i),
+			UniversityID:               int64(20000 + i),
+			UniversityCode:             fmt.Sprintf("M%05d", i),
+			GroupCode:                  "01",
+			LocalMajorCode:             fmt.Sprintf("MM%05d", i),
+			LocalMajorName:             "match-占位",
+			MinRank:                    intPtr(9000 + i*10),
+			PlanCount:                  intPtr(10),
+		})
+	}
+	for i := 0; i < 100; i++ {
+		cands = append(cands, RecommendationCandidate{
+			UniversityMajorAdmissionID: int64(300000 + i),
+			UniversityID:               int64(30000 + i),
+			UniversityCode:             fmt.Sprintf("S%05d", i),
+			GroupCode:                  "01",
+			LocalMajorCode:             fmt.Sprintf("SS%05d", i),
+			LocalMajorName:             "safe-占位",
+			MinRank:                    intPtr(13000 + i*100),
+			PlanCount:                  intPtr(10),
+		})
+	}
+	stub := &stubRecommendationStore{year: 2024, candidates: cands}
+	svc := NewRecommendationService(stub, newStubMetadataStore(), nil)
+	resp, err := svc.Recommend(context.Background(), &RecommendationRequest{
+		RegionCode:          "230000",
+		SubjectCategoryCode: "physics",
+		TotalScore:          580,
+		ProvincialRank:      10000,
+		PlanSize:            40,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 3, stub.callCount, "应该按冲/稳/保三段各发一次 query")
+	require.Greater(t, resp.SafeCount, 0, "保档桶必须非空——回归：原 LIMIT 5000 ASC 会把高位次保档全砍掉")
+	require.Greater(t, resp.MatchCount, 0, "稳档桶也应有候选")
+}
+
+func TestFilterByPreferenceChemistryDoesNotExcludeBio(t *testing.T) {
+	// I3 反例：用户排除"化学"应只影响化学和化工类，不应一刀切到生物类。
+	candidates := []RecommendationCandidate{
+		{LocalMajorName: "应用化学", TagCategoryCodes: "0703"},
+		{LocalMajorName: "化学工程", TagCategoryCodes: "0813"},
+		{LocalMajorName: "生物科学", TagCategoryCodes: "0710"},
+		{LocalMajorName: "材料科学", TagCategoryCodes: "0804"},
+	}
+	out, _ := filterByPreference(candidates, &RecommendationRequest{
+		ExcludedKeywords: []string{"化学"},
+	}, fixtureMetadata())
+	names := map[string]bool{}
+	for _, c := range out {
+		names[c.LocalMajorName] = true
+	}
+	require.False(t, names["应用化学"], "排除化学应屏蔽 0703")
+	require.False(t, names["化学工程"], "排除化学应屏蔽 0813")
+	require.True(t, names["生物科学"], "排除化学不应连带屏蔽生物")
+	require.True(t, names["材料科学"], "排除化学不应连带屏蔽材料")
+}
+
+func TestFilterByPreferenceFiveChinesePreservesTraditionalAvoid(t *testing.T) {
+	// I3 正面：用户传"生化环材"时仍然保持原有的一刀切语义。
+	candidates := []RecommendationCandidate{
+		{LocalMajorName: "应用化学", TagCategoryCodes: "0703"},
+		{LocalMajorName: "生物科学", TagCategoryCodes: "0710"},
+		{LocalMajorName: "材料科学", TagCategoryCodes: "0804"},
+		{LocalMajorName: "环境工程", TagCategoryCodes: "0825"},
+		{LocalMajorName: "土木工程", TagCategoryCodes: "0810"},
+	}
+	out, _ := filterByPreference(candidates, &RecommendationRequest{
+		ExcludedKeywords: []string{"生化环材"},
+	}, fixtureMetadata())
+	require.Len(t, out, 1, "生化环材关键字应屏蔽 5 类")
+	require.Equal(t, "土木工程", out[0].LocalMajorName)
+}
+
+func TestDecideStrategyFallbackWhenMetadataEmpty(t *testing.T) {
+	// N2 回归：metadata 没装载策略关键字时（migration 010 未跑），不应静默退化到永远 "major"。
+	// 应该回退到代码内 hardcoded 列表，仍能识别 STEM / humanities 偏好。
+	emptyMD := &RecommendationMetadata{
+		CityToGroupCode:  map[string]string{},
+		StrategyKeywords: map[string][]string{}, // 空表
+	}
+	s, _ := decideStrategy(&RecommendationRequest{
+		PriorityStrategy: "auto",
+		PreferredMajors:  []string{"汉语言文学"},
+	}, emptyMD)
+	require.Equal(t, "school", s, "metadata 空时应回退到 hardcoded 列表识别文管偏好")
+
+	s, _ = decideStrategy(&RecommendationRequest{
+		PriorityStrategy: "auto",
+		PreferredMajors:  []string{"计算机科学"},
+	}, emptyMD)
+	require.Equal(t, "major", s, "metadata 空时应回退到 hardcoded 列表识别 STEM 偏好")
 }
