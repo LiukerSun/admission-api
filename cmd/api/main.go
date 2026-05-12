@@ -153,6 +153,20 @@ func run() error {
 	agent := ai.NewAgent(llmProxy, toolExecutor)
 	aiHandler := ai.NewHandler(agent, conversationService)
 
+	recommendationStore := admission.NewRecommendationStore(database.Pool())
+	recommendationMetadataStore := admission.NewRecommendationMetadataStore(database.Pool())
+	recommendationTuner := ai.NewRecommendationTuner(llmProxy)
+	recommendationService := admission.NewRecommendationService(recommendationStore, recommendationMetadataStore, recommendationTuner)
+	recommendationHandler := admission.NewRecommendationHandler(recommendationService)
+
+	recommendationScoreStore := admission.NewRecommendationScoreStore(database.Pool())
+	var scoreEvaluator admission.ScoreEvaluator = admission.AlgorithmicScoreEvaluator{}
+	if cfg.LLMAPIKey != "" {
+		scoreEvaluator = ai.NewLLMScoreEvaluator(llmProxy, cfg.LLMModel)
+	}
+	recommendationScoreRefresher := admission.NewRecommendationScoreRefresher(recommendationScoreStore, scoreEvaluator)
+	recommendationScoreHandler := admission.NewRecommendationScoreHandler(recommendationScoreRefresher)
+
 	healthHandler := health.NewHandler(database)
 
 	// Initialize admin module
@@ -217,6 +231,7 @@ func run() error {
 		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)
 		authorized.POST("/payment/orders/:order_no/pay", paymentHandler.PayMock)
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
+		authorized.POST("/admission/recommendations", recommendationHandler.Recommend)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireAdmin())
@@ -233,6 +248,7 @@ func run() error {
 		adminRoutes.POST("/payment/orders/:order_no/close", paymentHandler.AdminCloseOrder)
 		adminRoutes.POST("/payment/orders/:order_no/redetect", paymentHandler.AdminRedetect)
 		adminRoutes.POST("/payment/orders/:order_no/regrant-membership", paymentHandler.AdminRegrantMembership)
+		adminRoutes.POST("/recommendation/scores/refresh", recommendationScoreHandler.Refresh)
 	}
 
 	server := &http.Server{
