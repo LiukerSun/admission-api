@@ -37,10 +37,19 @@ type Store interface {
 	MarkOrderFulfilled(ctx context.Context, orderID int64) (*Order, error)
 	MarkOrderEntitlementFailed(ctx context.Context, orderID int64) error
 	SaveCallback(ctx context.Context, req MockCallbackRequest, payload []byte) (*Callback, bool, error)
+	SaveAlipayCallback(ctx context.Context, callbackID string, channelTradeNo string, payload []byte) (*Callback, bool, error)
 	MarkCallbackProcessed(ctx context.Context, callbackID int64, processErr *string) error
 	GetAttemptByChannelTrade(ctx context.Context, channel, channelTradeNo string) (*Attempt, error)
 	ListAttempts(ctx context.Context, orderID int64) ([]*Attempt, error)
-	ListCallbacks(ctx context.Context, channelTradeNo *string) ([]*Callback, error)
+	ListCallbacks(ctx context.Context, channel string, channelTradeNo *string) ([]*Callback, error)
+	UpdateAttemptRequestPayload(ctx context.Context, attemptID int64, payload []byte) error
+	CreateRefund(ctx context.Context, input *CreateRefundInput) (*Refund, error)
+	UpdateRefundSuccess(ctx context.Context, refundID int64, channelRefundNo string, now time.Time) (*Refund, error)
+	UpdateRefundFailed(ctx context.Context, refundID int64) error
+	GetRefundByOutRequestNo(ctx context.Context, outRequestNo string) (*Refund, error)
+	GetRefundByNo(ctx context.Context, refundNo string) (*Refund, error)
+	ListRefunds(ctx context.Context, orderID int64) ([]*Refund, error)
+	GetTotalRefundedAmount(ctx context.Context, orderID int64) (int, error)
 }
 
 type store struct {
@@ -125,17 +134,21 @@ func (s *store) CreateOrder(ctx context.Context, input *CreateOrderInput) (*Orde
 	}
 	subject := input.PlanName
 	expiresAt := input.Now.Add(15 * time.Minute)
+	channel := input.Channel
+	if channel == "" {
+		channel = "mock"
+	}
 
 	o, err := scanOrder(s.pool.QueryRow(ctx, `
 		INSERT INTO payment_orders (
 			order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key, expires_at
 		)
-		VALUES ($1, $2, 'membership', $3, $4, $5, $6, 'awaiting_payment', 'unpaid', 'pending', 'mock', $7, $8)
+		VALUES ($1, $2, 'membership', $3, $4, $5, $6, 'awaiting_payment', 'unpaid', 'pending', $7, $8, $9)
 		RETURNING id, order_no, user_id, product_type, product_ref_id, subject, amount, currency,
 			order_status, payment_status, entitlement_status, payment_channel, idempotency_key,
 			expires_at, paid_at, closed_at, created_at, updated_at
-	`, orderNo, input.UserID, input.PlanID, subject, input.Amount, input.Currency, input.IdempotencyKey, expiresAt))
+	`, orderNo, input.UserID, input.PlanID, subject, input.Amount, input.Currency, channel, input.IdempotencyKey, expiresAt))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -513,16 +526,16 @@ func (s *store) ListAttempts(ctx context.Context, orderID int64) ([]*Attempt, er
 	return attempts, rows.Err()
 }
 
-func (s *store) ListCallbacks(ctx context.Context, channelTradeNo *string) ([]*Callback, error) {
+func (s *store) ListCallbacks(ctx context.Context, channel string, channelTradeNo *string) ([]*Callback, error) {
 	if channelTradeNo == nil || *channelTradeNo == "" {
 		return []*Callback{}, nil
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, channel, callback_id, channel_trade_no, processed, processed_at, process_error, created_at
 		FROM payment_callbacks
-		WHERE channel = 'mock' AND channel_trade_no = $1
+		WHERE channel = $1 AND channel_trade_no = $2
 		ORDER BY created_at DESC
-	`, *channelTradeNo)
+	`, channel, *channelTradeNo)
 	if err != nil {
 		return nil, fmt.Errorf("list payment callbacks: %w", err)
 	}
@@ -584,4 +597,159 @@ func (s *store) orderExistsByNo(ctx context.Context, orderNo string) (bool, erro
 		return false, fmt.Errorf("check payment order existence: %w", err)
 	}
 	return exists, nil
+}
+
+func (s *store) SaveAlipayCallback(ctx context.Context, callbackID string, channelTradeNo string, payload []byte) (*Callback, bool, error) {
+	cb := Callback{}
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO payment_callbacks (channel, callback_id, channel_trade_no, payload)
+		VALUES ('alipay', $1, $2, $3)
+		ON CONFLICT (channel, callback_id) DO NOTHING
+		RETURNING id, channel, callback_id, channel_trade_no, processed, processed_at, process_error, created_at
+	`, callbackID, channelTradeNo, payload).Scan(
+		&cb.ID, &cb.Channel, &cb.CallbackID, &cb.ChannelTradeNo,
+		&cb.Processed, &cb.ProcessedAt, &cb.ProcessError, &cb.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, ErrCallbackDuplicate
+		}
+		return nil, false, fmt.Errorf("save alipay payment callback: %w", err)
+	}
+	return &cb, true, nil
+}
+
+func (s *store) UpdateAttemptRequestPayload(ctx context.Context, attemptID int64, payload []byte) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE payment_attempts
+		SET request_payload = $2, updated_at = NOW()
+		WHERE id = $1
+	`, attemptID, payload)
+	return err
+}
+
+func (s *store) CreateRefund(ctx context.Context, input *CreateRefundInput) (*Refund, error) {
+	refund, err := scanRefund(s.pool.QueryRow(ctx, `
+		INSERT INTO payment_refunds (
+			payment_order_id, refund_no, out_request_no, channel, refund_amount, total_order_amount, refund_reason, status, initiated_by
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'processing', $8)
+		RETURNING id, payment_order_id, refund_no, out_request_no, channel, channel_refund_no, refund_amount, total_order_amount, refund_reason, status, initiated_by, refunded_at, created_at, updated_at
+	`, input.PaymentOrderID, input.RefundNo, input.OutRequestNo, input.Channel, input.RefundAmount, input.TotalOrderAmount, input.RefundReason, input.InitiatedBy))
+	if err != nil {
+		return nil, fmt.Errorf("create payment refund: %w", err)
+	}
+	return refund, nil
+}
+
+func (s *store) UpdateRefundSuccess(ctx context.Context, refundID int64, channelRefundNo string, now time.Time) (*Refund, error) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return scanRefund(s.pool.QueryRow(ctx, `
+		UPDATE payment_refunds
+		SET channel_refund_no = COALESCE(channel_refund_no, $2),
+			status = 'success',
+			refunded_at = COALESCE(refunded_at, $3),
+			updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, payment_order_id, refund_no, out_request_no, channel, channel_refund_no, refund_amount, total_order_amount, refund_reason, status, initiated_by, refunded_at, created_at, updated_at
+	`, refundID, channelRefundNo, now))
+}
+
+func (s *store) UpdateRefundFailed(ctx context.Context, refundID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE payment_refunds
+		SET status = 'failed', updated_at = NOW()
+		WHERE id = $1
+	`, refundID)
+	return err
+}
+
+func (s *store) GetRefundByOutRequestNo(ctx context.Context, outRequestNo string) (*Refund, error) {
+	refund, err := scanRefund(s.pool.QueryRow(ctx, `
+		SELECT id, payment_order_id, refund_no, out_request_no, channel, channel_refund_no, refund_amount, total_order_amount, refund_reason, status, initiated_by, refunded_at, created_at, updated_at
+		FROM payment_refunds
+		WHERE out_request_no = $1
+	`, outRequestNo))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrRefundNotFound
+		}
+		return nil, fmt.Errorf("get refund by out_request_no: %w", err)
+	}
+	return refund, nil
+}
+
+func (s *store) GetRefundByNo(ctx context.Context, refundNo string) (*Refund, error) {
+	refund, err := scanRefund(s.pool.QueryRow(ctx, `
+		SELECT id, payment_order_id, refund_no, out_request_no, channel, channel_refund_no, refund_amount, total_order_amount, refund_reason, status, initiated_by, refunded_at, created_at, updated_at
+		FROM payment_refunds
+		WHERE refund_no = $1
+	`, refundNo))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrRefundNotFound
+		}
+		return nil, fmt.Errorf("get refund by no: %w", err)
+	}
+	return refund, nil
+}
+
+func (s *store) ListRefunds(ctx context.Context, orderID int64) ([]*Refund, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, payment_order_id, refund_no, out_request_no, channel, channel_refund_no, refund_amount, total_order_amount, refund_reason, status, initiated_by, refunded_at, created_at, updated_at
+		FROM payment_refunds
+		WHERE payment_order_id = $1
+		ORDER BY created_at DESC
+	`, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("list payment refunds: %w", err)
+	}
+	defer rows.Close()
+	refunds := []*Refund{}
+	for rows.Next() {
+		r, err := scanRefund(rows)
+		if err != nil {
+			return nil, err
+		}
+		refunds = append(refunds, r)
+	}
+	return refunds, rows.Err()
+}
+
+func (s *store) GetTotalRefundedAmount(ctx context.Context, orderID int64) (int, error) {
+	var total int
+	err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(refund_amount), 0)
+		FROM payment_refunds
+		WHERE payment_order_id = $1 AND status = 'success'
+	`, orderID).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("get total refunded amount: %w", err)
+	}
+	return total, nil
+}
+
+func scanRefund(row pgx.Row) (*Refund, error) {
+	var r Refund
+	if err := row.Scan(
+		&r.ID,
+		&r.PaymentOrderID,
+		&r.RefundNo,
+		&r.OutRequestNo,
+		&r.Channel,
+		&r.ChannelRefundNo,
+		&r.RefundAmount,
+		&r.TotalOrderAmount,
+		&r.RefundReason,
+		&r.Status,
+		&r.InitiatedBy,
+		&r.RefundedAt,
+		&r.CreatedAt,
+		&r.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }

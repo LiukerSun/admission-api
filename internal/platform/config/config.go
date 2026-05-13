@@ -21,12 +21,24 @@ type Config struct {
 	AliyunSMSAccessKeyID     string
 	AliyunSMSAccessKeySecret string
 	AliyunSMSEndpoint        string
-	AliyunSMSSignName        string
-	AliyunSMSTemplateCode    string
-	SMSCodeTTLMinutes        int
+	AliyunSMSSignName           string
+	AliyunSMSTemplateCode       string
+	AliyunSMSTemplateParamFormat string // "json" (default) or "direct" ($code$ style)
+	SMSCodeTTLMinutes           int
 	SMSSendCooldownSeconds   int
 	SMSDailyLimit            int
 	SMSMaxVerifyAttempts     int
+	AlipayAppID              string
+	AlipayAppPrivateKey      string
+	AlipayAppPrivateKeyPath  string
+	AlipayAppPublicCertPath    string
+	AlipayAlipayPublicCertPath string
+	AlipayAlipayRootCertPath   string
+	AlipayNotifyURL          string
+	AlipayReturnURL          string
+	AlipaySandbox            bool
+	AlipayEncryptKey         string
+	AlipayDecryptKey         string
 }
 
 // Load reads configuration from environment variables.
@@ -46,12 +58,24 @@ func Load() (*Config, error) {
 		AliyunSMSAccessKeyID:     getEnv("ALIYUN_SMS_ACCESS_KEY_ID", ""),
 		AliyunSMSAccessKeySecret: getEnv("ALIYUN_SMS_ACCESS_KEY_SECRET", ""),
 		AliyunSMSEndpoint:        getEnv("ALIYUN_SMS_ENDPOINT", "dysmsapi.aliyuncs.com"),
-		AliyunSMSSignName:        getEnv("ALIYUN_SMS_SIGN_NAME", ""),
-		AliyunSMSTemplateCode:    getEnv("ALIYUN_SMS_TEMPLATE_CODE", ""),
-		SMSCodeTTLMinutes:        getIntEnv("SMS_CODE_TTL_MINUTES", 5),
+		AliyunSMSSignName:            getEnv("ALIYUN_SMS_SIGN_NAME", ""),
+		AliyunSMSTemplateCode:        getEnv("ALIYUN_SMS_TEMPLATE_CODE", ""),
+		AliyunSMSTemplateParamFormat: getEnv("ALIYUN_SMS_TEMPLATE_PARAM_FORMAT", "json"),
+		SMSCodeTTLMinutes:            getIntEnv("SMS_CODE_TTL_MINUTES", 5),
 		SMSSendCooldownSeconds:   getIntEnv("SMS_SEND_COOLDOWN_SECONDS", 60),
 		SMSDailyLimit:            getIntEnv("SMS_DAILY_LIMIT", 10),
 		SMSMaxVerifyAttempts:     getIntEnv("SMS_MAX_VERIFY_ATTEMPTS", 5),
+		AlipayAppID:              getEnv("ALIPAY_APP_ID", ""),
+		AlipayAppPrivateKey:      getEnv("ALIPAY_APP_PRIVATE_KEY", ""),
+		AlipayAppPrivateKeyPath:  getEnv("ALIPAY_APP_PRIVATE_KEY_PATH", ""),
+		AlipayAppPublicCertPath:    getEnv("ALIPAY_APP_PUBLIC_CERT_PATH", ""),
+		AlipayAlipayPublicCertPath: getEnv("ALIPAY_ALIPAY_PUBLIC_CERT_PATH", ""),
+		AlipayAlipayRootCertPath:   getEnv("ALIPAY_ALIPAY_ROOT_CERT_PATH", ""),
+		AlipayNotifyURL:          getEnv("ALIPAY_NOTIFY_URL", ""),
+		AlipayReturnURL:          getEnv("ALIPAY_RETURN_URL", ""),
+		AlipaySandbox:            getBoolEnv("ALIPAY_SANDBOX", true),
+		AlipayEncryptKey:         getEnv("ALIPAY_ENCRYPT_KEY", ""),
+		AlipayDecryptKey:         getEnv("ALIPAY_DECRYPT_KEY", ""),
 	}
 
 	if cfg.JWTSecret == "" {
@@ -93,6 +117,13 @@ func getIntEnv(key string, fallback int) int {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
 		}
+	}
+	return fallback
+}
+
+func getBoolEnv(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		return v == "true" || v == "1"
 	}
 	return fallback
 }

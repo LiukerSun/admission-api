@@ -2,12 +2,19 @@ package payment
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"admission-api/internal/membership"
+	"admission-api/internal/platform/alipay"
 )
 
 type Service interface {
@@ -15,28 +22,47 @@ type Service interface {
 	ListMyOrders(ctx context.Context, userID int64, page, pageSize int) (*OrderListResponse, error)
 	GetMyOrder(ctx context.Context, userID int64, orderNo string) (*OrderResponse, error)
 	PayMock(ctx context.Context, userID int64, orderNo string) (*OrderResponse, error)
+	PayAlipay(ctx context.Context, userID int64, orderNo string) (*AlipayPayResponse, error)
 	ProcessMockCallback(ctx context.Context, req MockCallbackRequest) (*OrderResponse, error)
+	ProcessAlipayCallback(ctx context.Context, params map[string]string) (*OrderResponse, error)
 	Detect(ctx context.Context, userID int64, orderNo string) (*OrderResponse, error)
 	ListAdminOrders(ctx context.Context, filter AdminOrderFilter, page, pageSize int) (*OrderListResponse, error)
 	GetAdminOrder(ctx context.Context, orderNo string) (*AdminOrderDetailResponse, error)
 	CloseAdminOrder(ctx context.Context, orderNo string) (*OrderResponse, error)
 	RedetectAdmin(ctx context.Context, orderNo string) (*OrderResponse, error)
 	RegrantMembership(ctx context.Context, orderNo string) (*OrderResponse, error)
+	RefundOrder(ctx context.Context, userID int64, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error)
+	AdminRefundOrder(ctx context.Context, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error)
+	QueryRefund(ctx context.Context, orderNo, refundNo string) (*Refund, error)
+	ListOrderRefunds(ctx context.Context, userID int64, orderNo string) ([]*Refund, error)
 }
 
 type service struct {
 	store             Store
 	membershipService membership.Service
+	alipayClient      alipay.Client
+	alipayNotifyURL   string
+	alipayReturnURL   string
 }
 
-func NewService(store Store, membershipService membership.Service) Service {
-	return &service{store: store, membershipService: membershipService}
+func NewService(store Store, membershipService membership.Service, alipayClient alipay.Client, alipayNotifyURL, alipayReturnURL string) Service {
+	return &service{
+		store:             store,
+		membershipService: membershipService,
+		alipayClient:      alipayClient,
+		alipayNotifyURL:   alipayNotifyURL,
+		alipayReturnURL:   alipayReturnURL,
+	}
 }
 
 func (s *service) CreateOrder(ctx context.Context, userID int64, req CreateOrderRequest) (*OrderResponse, error) {
 	plan, err := s.membershipService.GetPurchasablePlan(ctx, req.PlanCode)
 	if err != nil {
 		return nil, err
+	}
+	channel := ChannelMock
+	if req.Channel != nil && *req.Channel != "" {
+		channel = *req.Channel
 	}
 	o, _, err := s.store.CreateOrder(ctx, &CreateOrderInput{
 		UserID:         userID,
@@ -46,6 +72,7 @@ func (s *service) CreateOrder(ctx context.Context, userID int64, req CreateOrder
 		DurationDays:   plan.DurationDays,
 		Amount:         plan.PriceAmount,
 		Currency:       plan.Currency,
+		Channel:        channel,
 		IdempotencyKey: req.IdempotencyKey,
 		Now:            time.Now(),
 	})
@@ -110,6 +137,187 @@ func (s *service) PayMock(ctx context.Context, userID int64, orderNo string) (*O
 		return nil, err
 	}
 	resp := ToOrderResponse(fulfilled, planCode)
+	return &resp, nil
+}
+
+func (s *service) PayAlipay(ctx context.Context, userID int64, orderNo string) (*AlipayPayResponse, error) {
+	if s.alipayClient == nil {
+		return nil, ErrAlipayNotConfigured
+	}
+	o, _, err := s.store.GetOrderForUser(ctx, userID, orderNo)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensurePayable(o, time.Now()); err != nil {
+		if errors.Is(err, ErrOrderExpired) {
+			_, _ = s.store.CloseOrder(ctx, orderNo)
+		}
+		return nil, err
+	}
+	if o.PaymentChannel != ChannelAlipay {
+		return nil, ErrChannelMismatch
+	}
+
+	attempt, err := s.store.CreateAttempt(ctx, o.ID, ChannelAlipay, o.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("create alipay attempt: %w", err)
+	}
+
+	totalAmount := formatAmount(o.Amount)
+	req := &alipay.PagePayRequest{
+		OutTradeNo:  o.OrderNo,
+		Subject:     o.Subject,
+		TotalAmount: totalAmount,
+	}
+	payURL, err := s.alipayClient.BuildPagePayURL(req)
+	if err != nil {
+		return nil, fmt.Errorf("alipay build page pay url: %w", err)
+	}
+
+	requestPayload, _ := json.Marshal(map[string]string{
+		"out_trade_no":  req.OutTradeNo,
+		"subject":       req.Subject,
+		"total_amount":  req.TotalAmount,
+		"product_code":  "FAST_INSTANT_TRADE_PAY",
+		"attempt_no":    strconv.Itoa(attempt.AttemptNo),
+	})
+	_ = s.store.UpdateAttemptRequestPayload(ctx, attempt.ID, requestPayload)
+
+	return &AlipayPayResponse{
+		OrderNo:   o.OrderNo,
+		PayURL:    payURL,
+		ExpiresAt: o.ExpiresAt,
+	}, nil
+}
+
+func (s *service) ProcessAlipayCallback(ctx context.Context, params map[string]string) (*OrderResponse, error) {
+	values := url.Values{}
+	for k, v := range params {
+		values.Set(k, v)
+	}
+
+	if err := s.alipayClient.VerifySign(ctx, values); err != nil {
+		slog.Error("alipay callback signature verification failed", "error", err)
+		return nil, ErrAlipaySignature
+	}
+
+	tradeStatus := params["trade_status"]
+	if tradeStatus != "TRADE_SUCCESS" && tradeStatus != "TRADE_FINISHED" {
+		return nil, nil
+	}
+
+	outTradeNo := params["out_trade_no"]
+	tradeNo := params["trade_no"]
+	totalAmount := params["total_amount"]
+	notifyID := params["notify_id"]
+
+	payload, _ := json.Marshal(params)
+
+	cb, _, err := s.store.SaveAlipayCallback(ctx, notifyID, tradeNo, payload)
+	if err != nil {
+		if errors.Is(err, ErrCallbackDuplicate) {
+			o, _, getErr := s.store.GetOrderByNo(ctx, outTradeNo)
+			if getErr != nil {
+				return nil, getErr
+			}
+			resp := ToOrderResponse(o, "")
+			return &resp, nil
+		}
+		return nil, err
+	}
+
+	var processErr *string
+	o, _, err := s.store.GetOrderByNo(ctx, outTradeNo)
+	if err != nil {
+		msg := err.Error()
+		processErr = &msg
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+		return nil, err
+	}
+
+	expectedAmount := formatAmount(o.Amount)
+	if totalAmount != expectedAmount {
+		msg := fmt.Sprintf("amount mismatch: expected %s, got %s", expectedAmount, totalAmount)
+		processErr = &msg
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+		return nil, fmt.Errorf("alipay callback amount mismatch")
+	}
+
+	if o.OrderStatus != OrderStatusPaid && o.OrderStatus != OrderStatusFulfilled {
+		if err := ensurePayable(o, time.Now()); err != nil {
+			if errors.Is(err, ErrOrderExpired) {
+				_, _ = s.store.CloseOrder(ctx, outTradeNo)
+			}
+			msg := err.Error()
+			processErr = &msg
+			_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+			return nil, err
+		}
+	}
+
+	if existingAttempt, tradeErr := s.store.GetAttemptByChannelTrade(ctx, ChannelAlipay, tradeNo); tradeErr == nil {
+		if existingAttempt.PaymentOrderID != o.ID {
+			msg := "channel trade belongs to another order"
+			processErr = &msg
+			_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+			return nil, ErrIdempotencyConflict
+		}
+		if o.OrderStatus == OrderStatusPaid || o.EntitlementStatus == EntitlementStatusFailed {
+			if err := s.fulfillMembership(ctx, o); err != nil {
+				msg := err.Error()
+				processErr = &msg
+				_ = s.store.MarkOrderEntitlementFailed(ctx, o.ID)
+				_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+				return nil, err
+			}
+		}
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, nil)
+		updated, _, getErr := s.store.GetOrderByNo(ctx, outTradeNo)
+		if getErr != nil {
+			return nil, getErr
+		}
+		resp := ToOrderResponse(updated, "")
+		return &resp, nil
+	} else if !errors.Is(tradeErr, ErrOrderNotFound) {
+		msg := tradeErr.Error()
+		processErr = &msg
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+		return nil, tradeErr
+	}
+
+	attempt, err := s.store.CreateAttempt(ctx, o.ID, ChannelAlipay, o.Amount)
+	if err != nil {
+		msg := err.Error()
+		processErr = &msg
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+		return nil, err
+	}
+	if _, err := s.store.MarkAttemptSuccess(ctx, attempt.ID, tradeNo, time.Now()); err != nil {
+		msg := err.Error()
+		processErr = &msg
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+		return nil, err
+	}
+	paid, err := s.store.MarkOrderPaid(ctx, o.ID, time.Now())
+	if err != nil {
+		msg := err.Error()
+		processErr = &msg
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+		return nil, err
+	}
+	if err := s.fulfillMembership(ctx, paid); err != nil {
+		msg := err.Error()
+		processErr = &msg
+		_ = s.store.MarkOrderEntitlementFailed(ctx, paid.ID)
+		_ = s.store.MarkCallbackProcessed(ctx, cb.ID, processErr)
+		return nil, err
+	}
+	_ = s.store.MarkCallbackProcessed(ctx, cb.ID, nil)
+	fulfilled, _, err := s.store.GetOrderByNo(ctx, outTradeNo)
+	if err != nil {
+		return nil, err
+	}
+	resp := ToOrderResponse(fulfilled, "")
 	return &resp, nil
 }
 
@@ -232,6 +440,54 @@ func (s *service) Detect(ctx context.Context, userID int64, orderNo string) (*Or
 	if err != nil {
 		return nil, err
 	}
+
+	if s.alipayClient != nil && (o.OrderStatus == OrderStatusAwaitingPayment || o.PaymentStatus == PaymentStatusUnpaid || o.PaymentStatus == PaymentStatusPaying) {
+		rsp, err := s.alipayClient.TradeQuery(&alipay.TradeQueryRequest{OutTradeNo: o.OrderNo})
+		if err != nil {
+			slog.Warn("alipay trade query failed during detect", "order_no", orderNo, "error", err)
+		} else if rsp.TradeStatus == "WAIT_BUYER_PAY" {
+			// still waiting, nothing to do
+		} else if rsp.TradeStatus == "TRADE_CLOSED" {
+			_, _ = s.store.CloseOrder(ctx, orderNo)
+			o, planCode, err = s.store.GetOrderByNo(ctx, orderNo)
+			if err != nil {
+				return nil, err
+			}
+		} else if rsp.TradeStatus == "TRADE_SUCCESS" || rsp.TradeStatus == "TRADE_FINISHED" {
+			existingAttempt, tradeErr := s.store.GetAttemptByChannelTrade(ctx, ChannelAlipay, rsp.TradeNo)
+			if tradeErr != nil && !errors.Is(tradeErr, ErrOrderNotFound) {
+				return nil, tradeErr
+			}
+			if errors.Is(tradeErr, ErrOrderNotFound) {
+				attempt, err := s.store.CreateAttempt(ctx, o.ID, ChannelAlipay, o.Amount)
+				if err != nil {
+					return nil, fmt.Errorf("create attempt on detect: %w", err)
+				}
+				if _, err := s.store.MarkAttemptSuccess(ctx, attempt.ID, rsp.TradeNo, time.Now()); err != nil {
+					return nil, fmt.Errorf("mark attempt success on detect: %w", err)
+				}
+			} else if existingAttempt.ChannelStatus != AttemptStatusSuccess {
+				_, err := s.store.MarkAttemptSuccess(ctx, existingAttempt.ID, rsp.TradeNo, time.Now())
+				if err != nil {
+					return nil, fmt.Errorf("mark attempt success on detect: %w", err)
+				}
+			}
+			paid, err := s.store.MarkOrderPaid(ctx, o.ID, time.Now())
+			if err != nil {
+				return nil, fmt.Errorf("mark order paid on detect: %w", err)
+			}
+			o = paid
+			if err := s.fulfillMembership(ctx, o); err != nil {
+				_ = s.store.MarkOrderEntitlementFailed(ctx, o.ID)
+				return nil, err
+			}
+			o, planCode, err = s.store.GetOrderByNo(ctx, orderNo)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if o.OrderStatus == OrderStatusPaid || o.EntitlementStatus == EntitlementStatusFailed {
 		if err := s.fulfillMembership(ctx, o); err != nil {
 			_ = s.store.MarkOrderEntitlementFailed(ctx, o.ID)
@@ -271,7 +527,11 @@ func (s *service) GetAdminOrder(ctx context.Context, orderNo string) (*AdminOrde
 	if len(attempts) > 0 {
 		tradeNo = attempts[0].ChannelTradeNo
 	}
-	callbacks, err := s.store.ListCallbacks(ctx, tradeNo)
+	channel := ChannelMock
+	if len(attempts) > 0 {
+		channel = attempts[0].Channel
+	}
+	callbacks, err := s.store.ListCallbacks(ctx, channel, tradeNo)
 	if err != nil {
 		return nil, err
 	}
@@ -379,4 +639,170 @@ func normalizedPageSize(pageSize int) int {
 		return 20
 	}
 	return pageSize
+}
+
+func (s *service) RefundOrder(ctx context.Context, userID int64, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error) {
+	o, _, err := s.store.GetOrderForUser(ctx, userID, orderNo)
+	if err != nil {
+		return nil, err
+	}
+	if o.PaymentChannel != ChannelAlipay {
+		return nil, ErrChannelMismatch
+	}
+	refundAmount := o.Amount
+	if req.Amount != nil && *req.Amount > 0 {
+		refundAmount = *req.Amount
+	}
+	return s.processRefund(ctx, o, refundAmount, req.Reason, userID)
+}
+
+func (s *service) AdminRefundOrder(ctx context.Context, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error) {
+	o, _, err := s.store.GetOrderByNo(ctx, orderNo)
+	if err != nil {
+		return nil, err
+	}
+	if o.PaymentChannel != ChannelAlipay {
+		return nil, ErrChannelMismatch
+	}
+	refundAmount := o.Amount
+	if req.Amount != nil && *req.Amount > 0 {
+		refundAmount = *req.Amount
+	}
+	return s.processRefund(ctx, o, refundAmount, req.Reason, 0)
+}
+
+func (s *service) processRefund(ctx context.Context, o *Order, refundAmount int, reason string, initiatedBy int64) (*RefundOrderResponse, error) {
+	if s.alipayClient == nil {
+		return nil, ErrAlipayNotConfigured
+	}
+	if o.OrderStatus != OrderStatusPaid && o.OrderStatus != OrderStatusFulfilled {
+		return nil, ErrOrderNotRefundable
+	}
+
+	totalRefunded, err := s.store.GetTotalRefundedAmount(ctx, o.ID)
+	if err != nil {
+		slog.Error("processRefund: get total refunded amount failed", "order_no", o.OrderNo, "error", err)
+		return nil, err
+	}
+	remaining := o.Amount - totalRefunded
+	if remaining <= 0 {
+		slog.Warn("processRefund: no remaining amount to refund", "order_no", o.OrderNo, "remaining", remaining)
+		return nil, ErrOrderNotRefundable
+	}
+	if refundAmount > remaining {
+		slog.Info("processRefund: capping refund to remaining amount", "order_no", o.OrderNo, "requested", refundAmount, "remaining", remaining)
+		refundAmount = remaining
+	}
+
+	now := time.Now()
+	refundNo, err := generateRefundNo(now)
+	if err != nil {
+		slog.Error("processRefund: generate refund no failed", "order_no", o.OrderNo, "error", err)
+		return nil, err
+	}
+
+	refund, err := s.store.CreateRefund(ctx, &CreateRefundInput{
+		PaymentOrderID:   o.ID,
+		RefundNo:         refundNo,
+		OutRequestNo:     refundNo,
+		Channel:          ChannelAlipay,
+		RefundAmount:     refundAmount,
+		TotalOrderAmount: o.Amount,
+		RefundReason:     reason,
+		InitiatedBy:      initiatedBy,
+	})
+	if err != nil {
+		slog.Error("processRefund: create refund record failed", "order_no", o.OrderNo, "refund_no", refundNo, "error", err)
+		return nil, err
+	}
+
+	rsp, err := s.alipayClient.Refund(&alipay.RefundRequest{
+		OutTradeNo:   o.OrderNo,
+		RefundAmount: formatAmount(refundAmount),
+		RefundReason: reason,
+		OutRequestNo: refundNo,
+	})
+	if err != nil {
+		slog.Error("processRefund: alipay refund API call failed", "order_no", o.OrderNo, "refund_no", refundNo, "error", err)
+		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
+		return nil, fmt.Errorf("alipay refund failed: %w", err)
+	}
+
+	if rsp.FundChange == "Y" {
+		refund, err = s.store.UpdateRefundSuccess(ctx, refund.ID, rsp.TradeNo, now)
+		if err != nil {
+			slog.Error("processRefund: update refund success in DB failed", "order_no", o.OrderNo, "refund_no", refundNo, "trade_no", rsp.TradeNo, "error", err)
+			return nil, err
+		}
+	} else {
+		slog.Warn("processRefund: alipay refund returned fund_change=N", "order_no", o.OrderNo, "refund_no", refundNo, "fund_change", rsp.FundChange)
+		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
+		return nil, fmt.Errorf("alipay refund fund_change not Y: %s", rsp.FundChange)
+	}
+
+	return &RefundOrderResponse{
+		Order:        ToOrderResponse(o, ""),
+		RefundNo:     refund.RefundNo,
+		RefundAmount: refund.RefundAmount,
+		Status:       refund.Status,
+	}, nil
+}
+
+func (s *service) QueryRefund(ctx context.Context, orderNo, refundNo string) (*Refund, error) {
+	o, _, err := s.store.GetOrderByNo(ctx, orderNo)
+	if err != nil {
+		return nil, err
+	}
+
+	refund, err := s.store.GetRefundByNo(ctx, refundNo)
+	if err != nil {
+		return nil, err
+	}
+	if refund.PaymentOrderID != o.ID {
+		return nil, ErrRefundNotFound
+	}
+
+	if refund.Status != RefundStatusProcessing {
+		return refund, nil
+	}
+
+	rsp, err := s.alipayClient.RefundQuery(&alipay.RefundQueryRequest{
+		OutTradeNo:   orderNo,
+		OutRequestNo: refund.OutRequestNo,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("alipay refund query failed: %w", err)
+	}
+
+	if rsp.RefundStatus == "REFUND_SUCCESS" {
+		now := time.Now()
+		refund, err = s.store.UpdateRefundSuccess(ctx, refund.ID, rsp.TradeNo, now)
+		if err != nil {
+			return nil, err
+		}
+	} else if rsp.RefundStatus == "REFUND_FAIL" {
+		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
+	}
+
+	return refund, nil
+}
+
+func (s *service) ListOrderRefunds(ctx context.Context, userID int64, orderNo string) ([]*Refund, error) {
+	o, _, err := s.store.GetOrderForUser(ctx, userID, orderNo)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListRefunds(ctx, o.ID)
+}
+
+func generateRefundNo(now time.Time) (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate refund entropy: %w", err)
+	}
+	return fmt.Sprintf("RF%s%s", now.Format("20060102150405"), strings.ToUpper(hex.EncodeToString(b))), nil
+}
+
+func formatAmount(cents int) string {
+	return fmt.Sprintf("%.2f", float64(cents)/100.0)
 }

@@ -121,9 +121,45 @@ func (m *mockPaymentStore) ListAttempts(ctx context.Context, orderID int64) ([]*
 	return args.Get(0).([]*Attempt), args.Error(1)
 }
 
-func (m *mockPaymentStore) ListCallbacks(ctx context.Context, channelTradeNo *string) ([]*Callback, error) {
-	args := m.Called(ctx, channelTradeNo)
+func (m *mockPaymentStore) ListCallbacks(ctx context.Context, channel string, channelTradeNo *string) ([]*Callback, error) {
+	args := m.Called(ctx, channel, channelTradeNo)
 	return args.Get(0).([]*Callback), args.Error(1)
+}
+
+func (m *mockPaymentStore) SaveAlipayCallback(ctx context.Context, callbackID string, channelTradeNo string, payload []byte) (*Callback, bool, error) {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) UpdateAttemptRequestPayload(ctx context.Context, attemptID int64, payload []byte) error {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) CreateRefund(ctx context.Context, input *CreateRefundInput) (*Refund, error) {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) UpdateRefundSuccess(ctx context.Context, refundID int64, channelRefundNo string, now time.Time) (*Refund, error) {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) UpdateRefundFailed(ctx context.Context, refundID int64) error {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) GetRefundByOutRequestNo(ctx context.Context, outRequestNo string) (*Refund, error) {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) GetRefundByNo(ctx context.Context, refundNo string) (*Refund, error) {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) ListRefunds(ctx context.Context, orderID int64) ([]*Refund, error) {
+	panic("not implemented")
+}
+
+func (m *mockPaymentStore) GetTotalRefundedAmount(ctx context.Context, orderID int64) (int, error) {
+	panic("not implemented")
 }
 
 type mockMembershipSvc struct {
@@ -161,7 +197,7 @@ func (m *mockMembershipSvc) GrantFromPaidOrder(ctx context.Context, req membersh
 func TestCreateOrderUsesPlanSnapshot(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
-	svc := NewService(store, member)
+	svc := NewService(store, member, nil, "", "")
 	key := "idem-1"
 	plan := &membership.Plan{ID: 9, PlanCode: "monthly", PlanName: "月度会员", DurationDays: 30, PriceAmount: 990, Currency: "CNY"}
 	order := &Order{ID: 1, OrderNo: "MO1", UserID: 7, ProductRefID: 9, Subject: "月度会员", Amount: 990, Currency: "CNY", OrderStatus: OrderStatusAwaitingPayment, PaymentStatus: PaymentStatusUnpaid, EntitlementStatus: EntitlementStatusPending, PaymentChannel: ChannelMock, ExpiresAt: time.Now().Add(time.Minute)}
@@ -181,7 +217,7 @@ func TestCreateOrderUsesPlanSnapshot(t *testing.T) {
 func TestPayMockRejectsExpiredOrderAndCloses(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
-	svc := NewService(store, member)
+	svc := NewService(store, member, nil, "", "")
 	expired := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusAwaitingPayment, PaymentStatus: PaymentStatusUnpaid, ExpiresAt: time.Now().Add(-time.Minute)}
 
 	store.On("GetOrderForUser", mock.Anything, int64(7), "MO1").Return(expired, "monthly", nil)
@@ -197,7 +233,7 @@ func TestPayMockRejectsExpiredOrderAndCloses(t *testing.T) {
 func TestPayMockSuccessfulFlowGrantsMembershipAndFulfillsOrder(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
-	svc := NewService(store, member)
+	svc := NewService(store, member, nil, "", "")
 	order := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusAwaitingPayment, PaymentStatus: PaymentStatusUnpaid, EntitlementStatus: EntitlementStatusPending, ExpiresAt: time.Now().Add(time.Minute)}
 	paid := *order
 	paid.OrderStatus = OrderStatusPaid
@@ -229,7 +265,7 @@ func TestPayMockSuccessfulFlowGrantsMembershipAndFulfillsOrder(t *testing.T) {
 func TestDuplicateCallbackReturnsExistingOrderWithoutGrant(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
-	svc := NewService(store, member)
+	svc := NewService(store, member, nil, "", "")
 	order := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusFulfilled, PaymentStatus: PaymentStatusPaid, EntitlementStatus: EntitlementStatusGranted, ExpiresAt: time.Now().Add(time.Minute)}
 	req := MockCallbackRequest{CallbackID: "cb1", OrderNo: "MO1", ChannelTradeNo: "trade1", Success: true}
 
@@ -246,7 +282,7 @@ func TestDuplicateCallbackReturnsExistingOrderWithoutGrant(t *testing.T) {
 func TestProcessMockCallbackRejectsExpiredOrderAndClosesIt(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
-	svc := NewService(store, member)
+	svc := NewService(store, member, nil, "", "")
 	req := MockCallbackRequest{CallbackID: "cb-expired", OrderNo: "MO1", ChannelTradeNo: "trade-expired", Success: true}
 	expired := &Order{
 		ID:            1,
@@ -276,7 +312,7 @@ func TestProcessMockCallbackRejectsExpiredOrderAndClosesIt(t *testing.T) {
 func TestProcessMockCallbackRejectsClosedOrder(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
-	svc := NewService(store, member)
+	svc := NewService(store, member, nil, "", "")
 	req := MockCallbackRequest{CallbackID: "cb-closed", OrderNo: "MO1", ChannelTradeNo: "trade-closed", Success: true}
 	closed := &Order{
 		ID:            1,
@@ -304,7 +340,7 @@ func TestProcessMockCallbackRejectsClosedOrder(t *testing.T) {
 func TestRegrantMembershipRepairsPaidOrder(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)
-	svc := NewService(store, member)
+	svc := NewService(store, member, nil, "", "")
 	paid := &Order{ID: 1, OrderNo: "MO1", UserID: 7, Amount: 990, OrderStatus: OrderStatusPaid, PaymentStatus: PaymentStatusPaid, EntitlementStatus: EntitlementStatusFailed, ExpiresAt: time.Now().Add(time.Minute)}
 	fulfilled := *paid
 	fulfilled.OrderStatus = OrderStatusFulfilled
