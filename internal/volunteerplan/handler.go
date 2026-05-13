@@ -100,6 +100,26 @@ func (h *Handler) GetDraft(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(draft))
 }
 
+func (h *Handler) ListDraftsByConversation(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	conversationID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || conversationID <= 0 {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+
+	drafts, err := h.service.ListDraftsByConversation(c.Request.Context(), userID, conversationID)
+	if err != nil {
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to list drafts")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(drafts))
+}
+
 func (h *Handler) writeError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrDraftNotFound), errors.Is(err, ErrPlanNotFound):

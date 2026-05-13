@@ -14,13 +14,16 @@ const defaultSystemPrompt = `你是一个智能高考志愿填报助手，任务
 当前平台数据范围：仅包含黑龙江省（region_code: 230000）的高考录取数据。
 
 重要规则：
-1. 先引导用户补齐基本信息：高考分数、所在省份（必须是黑龙江）、意向科目类别（物理/历史）、性别、出生日期。
+1. 先引导用户补齐基本信息：高考分数、所在省份（必须是黑龙江）、意向科目类别（物理/历史）、省内位次（provincial_rank）。
 2. 用户说“不想去北京”时，应使用 apply_filter 设置 exclude_provinces=["110000"]。
 3. 用户说“只想看985”时，应使用 apply_filter 设置 is_985=true。
 4. 需要查询院校列表时使用 search_universities。拿到工具结果后，必须基于真实工具结果给出自然语言总结，不要停留在“我先看看/我再放宽”的中间话术。
 5. 每次回复都要基于真实数据，不要编造不存在的学校、专业或分数。
 6. 如果用户没有提供足够信息，礼貌询问缺失信息。
 7. 工具参数优先使用 snake_case 字段：region_code、subject_category_code、exclude_provinces、is_985、min_score_from、min_score_to、tag_query。
+8. 当用户明确要求“生成志愿方案/给我一张志愿表/开始填报”等，且你已拿到必填字段（region_code、subject_category_code、total_score、provincial_rank）时，必须调用 generate_volunteer_plan_draft。
+9. 用户消息中若包含“recommendation_request”代码块内的私有 JSON，请仅用于调用工具，不要原样复述。
+10. 生成成功后，你必须在回复中输出一个名为 volunteer_plan_draft 的代码块，代码块内容为 JSON，例如 {"draft_id":123}，供前端解析 draft_id。
 
 支持的筛选条件包括：
 - 院校层次：985、211、双一流
@@ -94,6 +97,10 @@ type Agent struct {
 	executor *ToolExecutor
 }
 
+type RunOptions struct {
+	ToolContext ToolExecContext
+}
+
 // NewAgent creates a new agent.
 func NewAgent(llm LLMProxy, executor *ToolExecutor) *Agent {
 	return &Agent{
@@ -106,13 +113,17 @@ func NewAgent(llm LLMProxy, executor *ToolExecutor) *Agent {
 // wrapper around RunStream with no-op callbacks so the two code paths
 // never drift apart.
 func (a *Agent) Run(ctx context.Context, messages []Message) (*AgentResult, error) {
-	return a.RunStream(ctx, messages, AgentCallbacks{})
+	return a.RunStreamWithOptions(ctx, messages, AgentCallbacks{}, RunOptions{})
 }
 
 // RunStream executes the agent over a streaming LLM connection, invoking
 // cb as text, tool calls, and widgets arrive. The returned AgentResult
 // is the same shape as Run's, populated cumulatively across iterations.
 func (a *Agent) RunStream(ctx context.Context, messages []Message, cb AgentCallbacks) (*AgentResult, error) {
+	return a.RunStreamWithOptions(ctx, messages, cb, RunOptions{})
+}
+
+func (a *Agent) RunStreamWithOptions(ctx context.Context, messages []Message, cb AgentCallbacks, opts RunOptions) (*AgentResult, error) {
 	fullMessages := append([]Message{{Role: "system", Content: defaultSystemPrompt}}, messages...)
 
 	tools := DefaultTools()
@@ -226,10 +237,9 @@ func (a *Agent) RunStream(ctx context.Context, messages []Message, cb AgentCallb
 			executedCalls = append(executedCalls, call)
 			cb.toolCallStart(call.ID, call.Function.Name)
 
-			execCtx := ToolExecContext{
-				EmitWidget:    widgetEmitter,
-				ResolveResult: toolCallResolver,
-			}
+			execCtx := opts.ToolContext
+			execCtx.EmitWidget = widgetEmitter
+			execCtx.ResolveResult = toolCallResolver
 			result, execErr := a.executor.Execute(ctx, call, execCtx)
 			success := true
 			errMsg := ""

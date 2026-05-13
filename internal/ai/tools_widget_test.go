@@ -59,7 +59,7 @@ func TestIsAllowedCardLink(t *testing.T) {
 //  3. the produced option NEVER contains keys outside the whitelist
 //     (no formatter strings, no JS expressions, no arbitrary fields)
 func TestExecuteRenderChartBuildsBarOption(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -110,7 +110,7 @@ func TestExecuteRenderChartBuildsBarOption(t *testing.T) {
 }
 
 func TestExecuteRenderChartBuildsPieOption(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "pie",
@@ -146,7 +146,7 @@ func TestExecuteRenderChartBuildsPieOption(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsUnsupportedChartType(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "scatter3d",
@@ -166,7 +166,7 @@ func TestExecuteRenderChartRejectsUnsupportedChartType(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsMissingXField(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -184,7 +184,7 @@ func TestExecuteRenderChartRejectsMissingXField(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsEmptyData(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -204,7 +204,7 @@ func TestExecuteRenderChartRejectsEmptyData(t *testing.T) {
 }
 
 func TestExecuteRenderChartResolvesPriorToolResult(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	prior := `{"top": [
 		{"city": "哈尔滨", "rank": 100},
@@ -237,7 +237,7 @@ func TestExecuteRenderChartResolvesPriorToolResult(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsUnknownToolResult(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -261,7 +261,7 @@ func TestExecuteRenderChartRejectsUnknownToolResult(t *testing.T) {
 // ---------- executeRenderCard ---------------------------------------
 
 func TestExecuteRenderCardEmitsWidgetWithMetrics(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	executor.SetCardLinkWhitelist([]string{"admission.example.com"})
 	emitted := captureWidget()
 	args := `{
@@ -301,7 +301,7 @@ func TestExecuteRenderCardEmitsWidgetWithMetrics(t *testing.T) {
 }
 
 func TestExecuteRenderCardRejectsUnwhitelistedLink(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	executor.SetCardLinkWhitelist([]string{"admission.example.com"})
 	emitted := captureWidget()
 	args := `{
@@ -318,7 +318,7 @@ func TestExecuteRenderCardRejectsUnwhitelistedLink(t *testing.T) {
 }
 
 func TestExecuteRenderCardSanitizesUnknownTrendValue(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"title": "x",
@@ -335,7 +335,7 @@ func TestExecuteRenderCardSanitizesUnknownTrendValue(t *testing.T) {
 }
 
 func TestExecuteRenderCardRequiresTitle(t *testing.T) {
-	executor := NewToolExecutor(nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{"title": "   "}`
 	res, _ := executor.Execute(context.Background(), newToolCall("c13", "render_card", args), ToolExecContext{EmitWidget: emitted.fn})

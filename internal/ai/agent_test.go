@@ -127,7 +127,7 @@ func TestAgentContinuesAfterThreeToolCallsUntilFinalAnswer(t *testing.T) {
 		},
 	}
 	lineStore := &stubAdmissionLineStore{}
-	agent := NewAgent(llm, NewToolExecutor(lineStore, stubAggregateStore{}))
+	agent := NewAgent(llm, NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil))
 
 	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "650分，喜欢985，不想去北京，喜欢计算机"}})
 	if err != nil {
@@ -163,7 +163,7 @@ func TestAgentDoesNotStopAfterTenToolIterations(t *testing.T) {
 		Content: "根据查询结果，可以优先看哈尔滨工业大学计算机类。",
 	})
 	llm := &queuedLLM{responses: responses}
-	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}))
+	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil))
 
 	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "继续推荐"}})
 	if err != nil {
@@ -179,7 +179,7 @@ func TestAgentDoesNotStopAfterTenToolIterations(t *testing.T) {
 
 func TestAgentStopsWhenContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	agent := NewAgent(&cancelingLLM{cancel: cancel}, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}))
+	agent := NewAgent(&cancelingLLM{cancel: cancel}, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil))
 
 	result, err := agent.Run(ctx, []Message{{Role: "user", Content: "继续查询"}})
 	if err == nil {
@@ -195,7 +195,7 @@ func TestAgentStopsWhenContextIsCancelled(t *testing.T) {
 
 func TestToolExecutorParsesSnakeCaseFilterArguments(t *testing.T) {
 	lineStore := &stubAdmissionLineStore{}
-	executor := NewToolExecutor(lineStore, stubAggregateStore{})
+	executor := NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil)
 
 	_, err := executor.Execute(context.Background(), newToolCall("call-1", "search_universities", `{
 		"filter": {

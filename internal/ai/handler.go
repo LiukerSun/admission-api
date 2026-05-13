@@ -175,7 +175,7 @@ func (w *streamWriter) write(event *SSEEvent) {
 // On success it returns the final AgentResult so the caller can persist
 // the assistant message (when in conversation mode). On failure it has
 // already written an "error" event to sw — the caller need not re-emit.
-func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, history []Message) (*AgentResult, error) {
+func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, history []Message, opts RunOptions) (*AgentResult, error) {
 	cb := AgentCallbacks{
 		OnTextDelta: func(content string) {
 			sw.write(&SSEEvent{Type: "text_delta", Content: content})
@@ -201,7 +201,7 @@ func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, histo
 		},
 	}
 
-	result, err := h.agent.RunStream(ctx, history, cb)
+	result, err := h.agent.RunStreamWithOptions(ctx, history, cb, opts)
 	if err != nil {
 		slog.Error("agent run failed", "error", err)
 		sw.write(&SSEEvent{Type: "error", Content: err.Error()})
@@ -237,7 +237,7 @@ func (h *Handler) Chat(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), aiStreamTimeout)
 	defer cancel()
 
-	result, err := h.runAgentOnHistory(ctx, sw, req.Messages)
+	result, err := h.runAgentOnHistory(ctx, sw, req.Messages, RunOptions{})
 	if err != nil {
 		return
 	}
@@ -305,7 +305,7 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 		return
 	}
 
-	h.streamConversationTurn(c, convID)
+	h.streamConversationTurn(c, convID, userID)
 }
 
 // Regenerate godoc
@@ -357,7 +357,7 @@ func (h *Handler) Regenerate(c *gin.Context) {
 		}
 	}
 
-	h.streamConversationTurn(c, convID)
+	h.streamConversationTurn(c, convID, userID)
 }
 
 // streamConversationTurn loads the current conversation history, runs
@@ -366,7 +366,7 @@ func (h *Handler) Regenerate(c *gin.Context) {
 // user message) and Regenerate (after optionally rolling back the last
 // assistant message). Keeps the persistence + SSE pattern in exactly
 // one place.
-func (h *Handler) streamConversationTurn(c *gin.Context, convID int64) {
+func (h *Handler) streamConversationTurn(c *gin.Context, convID int64, userID int64) {
 	msgs, err := h.conversationService.ListMessages(c.Request.Context(), convID)
 	if err != nil {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to load messages")
@@ -378,7 +378,12 @@ func (h *Handler) streamConversationTurn(c *gin.Context, convID int64) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), aiStreamTimeout)
 	defer cancel()
 
-	result, err := h.runAgentOnHistory(ctx, sw, aiMessages)
+	result, err := h.runAgentOnHistory(ctx, sw, aiMessages, RunOptions{
+		ToolContext: ToolExecContext{
+			UserID:         userID,
+			ConversationID: convID,
+		},
+	})
 	if err != nil {
 		return
 	}

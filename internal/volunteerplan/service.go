@@ -11,6 +11,7 @@ import (
 
 type Service interface {
 	GetDraft(ctx context.Context, userID, draftID int64) (*Draft, error)
+	ListDraftsByConversation(ctx context.Context, userID, conversationID int64) ([]*Draft, error)
 	AdoptDraft(ctx context.Context, userID, draftID int64, title string) (*UserVolunteerPlan, error)
 	ListPlans(ctx context.Context, userID int64) ([]*UserVolunteerPlan, error)
 	GetPlan(ctx context.Context, userID, planID int64) (*UserVolunteerPlan, error)
@@ -28,6 +29,10 @@ func NewService(drafts DraftStore, plans PlanStore, conversations conversation.S
 
 func (s *service) GetDraft(ctx context.Context, userID, draftID int64) (*Draft, error) {
 	return s.drafts.GetByID(ctx, userID, draftID)
+}
+
+func (s *service) ListDraftsByConversation(ctx context.Context, userID, conversationID int64) ([]*Draft, error) {
+	return s.drafts.ListByConversation(ctx, userID, conversationID)
 }
 
 func (s *service) ListPlans(ctx context.Context, userID int64) ([]*UserVolunteerPlan, error) {

@@ -159,17 +159,18 @@ func run() error {
 	default:
 		llmProxy = ai.NewOpenAIClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
 	}
-	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore)
-	toolExecutor.SetCardLinkWhitelist(cfg.CardLinkWhitelist)
-	agent := ai.NewAgent(llmProxy, toolExecutor)
-	aiHandler := ai.NewHandler(agent, conversationService)
-	aiSuggestionsHandler := ai.NewSuggestionsHandler(llmProxy, conversationService, redisClient)
 
 	recommendationStore := admission.NewRecommendationStore(database.Pool())
 	recommendationMetadataStore := admission.NewRecommendationMetadataStore(database.Pool())
 	recommendationTuner := ai.NewRecommendationTuner(llmProxy)
 	recommendationService := admission.NewRecommendationService(recommendationStore, recommendationMetadataStore, recommendationTuner)
 	recommendationHandler := admission.NewRecommendationHandler(recommendationService)
+
+	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, recommendationService, volunteerDraftStore)
+	toolExecutor.SetCardLinkWhitelist(cfg.CardLinkWhitelist)
+	agent := ai.NewAgent(llmProxy, toolExecutor)
+	aiHandler := ai.NewHandler(agent, conversationService)
+	aiSuggestionsHandler := ai.NewSuggestionsHandler(llmProxy, conversationService, redisClient)
 
 	recommendationScoreStore := admission.NewRecommendationScoreStore(database.Pool())
 	// AlgorithmicScoreEvaluator 需要 metadata snapshot 来跑 fallback 公式（城市群匹配等）。
@@ -248,6 +249,7 @@ func run() error {
 		authorized.POST("/conversations/:id/ai-chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.ChatWithConversation)
 		authorized.POST("/conversations/:id/regenerate", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Regenerate)
 		authorized.GET("/conversations/:id/suggestions", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiSuggestionsHandler.Suggestions)
+		authorized.GET("/conversations/:id/plan-drafts", volunteerPlanHandlerV2.ListDraftsByConversation)
 		authorized.GET("/plan-drafts/:draft_id", volunteerPlanHandlerV2.GetDraft)
 		authorized.GET("/volunteer-plans", volunteerPlanHandlerV2.ListPlans)
 		authorized.GET("/volunteer-plans/:id", volunteerPlanHandlerV2.GetPlan)

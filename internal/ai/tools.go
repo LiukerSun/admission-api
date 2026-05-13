@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"admission-api/internal/admission"
+	"admission-api/internal/volunteerplan"
 )
 
 // ToolResult is the result of executing a tool.
@@ -31,6 +32,8 @@ type ToolResult struct {
 //     means no external links are allowed; tools should still permit
 //     relative ("/...") hrefs to the same site.
 type ToolExecContext struct {
+	UserID            int64
+	ConversationID    int64
 	EmitWidget        func(Widget)
 	ResolveResult     func(callID string) (string, bool)
 	CardLinkWhitelist []string
@@ -40,14 +43,23 @@ type ToolExecContext struct {
 type ToolExecutor struct {
 	admissionLineStore admission.AdmissionLineStore
 	aggregateStore     admission.AggregateStore
+	recommendations    admission.RecommendationService
+	draftStore         volunteerplan.DraftStore
 	cardLinkWhitelist  []string
 }
 
 // NewToolExecutor creates a new tool executor.
-func NewToolExecutor(admissionLineStore admission.AdmissionLineStore, aggregateStore admission.AggregateStore) *ToolExecutor {
+func NewToolExecutor(
+	admissionLineStore admission.AdmissionLineStore,
+	aggregateStore admission.AggregateStore,
+	recommendations admission.RecommendationService,
+	draftStore volunteerplan.DraftStore,
+) *ToolExecutor {
 	return &ToolExecutor{
 		admissionLineStore: admissionLineStore,
 		aggregateStore:     aggregateStore,
+		recommendations:    recommendations,
+		draftStore:         draftStore,
 	}
 }
 
@@ -79,9 +91,67 @@ func (e *ToolExecutor) Execute(ctx context.Context, call ToolCall, execCtx ToolE
 		return e.executeRenderChart(ctx, call, execCtx)
 	case "render_card":
 		return e.executeRenderCard(ctx, call, execCtx)
+	case "generate_volunteer_plan_draft":
+		return e.executeGenerateVolunteerPlanDraft(ctx, call, execCtx)
 	default:
 		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf("Unknown tool: %s", call.Function.Name)}, nil
 	}
+}
+
+func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, call ToolCall, execCtx ToolExecContext) (*ToolResult, error) {
+	if execCtx.UserID <= 0 || execCtx.ConversationID <= 0 {
+		return &ToolResult{ToolCallID: call.ID, Content: `{"status":"failed","error":"generate_volunteer_plan_draft requires conversation context"}`}, nil
+	}
+
+	var req admission.RecommendationRequest
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &req); err != nil {
+		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf(`{"status":"failed","error":"invalid arguments: %v"}`, err)}, nil
+	}
+
+	if req.RegionCode == "" || req.SubjectCategoryCode == "" || req.TotalScore == 0 || req.ProvincialRank == 0 {
+		return &ToolResult{ToolCallID: call.ID, Content: `{"status":"failed","error":"missing required fields: region_code, subject_category_code, total_score, provincial_rank"}`}, nil
+	}
+	if req.RegionCode != "230000" {
+		return &ToolResult{ToolCallID: call.ID, Content: `{"status":"failed","error":"only supports region_code=230000"}`}, nil
+	}
+
+	inputJSON, _ := json.Marshal(req)
+	draftID, err := e.draftStore.Create(ctx, execCtx.UserID, execCtx.ConversationID, inputJSON, "recommendations_v1")
+	if err != nil {
+		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf(`{"status":"failed","error":"create draft failed: %v"}`, err)}, nil
+	}
+
+	resp, err := e.recommendations.Recommend(ctx, &req)
+	if err != nil {
+		_ = e.draftStore.MarkFailed(ctx, execCtx.UserID, draftID, err.Error())
+		payload := map[string]any{"draft_id": draftID, "status": "failed", "error": err.Error()}
+		content, _ := json.Marshal(payload)
+		return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+	}
+	if resp == nil || resp.VolunteerPlan == nil {
+		_ = e.draftStore.MarkFailed(ctx, execCtx.UserID, draftID, "recommendation response missing volunteer_plan")
+		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf(`{"draft_id":%d,"status":"failed","error":"recommendation response missing volunteer_plan"}`, draftID)}, nil
+	}
+
+	planJSON, _ := json.Marshal(resp.VolunteerPlan)
+	if err := e.draftStore.MarkReady(ctx, execCtx.UserID, draftID, planJSON); err != nil {
+		_ = e.draftStore.MarkFailed(ctx, execCtx.UserID, draftID, err.Error())
+		payload := map[string]any{"draft_id": draftID, "status": "failed", "error": fmt.Sprintf("persist draft failed: %v", err)}
+		content, _ := json.Marshal(payload)
+		return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+	}
+
+	out := map[string]any{
+		"draft_id":    draftID,
+		"status":      "ready",
+		"strategy":    resp.Strategy,
+		"rush_count":  resp.RushCount,
+		"match_count": resp.MatchCount,
+		"safe_count":  resp.SafeCount,
+		"rank_window": resp.RankWindow,
+	}
+	content, _ := json.Marshal(out)
+	return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
 }
 
 func (e *ToolExecutor) executeApplyFilter(ctx context.Context, call ToolCall) (*ToolResult, error) {
@@ -519,6 +589,39 @@ func DefaultTools() []ToolDefinition {
 						"filter": map[string]any{"type": "object", "description": "AggregateFilter as JSON object with group_by and metrics"},
 					},
 					Required: []string{"filter"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: struct {
+				Name        string        `json:"name"`
+				Description string        `json:"description"`
+				Parameters  ToolParameter `json:"parameters"`
+			}{
+				Name:        "generate_volunteer_plan_draft",
+				Description: "Generate a volunteer plan draft for the current conversation by running the recommendation algorithm. Requires region_code=230000, subject_category_code, total_score, provincial_rank. Returns draft_id and summary.",
+				Parameters: ToolParameter{
+					Type: "object",
+					Properties: map[string]any{
+						"region_code":             map[string]any{"type": "string"},
+						"subject_category_code":   map[string]any{"type": "string", "enum": []string{"physics", "history"}},
+						"subject_requirement_code": map[string]any{"type": "string"},
+						"selected_subjects":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"total_score":              map[string]any{"type": "integer"},
+						"provincial_rank":          map[string]any{"type": "integer"},
+						"preferred_majors":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"excluded_majors":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"excluded_keywords":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"preferred_cities":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"excluded_cities":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"preferred_provinces":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"excluded_provinces":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"priority_strategy":        map[string]any{"type": "string", "enum": []string{"auto", "school", "major"}},
+						"plan_size":                map[string]any{"type": "integer"},
+						"enable_llm_tuning":        map[string]any{"type": "boolean"},
+					},
+					Required: []string{"region_code", "subject_category_code", "total_score", "provincial_rank"},
 				},
 			},
 		},

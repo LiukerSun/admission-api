@@ -118,7 +118,7 @@ func withUserAI(userID int64) gin.HandlerFunc {
 // messages and amplify cost / latency on every request.
 func TestChatRejectsTooManyMessages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil))
+	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil, nil, nil))
 	handler := NewHandler(agent, nil)
 
 	router := gin.New()
@@ -144,7 +144,7 @@ func TestChatRejectsTooManyMessages(t *testing.T) {
 // /ai/chat array to MaxAIChatMessageBytes.
 func TestChatRejectsOversizedSingleMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil))
+	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil, nil, nil))
 	handler := NewHandler(agent, nil)
 
 	router := gin.New()
@@ -167,7 +167,7 @@ func TestChatRejectsOversizedSingleMessage(t *testing.T) {
 // content so an attacker can't sneak in many medium-sized messages.
 func TestChatRejectsOversizedTotalContent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil))
+	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil, nil, nil))
 	handler := NewHandler(agent, nil)
 
 	router := gin.New()
@@ -200,7 +200,7 @@ func TestChatRejectsOversizedTotalContent(t *testing.T) {
 // an LLM call that just bills the user for the system prompt.
 func TestChatRejectsEmptyMessages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil))
+	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil, nil, nil))
 	handler := NewHandler(agent, nil)
 
 	router := gin.New()
@@ -222,7 +222,7 @@ func TestChatRejectsEmptyMessages(t *testing.T) {
 // cap on the conversation-scoped endpoint.
 func TestChatWithConversationRejectsOversizedMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil))
+	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil, nil, nil))
 	handler := NewHandler(agent, stubConvServiceForAI{})
 
 	router := gin.New()
@@ -245,7 +245,7 @@ func TestChatWithConversationRejectsOversizedMessage(t *testing.T) {
 // payload from creating an empty user row in the conversation history.
 func TestChatWithConversationRejectsEmptyMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil))
+	agent := NewAgent(noopLLM{}, NewToolExecutor(nil, nil, nil, nil))
 	handler := NewHandler(agent, stubConvServiceForAI{})
 
 	router := gin.New()
@@ -294,7 +294,7 @@ func TestChatWithConversationFailsFastWhenUserMessageSaveFails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	userID := int64(7)
 	llm := &recordingLLM{}
-	agent := NewAgent(llm, NewToolExecutor(nil, nil))
+	agent := NewAgent(llm, NewToolExecutor(nil, nil, nil, nil))
 
 	listCalled := false
 	handler := NewHandler(agent, stubConvServiceForAI{
