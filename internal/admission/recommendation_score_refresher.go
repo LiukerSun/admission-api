@@ -54,14 +54,14 @@ type RefreshOptions struct {
 	PerCallBudget time.Duration // per-row timeout for the evaluator call (0 → default)
 }
 
-// refresherLimits — keep refresh synchronous: gin server WriteTimeout is 15s and
-// LLM evaluators take 5–15s per row, so we cap each call and the whole batch.
-// Caller (handler) should also wrap ctx with an overall timeout so partial
-// results are returned cleanly when the budget runs out.
+// refresherLimits — refresh is synchronous but a single LLM call may take 15–30s
+// when the model invokes extended thinking. We budget per-call generously, cap
+// the batch so the handler can finish within its overall timeout, and rely on
+// the caller (handler) wrapping ctx with an outer deadline.
 const (
-	refresherDefaultLimit         = 2               // ~2 × 6s ≈ 12s, comfortably under 15s gin WriteTimeout
-	refresherMaxLimit             = 5               // hard ceiling to avoid runaway admin requests; rest must come from repeated calls
-	refresherDefaultPerCallBudget = 6 * time.Second // per evaluator call timeout
+	refresherDefaultLimit         = 5                // ~5 × 90s = 450s worst case
+	refresherMaxLimit             = 5                // hard ceiling — combined with 90s/call stays under 8m handler budget
+	refresherDefaultPerCallBudget = 90 * time.Second // DeepSeek with thinking + complex prompt can take 30-60s; 90s leaves margin
 )
 
 // RefreshResult is what the admin endpoint / CLI returns.

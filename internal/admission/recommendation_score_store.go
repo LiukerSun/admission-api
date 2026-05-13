@@ -128,7 +128,22 @@ func (s *recommendationScoreStore) PendingForRefresh(ctx context.Context, maxAge
 			ump.discipline_category, ump.first_level_discipline,
 			d.major_intro, d.employment_direction,
 			ps.evaluated_at
-		ORDER BY ps.evaluated_at NULLS FIRST, d.university_id, d.local_major_code
+		ORDER BY
+			-- 头部院校优先，让有限 LLM 预算先覆盖最常被推荐的 (school, major)。
+			CASE COALESCE(up.university_tier, '')
+				WHEN 'top_2'     THEN 1
+				WHEN 'hua_5'     THEN 2
+				WHEN 'c9'        THEN 3
+				WHEN '985_other' THEN 4
+				WHEN '211_double' THEN 5
+				WHEN 'key'       THEN 6
+				ELSE 9
+			END,
+			(COALESCE(up.is_985, false))::int DESC,
+			(COALESCE(up.is_211, false) OR COALESCE(up.is_double_first_class, false))::int DESC,
+			ps.evaluated_at NULLS FIRST,
+			d.university_id,
+			d.local_major_code
 		LIMIT $2
 	`
 	rows, err := s.pool.Query(ctx, query, cutoff, limit)

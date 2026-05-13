@@ -261,10 +261,12 @@ func run() error {
 	}
 
 	server := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:        ":" + cfg.Port,
+		Handler:     r,
+		ReadTimeout: 15 * time.Second,
+		// 10 分钟覆盖 /admin/recommendation/scores/refresh 的最坏批量 (20 行 × 25s)。
+		// 业务接口都远低于这个数（最重的推荐接口 ~400ms），所以全局放宽不影响正常路径。
+		WriteTimeout: 10 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 	}
 

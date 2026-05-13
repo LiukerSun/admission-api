@@ -30,7 +30,7 @@ func NewAnthropicClient(baseURL, apiKey, model string) *AnthropicClient {
 		apiKey:  apiKey,
 		model:   model,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 	}
 }

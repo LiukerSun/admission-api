@@ -10,10 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// refreshHandlerBudget is the overall ceiling we wrap each /admin/recommendation/scores/refresh
-// request in. Gin's WriteTimeout is 15s and the LLM evaluator can take ~6s per row, so we leave
-// a 2s margin so partial results still serialize cleanly even if the batch hits the cap.
-const refreshHandlerBudget = 13 * time.Second
+// refreshHandlerBudget caps the wall-clock for a single refresh HTTP request.
+// 8 minutes covers 20 rows × ~25s = ~500s with some slack. Caller's WriteTimeout
+// (main.go) must be at least this long.
+const refreshHandlerBudget = 8 * time.Minute
 
 type RecommendationScoreHandler struct {
 	web.BaseHandler
