@@ -48,6 +48,17 @@ func (m *mockStore) GrantMembership(ctx context.Context, req GrantRequest) (*Use
 	return args.Get(0).(*UserMembership), args.Get(1).(*Grant), args.Bool(2), args.Error(3)
 }
 
+func (m *mockStore) RevokeMembershipForOrder(ctx context.Context, req RevokeRequest) (*UserMembership, *Grant, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	if args.Get(1) == nil {
+		return args.Get(0).(*UserMembership), nil, args.Error(2)
+	}
+	return args.Get(0).(*UserMembership), args.Get(1).(*Grant), args.Error(2)
+}
+
 func TestListPlansReturnsActivePlans(t *testing.T) {
 	store := new(mockStore)
 	svc := NewService(store)

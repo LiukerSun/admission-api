@@ -2,7 +2,10 @@ package payment
 
 import (
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -147,6 +150,66 @@ func (h *Handler) PayMock(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
 }
 
+// PayAlipay godoc
+// @Summary      支付宝支付（电脑网站支付）
+// @Tags         payment
+// @Produce      json
+// @Security     BearerAuth
+// @Param        order_no path string true "订单号"
+// @Success      200 {object} web.Response{data=AlipayPayResponse}
+// @Failure      400 {object} web.Response
+// @Failure      401 {object} web.Response
+// @Failure      404 {object} web.Response
+// @Router       /api/v1/payment/orders/{order_no}/pay/alipay [post]
+func (h *Handler) PayAlipay(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	resp, err := h.service.PayAlipay(c.Request.Context(), userID, c.Param("order_no"))
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
+}
+
+// AlipayCallback godoc
+// @Summary      支付宝异步通知回调
+// @Tags         payment
+// @Accept       x-www-form-urlencoded
+// @Produce      text/plain
+// @Param        body body string true "支付宝异步通知参数"
+// @Success      200 {string} string "success"
+// @Failure      400 {string} string "fail"
+// @Router       /api/v1/payment/callbacks/alipay [post]
+func (h *Handler) AlipayCallback(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.String(http.StatusBadRequest, "fail")
+		return
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil {
+		c.String(http.StatusBadRequest, "fail")
+		return
+	}
+
+	params := make(map[string]string, len(values))
+	for k := range values {
+		params[k] = values.Get(k)
+	}
+
+	_, err = h.service.ProcessAlipayCallback(c.Request.Context(), params)
+	if err != nil {
+		slog.Error("alipay callback processing failed", "error", err)
+		c.String(http.StatusOK, "fail")
+		return
+	}
+	c.String(http.StatusOK, "success")
+}
+
 // Detect godoc
 // @Summary      主动检测订单支付状态
 // @Tags         payment
@@ -269,6 +332,115 @@ func (h *Handler) AdminRegrantMembership(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
 }
 
+func (h *Handler) RefundOrder(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	var req RefundOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+	resp, err := h.service.RefundOrder(c.Request.Context(), userID, c.Param("order_no"), req)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
+}
+
+func (h *Handler) ListRefunds(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	refunds, err := h.service.ListOrderRefunds(c.Request.Context(), userID, c.Param("order_no"))
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(refunds))
+}
+
+// ApproveRefund 管理员通过退款申请。
+func (h *Handler) ApproveRefund(c *gin.Context) {
+	reviewerID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	var req ReviewRefundRequest
+	// Body 可选：approve 时 review_note 不强制
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+			return
+		}
+		if err := h.validate.Struct(req); err != nil {
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+			return
+		}
+	}
+	resp, err := h.service.ApproveRefund(c.Request.Context(), c.Param("refund_no"), reviewerID, req)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
+}
+
+// RejectRefund 管理员拒绝退款申请，review_note 必填。
+func (h *Handler) RejectRefund(c *gin.Context) {
+	reviewerID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	var req ReviewRefundRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	if req.ReviewNote == "" {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "review_note is required when rejecting")
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+		return
+	}
+	refund, err := h.service.RejectRefund(c.Request.Context(), c.Param("refund_no"), reviewerID, req)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(refund))
+}
+
+// ListPendingRefunds 管理员列出所有待审核退款申请。
+func (h *Handler) ListPendingRefunds(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
+	refunds, total, err := h.service.ListPendingRefunds(c.Request.Context(), page, pageSize)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(map[string]any{
+		"items":     refunds,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	}))
+}
+
 func (h *Handler) writeError(c *gin.Context, err error) {
 	switch {
 	case membership.WritePlanError(&h.BaseHandler, c, err):
@@ -283,6 +455,24 @@ func (h *Handler) writeError(c *gin.Context, err error) {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "payment order expired")
 	case errors.Is(err, ErrIdempotencyConflict):
 		h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "idempotency key conflict")
+	case errors.Is(err, ErrAlipayNotConfigured):
+		h.RespondError(c, http.StatusServiceUnavailable, web.ErrCodeInternal, "alipay is not configured")
+	case errors.Is(err, ErrAlipaySignature):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid alipay signature")
+	case errors.Is(err, ErrChannelMismatch):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "payment channel mismatch")
+	case errors.Is(err, ErrOrderNotRefundable):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "payment order is not refundable")
+	case errors.Is(err, ErrRefundAmountExceeded):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "refund amount exceeds remaining order amount")
+	case errors.Is(err, ErrRefundNotFound):
+		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "refund not found")
+	case errors.Is(err, ErrRefundPendingExists):
+		h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "a pending refund request already exists for this order")
+	case errors.Is(err, ErrRefundNotPendingReview):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "refund is not in pending_review state")
+	case errors.Is(err, ErrRefundReviewNoteMissing):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "review_note is required when rejecting a refund")
 	default:
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
 	}

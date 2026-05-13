@@ -16,12 +16,14 @@ type AliyunConfig struct {
 	Endpoint        string
 	SignName        string
 	TemplateCode    string
+	ParamFormat     string // "json" (default, {"code":"xxx"}) or "direct" (raw code string)
 }
 
 type AliyunClient struct {
 	client       *dysmsapi.Client
 	signName     string
 	templateCode string
+	paramFormat  string
 }
 
 func NewAliyunClient(cfg *AliyunConfig) (Client, error) {
@@ -44,15 +46,23 @@ func NewAliyunClient(cfg *AliyunConfig) (Client, error) {
 		client:       client,
 		signName:     cfg.SignName,
 		templateCode: cfg.TemplateCode,
+		paramFormat:  cfg.ParamFormat,
 	}, nil
 }
 
 func (c *AliyunClient) SendVerificationCode(ctx context.Context, phone, code string) error {
+	var templateParam string
+	if c.paramFormat == "direct" {
+		templateParam = code
+	} else {
+		templateParam = fmt.Sprintf(`{"code":%q}`, code)
+	}
+
 	req := &dysmsapi.SendSmsRequest{
 		PhoneNumbers:  tea.String(phone),
 		SignName:      tea.String(c.signName),
 		TemplateCode:  tea.String(c.templateCode),
-		TemplateParam: tea.String(fmt.Sprintf(`{"code":%q}`, code)),
+		TemplateParam: tea.String(templateParam),
 	}
 
 	resp, err := c.client.SendSmsWithOptions(req, &dara.RuntimeOptions{})

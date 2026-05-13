@@ -1,17 +1,22 @@
 package payment
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 const (
 	ProductTypeMembership = "membership"
 
-	ChannelMock = "mock"
+	ChannelMock   = "mock"
+	ChannelAlipay = "alipay"
 
 	OrderStatusAwaitingPayment = "awaiting_payment"
 	OrderStatusPaid            = "paid"
 	OrderStatusFulfilled       = "fulfilled"
 	OrderStatusClosed          = "closed"
 	OrderStatusFailed          = "failed"
+	OrderStatusRefunded        = "refunded"
 
 	PaymentStatusUnpaid = "unpaid"
 	PaymentStatusPaying = "paying"
@@ -21,12 +26,20 @@ const (
 	EntitlementStatusPending = "pending"
 	EntitlementStatusGranted = "granted"
 	EntitlementStatusFailed  = "failed"
+	EntitlementStatusRevoked = "revoked"
 
 	AttemptStatusCreated = "created"
 	AttemptStatusPending = "pending"
 	AttemptStatusSuccess = "success"
 	AttemptStatusFailed  = "failed"
 	AttemptStatusClosed  = "closed"
+
+	RefundStatusPendingReview = "pending_review"
+	RefundStatusRejected      = "rejected"
+	RefundStatusApproved      = "approved"
+	RefundStatusProcessing    = "processing"
+	RefundStatusSuccess       = "success"
+	RefundStatusFailed        = "failed"
 )
 
 type Order struct {
@@ -78,6 +91,7 @@ type Callback struct {
 
 type CreateOrderRequest struct {
 	PlanCode       string  `json:"plan_code" validate:"required,oneof=monthly quarterly yearly" example:"monthly"`
+	Channel        *string `json:"channel,omitempty" validate:"omitempty,oneof=mock alipay" example:"alipay"`
 	IdempotencyKey *string `json:"idempotency_key,omitempty" validate:"omitempty,max=128" example:"checkout-123"`
 }
 
@@ -134,9 +148,83 @@ type CreateOrderInput struct {
 	DurationDays   int
 	Amount         int
 	Currency       string
+	Channel        string
 	IdempotencyKey *string
 	Now            time.Time
 }
+
+type AlipayPayResponse struct {
+	OrderNo   string    `json:"order_no" example:"MO202605101200000001"`
+	PayURL    string    `json:"pay_url" example:"https://openapi-sandbox.dl.alipaydev.com/gateway.do?..."`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type Refund struct {
+	ID               int64      `json:"id"`
+	PaymentOrderID   int64      `json:"payment_order_id"`
+	RefundNo         string     `json:"refund_no"`
+	OutRequestNo     string     `json:"out_request_no"`
+	Channel          string     `json:"channel"`
+	ChannelRefundNo  *string    `json:"channel_refund_no,omitempty"`
+	RefundAmount     int        `json:"refund_amount"`
+	TotalOrderAmount int        `json:"total_order_amount"`
+	RefundReason     string     `json:"refund_reason"`
+	Status           string     `json:"status"`
+	InitiatedBy      *int64     `json:"initiated_by,omitempty"`
+	ReviewNote       *string    `json:"review_note,omitempty"`
+	ReviewedBy       *int64     `json:"reviewed_by,omitempty"`
+	ReviewedAt       *time.Time `json:"reviewed_at,omitempty"`
+	RefundedAt       *time.Time `json:"refunded_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type CreateRefundInput struct {
+	PaymentOrderID   int64
+	RefundNo         string
+	OutRequestNo     string
+	Channel          string
+	RefundAmount     int
+	TotalOrderAmount int
+	RefundReason     string
+	InitiatedBy      *int64
+}
+
+// RefundOrderRequest 是用户提交退款申请的入参。
+// 申请会进入 pending_review 状态，等待管理员审核。
+type RefundOrderRequest struct {
+	Amount *int   `json:"amount,omitempty" validate:"omitempty,min=1" example:"990"`
+	Reason string `json:"reason" validate:"required,min=2,max=256" example:"用户取消订单"`
+}
+
+type RefundOrderResponse struct {
+	Order        OrderResponse `json:"order"`
+	RefundNo     string        `json:"refund_no" example:"RF202605121200000001"`
+	RefundAmount int           `json:"refund_amount" example:"990"`
+	Status       string        `json:"status" example:"pending_review"`
+}
+
+// ReviewRefundRequest 是管理员对退款申请进行批准/拒绝时的入参。
+// Approve 时 ReviewNote 可选；Reject 时 ReviewNote 必填。
+type ReviewRefundRequest struct {
+	ReviewNote string `json:"review_note,omitempty" validate:"max=512" example:"已核实，准予退款"`
+}
+
+type RefundListResponse struct {
+	Items []*Refund `json:"items"`
+}
+
+var (
+	ErrChannelMismatch         = errors.New("payment order channel does not match")
+	ErrAlipayNotConfigured     = errors.New("alipay is not configured")
+	ErrAlipaySignature         = errors.New("alipay callback signature verification failed")
+	ErrOrderNotRefundable      = errors.New("payment order is not refundable")
+	ErrRefundAmountExceeded    = errors.New("refund amount exceeds remaining order amount")
+	ErrRefundNotFound          = errors.New("refund not found")
+	ErrRefundPendingExists     = errors.New("a pending refund request already exists for this order")
+	ErrRefundNotPendingReview  = errors.New("refund is not in pending_review state")
+	ErrRefundReviewNoteMissing = errors.New("review_note is required when rejecting a refund")
+)
 
 func ToOrderResponse(o *Order, planCode string) OrderResponse {
 	return OrderResponse{

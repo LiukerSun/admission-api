@@ -36,6 +36,7 @@ import (
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
+	"admission-api/internal/platform/alipay"
 	"admission-api/internal/platform/config"
 	"admission-api/internal/platform/db"
 	"admission-api/internal/platform/middleware"
@@ -96,6 +97,7 @@ func run() error {
 			Endpoint:        cfg.AliyunSMSEndpoint,
 			SignName:        cfg.AliyunSMSSignName,
 			TemplateCode:    cfg.AliyunSMSTemplateCode,
+			ParamFormat:     cfg.AliyunSMSTemplateParamFormat,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to initialize aliyun sms client: %w", err)
@@ -114,8 +116,31 @@ func run() error {
 	membershipService := membership.NewService(membershipStore)
 	membershipHandler := membership.NewHandler(membershipService)
 
+	var alipayClient alipay.Client
+	if cfg.AlipayAppID != "" &&
+		(cfg.AlipayAppPrivateKey != "" || cfg.AlipayAppPrivateKeyPath != "") &&
+		cfg.AlipayAppPublicCertPath != "" && cfg.AlipayAlipayPublicCertPath != "" && cfg.AlipayAlipayRootCertPath != "" {
+		var err error
+		alipayClient, err = alipay.NewClient(&alipay.Config{
+			AppID:                cfg.AlipayAppID,
+			AppPrivateKey:        cfg.AlipayAppPrivateKey,
+			AppPrivateKeyPath:    cfg.AlipayAppPrivateKeyPath,
+			AppPublicCertPath:    cfg.AlipayAppPublicCertPath,
+			AlipayPublicCertPath: cfg.AlipayAlipayPublicCertPath,
+			AlipayRootCertPath:   cfg.AlipayAlipayRootCertPath,
+			NotifyURL:            cfg.AlipayNotifyURL,
+			ReturnURL:            cfg.AlipayReturnURL,
+			IsProduction:         !cfg.AlipaySandbox,
+			EncryptKey:           cfg.AlipayEncryptKey,
+			DecryptKey:           cfg.AlipayDecryptKey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to initialize alipay client: %w", err)
+		}
+	}
+
 	paymentStore := payment.NewStore(database.Pool())
-	paymentService := payment.NewService(paymentStore, membershipService)
+	paymentService := payment.NewService(paymentStore, membershipService, alipayClient, cfg.AlipayNotifyURL, cfg.AlipayReturnURL)
 	paymentHandler := payment.NewHandler(paymentService, payment.HandlerOptions{
 		AllowAnonymousMockCallback: cfg.Env == "development",
 		MockCallbackSecret:         cfg.MockCallbackSecret,
@@ -180,6 +205,7 @@ func run() error {
 		api.POST("/auth/refresh", userHandler.Refresh)
 
 		api.POST("/payment/callbacks/mock", paymentHandler.MockCallback)
+		api.POST("/payment/callbacks/alipay", paymentHandler.AlipayCallback)
 		api.GET("/admission/dictionaries", dictionaryHandler.ListDictionaries)
 		api.GET("/admission/major-catalog/latest-year", majorCatalogHandler.LatestCatalogYear)
 		api.GET("/admission/standard-majors", majorCatalogHandler.ListStandardMajors)
@@ -216,7 +242,10 @@ func run() error {
 		authorized.GET("/payment/orders", paymentHandler.ListMyOrders)
 		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)
 		authorized.POST("/payment/orders/:order_no/pay", paymentHandler.PayMock)
+		authorized.POST("/payment/orders/:order_no/pay/alipay", paymentHandler.PayAlipay)
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
+		authorized.POST("/payment/orders/:order_no/refund", paymentHandler.RefundOrder)
+		authorized.GET("/payment/orders/:order_no/refunds", paymentHandler.ListRefunds)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireAdmin())
@@ -233,6 +262,11 @@ func run() error {
 		adminRoutes.POST("/payment/orders/:order_no/close", paymentHandler.AdminCloseOrder)
 		adminRoutes.POST("/payment/orders/:order_no/redetect", paymentHandler.AdminRedetect)
 		adminRoutes.POST("/payment/orders/:order_no/regrant-membership", paymentHandler.AdminRegrantMembership)
+
+		// 退款审批
+		adminRoutes.GET("/payment/refunds/pending", paymentHandler.ListPendingRefunds)
+		adminRoutes.POST("/payment/refunds/:refund_no/approve", paymentHandler.ApproveRefund)
+		adminRoutes.POST("/payment/refunds/:refund_no/reject", paymentHandler.RejectRefund)
 	}
 
 	server := &http.Server{

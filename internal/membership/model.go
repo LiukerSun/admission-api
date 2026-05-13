@@ -12,10 +12,12 @@ const (
 	MembershipStatusInactive = "inactive"
 	MembershipStatusActive   = "active"
 	MembershipStatusExpired  = "expired"
+	MembershipStatusRefunded = "refunded"
 
 	GrantActionActivate = "activate"
 	GrantActionRenew    = "renew"
 	GrantActionRestore  = "restore"
+	GrantActionRevoke   = "revoke"
 )
 
 // Plan is a purchasable premium membership offering.
@@ -64,6 +66,14 @@ type GrantRequest struct {
 	UserID         int64
 	PaymentOrderID int64
 	DurationDays   int
+	IdempotencyKey string
+	Now            time.Time
+}
+
+// RevokeRequest contains context needed to revoke membership granted by a paid order.
+type RevokeRequest struct {
+	UserID         int64
+	PaymentOrderID int64
 	IdempotencyKey string
 	Now            time.Time
 }

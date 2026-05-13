@@ -61,6 +61,38 @@ func (s stubPaymentService) RegrantMembership(ctx context.Context, orderNo strin
 	panic("unexpected call")
 }
 
+func (s stubPaymentService) PayAlipay(ctx context.Context, userID int64, orderNo string) (*AlipayPayResponse, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) ProcessAlipayCallback(ctx context.Context, params map[string]string) (*OrderResponse, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) RefundOrder(ctx context.Context, userID int64, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) ApproveRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*RefundOrderResponse, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) RejectRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*Refund, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) ListPendingRefunds(ctx context.Context, page, pageSize int) ([]*Refund, int64, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) QueryRefund(ctx context.Context, orderNo, refundNo string) (*Refund, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) ListOrderRefunds(ctx context.Context, userID int64, orderNo string) ([]*Refund, error) {
+	panic("unexpected call")
+}
+
 func TestMockCallbackRejectsUnauthorizedRequests(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
