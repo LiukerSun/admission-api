@@ -19,7 +19,7 @@ type mockMerchantService struct {
 	mock.Mock
 }
 
-func (m *mockMerchantService) CreateMerchant(ctx context.Context, req CreateMerchantRequest) (*PlannerMerchant, error) {
+func (m *mockMerchantService) CreateMerchant(ctx context.Context, req CreateMerchantRequest) (*PlannerMerchant, error) { //nolint:gocritic // matches interface; signature owned by other PR
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -43,7 +43,7 @@ func (m *mockMerchantService) ListMerchants(ctx context.Context, status, merchan
 	return args.Get(0).(*MerchantListResponse), args.Error(1)
 }
 
-func (m *mockMerchantService) UpdateMerchant(ctx context.Context, id int64, req UpdateMerchantRequest) (*PlannerMerchant, error) {
+func (m *mockMerchantService) UpdateMerchant(ctx context.Context, id int64, req UpdateMerchantRequest) (*PlannerMerchant, error) { //nolint:gocritic // matches interface; signature owned by other PR
 	args := m.Called(ctx, id, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

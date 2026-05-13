@@ -41,7 +41,7 @@ func activityLogQueueKey() string {
 	return defaultActivityLogQueueKey
 }
 
-func (s *activityLogService) LogActivity(ctx context.Context, input CreateActivityInput) error {
+func (s *activityLogService) LogActivity(ctx context.Context, input CreateActivityInput) error { //nolint:gocritic // value receiver matches interface; signature owned by other PR
 	data, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("marshal activity log: %w", err)

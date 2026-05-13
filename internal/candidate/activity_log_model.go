@@ -4,14 +4,14 @@ import "time"
 
 // ActivityLog represents a candidate activity log entry.
 type ActivityLog struct {
-	ID           int64      `db:"id" json:"id"`
-	UserID       int64      `db:"user_id" json:"user_id"`
-	ActivityType string     `db:"activity_type" json:"activity_type"`
-	TargetType   *string    `db:"target_type" json:"target_type,omitempty"`
-	TargetID     *int64     `db:"target_id" json:"target_id,omitempty"`
-	Metadata     any        `db:"metadata" json:"metadata,omitempty"`
-	IPAddress    *string    `db:"ip_address" json:"ip_address,omitempty"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	ID           int64     `db:"id" json:"id"`
+	UserID       int64     `db:"user_id" json:"user_id"`
+	ActivityType string    `db:"activity_type" json:"activity_type"`
+	TargetType   *string   `db:"target_type" json:"target_type,omitempty"`
+	TargetID     *int64    `db:"target_id" json:"target_id,omitempty"`
+	Metadata     any       `db:"metadata" json:"metadata,omitempty"`
+	IPAddress    *string   `db:"ip_address" json:"ip_address,omitempty"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 }
 
 // CreateActivityInput is the input for creating an activity log.

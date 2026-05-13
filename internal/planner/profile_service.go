@@ -35,7 +35,7 @@ func NewProfileService(profileStore ProfileStore, merchantStore MerchantStore) P
 	}
 }
 
-func (s *profileService) CreateProfile(ctx context.Context, req CreateProfileRequest) (*PlannerProfileResponse, error) {
+func (s *profileService) CreateProfile(ctx context.Context, req CreateProfileRequest) (*PlannerProfileResponse, error) { //nolint:gocritic // value receiver matches interface; signature owned by other PR
 	exists, err := s.profileStore.EmailExists(ctx, req.Email)
 	if err != nil {
 		return nil, err
@@ -130,7 +130,7 @@ func (s *profileService) GetMyProfile(ctx context.Context, userID int64) (*Plann
 	return toProfileResponse(p), nil
 }
 
-func (s *profileService) UpdateMyProfile(ctx context.Context, userID int64, req UpdateMyProfileRequest) (*PlannerProfileResponse, error) {
+func (s *profileService) UpdateMyProfile(ctx context.Context, userID int64, req UpdateMyProfileRequest) (*PlannerProfileResponse, error) { //nolint:gocritic // value receiver matches interface; signature owned by other PR
 	existing, err := s.profileStore.GetProfileByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

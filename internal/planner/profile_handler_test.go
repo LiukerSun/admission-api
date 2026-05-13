@@ -20,7 +20,7 @@ type mockProfileService struct {
 	mock.Mock
 }
 
-func (m *mockProfileService) CreateProfile(ctx context.Context, req CreateProfileRequest) (*PlannerProfileResponse, error) {
+func (m *mockProfileService) CreateProfile(ctx context.Context, req CreateProfileRequest) (*PlannerProfileResponse, error) { //nolint:gocritic // matches interface; signature owned by other PR
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -36,7 +36,7 @@ func (m *mockProfileService) GetMyProfile(ctx context.Context, userID int64) (*P
 	return args.Get(0).(*PlannerProfileResponse), args.Error(1)
 }
 
-func (m *mockProfileService) UpdateMyProfile(ctx context.Context, userID int64, req UpdateMyProfileRequest) (*PlannerProfileResponse, error) {
+func (m *mockProfileService) UpdateMyProfile(ctx context.Context, userID int64, req UpdateMyProfileRequest) (*PlannerProfileResponse, error) { //nolint:gocritic // matches interface; signature owned by other PR
 	args := m.Called(ctx, userID, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

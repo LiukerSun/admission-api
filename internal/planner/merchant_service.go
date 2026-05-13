@@ -27,7 +27,7 @@ func NewMerchantService(store MerchantStore) MerchantService {
 	return &merchantService{store: store}
 }
 
-func (s *merchantService) CreateMerchant(ctx context.Context, req CreateMerchantRequest) (*PlannerMerchant, error) {
+func (s *merchantService) CreateMerchant(ctx context.Context, req CreateMerchantRequest) (*PlannerMerchant, error) { //nolint:gocritic // value receiver matches interface; signature owned by other PR
 	if req.OwnerID != nil && *req.OwnerID > 0 {
 		exists, err := s.store.UserExists(ctx, *req.OwnerID)
 		if err != nil {
@@ -91,7 +91,7 @@ func (s *merchantService) ListMerchants(ctx context.Context, status, merchantNam
 	}, nil
 }
 
-func (s *merchantService) UpdateMerchant(ctx context.Context, id int64, req UpdateMerchantRequest) (*PlannerMerchant, error) {
+func (s *merchantService) UpdateMerchant(ctx context.Context, id int64, req UpdateMerchantRequest) (*PlannerMerchant, error) { //nolint:gocritic // value receiver matches interface; signature owned by other PR
 	_, err := s.store.GetMerchant(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

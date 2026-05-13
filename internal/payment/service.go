@@ -183,11 +183,11 @@ func (s *service) PayAlipay(ctx context.Context, userID int64, orderNo string) (
 	}
 
 	requestPayload, _ := json.Marshal(map[string]string{
-		"out_trade_no":  req.OutTradeNo,
-		"subject":       req.Subject,
-		"total_amount":  req.TotalAmount,
-		"product_code":  "FAST_INSTANT_TRADE_PAY",
-		"attempt_no":    strconv.Itoa(attempt.AttemptNo),
+		"out_trade_no": req.OutTradeNo,
+		"subject":      req.Subject,
+		"total_amount": req.TotalAmount,
+		"product_code": "FAST_INSTANT_TRADE_PAY",
+		"attempt_no":   strconv.Itoa(attempt.AttemptNo),
 	})
 	_ = s.store.UpdateAttemptRequestPayload(ctx, attempt.ID, requestPayload)
 
@@ -451,17 +451,18 @@ func (s *service) Detect(ctx context.Context, userID int64, orderNo string) (*Or
 
 	if s.alipayClient != nil && (o.OrderStatus == OrderStatusAwaitingPayment || o.PaymentStatus == PaymentStatusUnpaid || o.PaymentStatus == PaymentStatusPaying) {
 		rsp, err := s.alipayClient.TradeQuery(&alipay.TradeQueryRequest{OutTradeNo: o.OrderNo})
-		if err != nil {
+		switch {
+		case err != nil:
 			slog.Warn("alipay trade query failed during detect", "order_no", orderNo, "error", err)
-		} else if rsp.TradeStatus == "WAIT_BUYER_PAY" {
+		case rsp.TradeStatus == "WAIT_BUYER_PAY":
 			// still waiting, nothing to do
-		} else if rsp.TradeStatus == "TRADE_CLOSED" {
+		case rsp.TradeStatus == "TRADE_CLOSED":
 			_, _ = s.store.CloseOrder(ctx, orderNo)
 			o, planCode, err = s.store.GetOrderByNo(ctx, orderNo)
 			if err != nil {
 				return nil, err
 			}
-		} else if rsp.TradeStatus == "TRADE_SUCCESS" || rsp.TradeStatus == "TRADE_FINISHED" {
+		case rsp.TradeStatus == "TRADE_SUCCESS" || rsp.TradeStatus == "TRADE_FINISHED":
 			existingAttempt, tradeErr := s.store.GetAttemptByChannelTrade(ctx, ChannelAlipay, rsp.TradeNo)
 			if tradeErr != nil && !errors.Is(tradeErr, ErrOrderNotFound) {
 				return nil, tradeErr
@@ -845,13 +846,14 @@ func (s *service) QueryRefund(ctx context.Context, orderNo, refundNo string) (*R
 		return nil, fmt.Errorf("alipay refund query failed: %w", err)
 	}
 
-	if rsp.RefundStatus == "REFUND_SUCCESS" {
+	switch rsp.RefundStatus {
+	case "REFUND_SUCCESS":
 		now := time.Now()
 		refund, err = s.store.UpdateRefundSuccess(ctx, refund.ID, rsp.TradeNo, now)
 		if err != nil {
 			return nil, err
 		}
-	} else if rsp.RefundStatus == "REFUND_FAIL" {
+	case "REFUND_FAIL":
 		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
 	}
 

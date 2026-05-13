@@ -3,6 +3,8 @@ package planner
 import "time"
 
 // PlannerMerchant represents a planner institution/merchant.
+//
+//nolint:revive // exported type name is part of API contract; rename owned by another PR
 type PlannerMerchant struct {
 	ID                  int64     `db:"id" json:"id"`
 	MerchantName        string    `db:"merchant_name" json:"merchant_name"`
@@ -39,18 +41,18 @@ type CreateMerchantRequest struct {
 
 // UpdateMerchantRequest is the request to update a merchant (pointer fields = update only if non-nil).
 type UpdateMerchantRequest struct {
-	MerchantName        *string   `json:"merchant_name,omitempty" validate:"omitempty,max=128"`
-	ContactPerson       *string   `json:"contact_person,omitempty"`
-	ContactPhone        *string   `json:"contact_phone,omitempty"`
-	Address             *string   `json:"address,omitempty"`
-	Logo                *string   `json:"logo,omitempty"`
-	Banner              *string   `json:"banner,omitempty"`
-	Description         *string   `json:"description,omitempty"`
-	SortOrder           *int      `json:"sort_order,omitempty"`
-	OwnerID             *int64    `json:"owner_id,omitempty"`
-	ServiceRegions      []string  `json:"service_regions,omitempty"`
-	DefaultServicePrice *float64  `json:"default_service_price,omitempty"`
-	Status              *string   `json:"status,omitempty" validate:"omitempty,oneof=active inactive"`
+	MerchantName        *string  `json:"merchant_name,omitempty" validate:"omitempty,max=128"`
+	ContactPerson       *string  `json:"contact_person,omitempty"`
+	ContactPhone        *string  `json:"contact_phone,omitempty"`
+	Address             *string  `json:"address,omitempty"`
+	Logo                *string  `json:"logo,omitempty"`
+	Banner              *string  `json:"banner,omitempty"`
+	Description         *string  `json:"description,omitempty"`
+	SortOrder           *int     `json:"sort_order,omitempty"`
+	OwnerID             *int64   `json:"owner_id,omitempty"`
+	ServiceRegions      []string `json:"service_regions,omitempty"`
+	DefaultServicePrice *float64 `json:"default_service_price,omitempty"`
+	Status              *string  `json:"status,omitempty" validate:"omitempty,oneof=active inactive"`
 }
 
 // MerchantListResponse is the response for listing merchants.

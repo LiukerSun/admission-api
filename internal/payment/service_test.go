@@ -126,7 +126,7 @@ func (m *mockPaymentStore) ListCallbacks(ctx context.Context, channel string, ch
 	return args.Get(0).([]*Callback), args.Error(1)
 }
 
-func (m *mockPaymentStore) SaveAlipayCallback(ctx context.Context, callbackID string, channelTradeNo string, payload []byte) (*Callback, bool, error) {
+func (m *mockPaymentStore) SaveAlipayCallback(ctx context.Context, callbackID, channelTradeNo string, payload []byte) (*Callback, bool, error) {
 	panic("not implemented")
 }
 

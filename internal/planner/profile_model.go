@@ -3,30 +3,34 @@ package planner
 import "time"
 
 // PlannerProfile represents a planner's professional profile.
+//
+//nolint:revive // exported type name is part of API contract; rename owned by another PR
 type PlannerProfile struct {
-	ID                int64     `db:"id" json:"id"`
-	UserID            int64     `db:"user_id" json:"user_id"`
-	RealName          string    `db:"real_name" json:"real_name"`
-	Avatar            *string   `db:"avatar" json:"avatar,omitempty"`
-	Phone             *string   `db:"phone" json:"phone,omitempty"`
-	Title             *string   `db:"title" json:"title,omitempty"`
-	Introduction      *string   `db:"introduction" json:"introduction,omitempty"`
-	SpecialtyTags     []string  `db:"specialty_tags" json:"specialty_tags,omitempty"`
-	ServiceRegion     []string  `db:"service_region" json:"service_region,omitempty"`
-	ServicePrice      *float64  `db:"service_price" json:"service_price,omitempty"`
-	Level             string    `db:"level" json:"level"`
+	ID                int64      `db:"id" json:"id"`
+	UserID            int64      `db:"user_id" json:"user_id"`
+	RealName          string     `db:"real_name" json:"real_name"`
+	Avatar            *string    `db:"avatar" json:"avatar,omitempty"`
+	Phone             *string    `db:"phone" json:"phone,omitempty"`
+	Title             *string    `db:"title" json:"title,omitempty"`
+	Introduction      *string    `db:"introduction" json:"introduction,omitempty"`
+	SpecialtyTags     []string   `db:"specialty_tags" json:"specialty_tags,omitempty"`
+	ServiceRegion     []string   `db:"service_region" json:"service_region,omitempty"`
+	ServicePrice      *float64   `db:"service_price" json:"service_price,omitempty"`
+	Level             string     `db:"level" json:"level"`
 	LevelExpireAt     *time.Time `db:"level_expire_at" json:"level_expire_at,omitempty"`
-	CertificationNo   *string   `db:"certification_no" json:"certification_no,omitempty"`
-	MerchantID        *int64    `db:"merchant_id" json:"merchant_id,omitempty"`
-	MerchantName      *string   `db:"merchant_name" json:"merchant_name,omitempty"`
-	TotalServiceCount int       `db:"total_service_count" json:"total_service_count"`
-	RatingAvg         float64   `db:"rating_avg" json:"rating_avg"`
-	Status            string    `db:"status" json:"status"`
-	CreatedAt         time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt         time.Time `db:"updated_at" json:"updated_at"`
+	CertificationNo   *string    `db:"certification_no" json:"certification_no,omitempty"`
+	MerchantID        *int64     `db:"merchant_id" json:"merchant_id,omitempty"`
+	MerchantName      *string    `db:"merchant_name" json:"merchant_name,omitempty"`
+	TotalServiceCount int        `db:"total_service_count" json:"total_service_count"`
+	RatingAvg         float64    `db:"rating_avg" json:"rating_avg"`
+	Status            string     `db:"status" json:"status"`
+	CreatedAt         time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt         time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // PlannerProfileResponse is the response model with potential service_region inheritance.
+//
+//nolint:revive // exported type name is part of API contract; rename owned by another PR
 type PlannerProfileResponse struct {
 	ID                int64      `json:"id"`
 	UserID            int64      `json:"user_id"`

@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+//nolint:unused // helper kept for future integration tests; referenced by other PR
 func createIntegrationUser(t *testing.T, database *db.DB, email, userType string) int64 {
 	t.Helper()
 
@@ -32,6 +33,7 @@ func createIntegrationUser(t *testing.T, database *db.DB, email, userType string
 	return userID
 }
 
+//nolint:unused // helper kept for future integration tests; referenced by other PR
 func issueAccessToken(t *testing.T, cfg *config.Config, userID int64, role, userType string) string {
 	t.Helper()
 

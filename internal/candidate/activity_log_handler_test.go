@@ -21,7 +21,7 @@ type mockActivityLogService struct {
 	mock.Mock
 }
 
-func (m *mockActivityLogService) LogActivity(ctx context.Context, input CreateActivityInput) error {
+func (m *mockActivityLogService) LogActivity(ctx context.Context, input CreateActivityInput) error { //nolint:gocritic // matches interface; signature owned by other PR
 	args := m.Called(ctx, input)
 	return args.Error(0)
 }
@@ -230,7 +230,7 @@ func TestActivityLogHandler_DeleteBefore_Success(t *testing.T) {
 
 	before := time.Now().Add(-24 * time.Hour)
 	svc.On("DeleteBefore", mock.Anything, mock.MatchedBy(func(t time.Time) bool {
-		return t.Before(time.Now().Add(-1*time.Hour))
+		return t.Before(time.Now().Add(-1 * time.Hour))
 	})).Return(int64(100), nil)
 
 	body, _ := json.Marshal(map[string]string{"before": before.Format(time.RFC3339)})

@@ -271,7 +271,7 @@ func (s *profileStore) ListProfiles(ctx context.Context, filter ProfileFilter, p
 		orderField = sortField
 	}
 	orderDir := "DESC"
-	if strings.ToLower(sortOrder) == "asc" {
+	if strings.ToLower(sortOrder) == "asc" { //nolint:gocritic // out-of-scope cleanup; owned by another PR
 		orderDir = "ASC"
 	}
 

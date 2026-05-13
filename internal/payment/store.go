@@ -39,7 +39,7 @@ type Store interface {
 	MarkOrderEntitlementFailed(ctx context.Context, orderID int64) error
 	MarkOrderRefunded(ctx context.Context, orderID int64) (*Order, error)
 	SaveCallback(ctx context.Context, req MockCallbackRequest, payload []byte) (*Callback, bool, error)
-	SaveAlipayCallback(ctx context.Context, callbackID string, channelTradeNo string, payload []byte) (*Callback, bool, error)
+	SaveAlipayCallback(ctx context.Context, callbackID, channelTradeNo string, payload []byte) (*Callback, bool, error)
 	MarkCallbackProcessed(ctx context.Context, callbackID int64, processErr *string) error
 	GetAttemptByChannelTrade(ctx context.Context, channel, channelTradeNo string) (*Attempt, error)
 	ListAttempts(ctx context.Context, orderID int64) ([]*Attempt, error)
@@ -643,7 +643,7 @@ func (s *store) orderExistsByNo(ctx context.Context, orderNo string) (bool, erro
 	return exists, nil
 }
 
-func (s *store) SaveAlipayCallback(ctx context.Context, callbackID string, channelTradeNo string, payload []byte) (*Callback, bool, error) {
+func (s *store) SaveAlipayCallback(ctx context.Context, callbackID, channelTradeNo string, payload []byte) (*Callback, bool, error) {
 	cb := Callback{}
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO payment_callbacks (channel, callback_id, channel_trade_no, payload)
@@ -780,8 +780,8 @@ func (s *store) GetTotalRefundedAmount(ctx context.Context, orderID int64) (int,
 
 // CreateRefundRequest 写入一条 status='pending_review' 的退款申请。
 // 通过 payment_orders + payment_refunds 双重锁保证并发安全：
-//   1. SELECT FOR UPDATE 锁住订单行，阻止并发申请同时通过余额检查
-//   2. uq_payment_refunds_pending_per_order 索引保证同一订单只能有一条 pending_review
+//  1. SELECT FOR UPDATE 锁住订单行，阻止并发申请同时通过余额检查
+//  2. uq_payment_refunds_pending_per_order 索引保证同一订单只能有一条 pending_review
 func (s *store) CreateRefundRequest(ctx context.Context, input *CreateRefundInput) (*Refund, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

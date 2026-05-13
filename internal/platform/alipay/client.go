@@ -18,11 +18,11 @@ type RefundRequest struct {
 }
 
 type RefundResponse struct {
-	FundChange  string
-	RefundFee   string
-	SendBackFee string
-	TradeNo     string
-	OutTradeNo  string
+	FundChange   string
+	RefundFee    string
+	SendBackFee  string
+	TradeNo      string
+	OutTradeNo   string
 	OutRequestNo string
 }
 
@@ -48,14 +48,14 @@ type PagePayRequest struct {
 
 type TradeQueryRequest struct {
 	OutTradeNo string
-	TradeNo   string
+	TradeNo    string
 }
 
 type TradeQueryResponse struct {
-	TradeNo      string
-	OutTradeNo   string
-	TradeStatus  string
-	TotalAmount  string
+	TradeNo       string
+	OutTradeNo    string
+	TradeStatus   string
+	TotalAmount   string
 	ReceiptAmount string
 }
 
@@ -149,10 +149,10 @@ func (c *alipayClient) TradeQuery(req *TradeQueryRequest) (*TradeQueryResponse, 
 		return nil, fmt.Errorf("alipay trade query: %w", err)
 	}
 	return &TradeQueryResponse{
-		TradeNo:      rsp.TradeNo,
-		OutTradeNo:   rsp.OutTradeNo,
-		TradeStatus:  string(rsp.TradeStatus),
-		TotalAmount:  rsp.TotalAmount,
+		TradeNo:       rsp.TradeNo,
+		OutTradeNo:    rsp.OutTradeNo,
+		TradeStatus:   string(rsp.TradeStatus),
+		TotalAmount:   rsp.TotalAmount,
 		ReceiptAmount: rsp.ReceiptAmount,
 	}, nil
 }
