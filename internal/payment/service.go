@@ -31,9 +31,17 @@ type Service interface {
 	CloseAdminOrder(ctx context.Context, orderNo string) (*OrderResponse, error)
 	RedetectAdmin(ctx context.Context, orderNo string) (*OrderResponse, error)
 	RegrantMembership(ctx context.Context, orderNo string) (*OrderResponse, error)
+	// RefundOrder 由已认证用户调用，仅创建 pending_review 退款申请，不立即调用支付宝。
 	RefundOrder(ctx context.Context, userID int64, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error)
-	AdminRefundOrder(ctx context.Context, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error)
+	// ApproveRefund 由管理员调用，把 pending_review 退款转为执行：调用支付宝退款 API，成功后撤销会员、更新订单状态。
+	ApproveRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*RefundOrderResponse, error)
+	// RejectRefund 由管理员调用，把 pending_review 退款标记为 rejected，review_note 必填。
+	RejectRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*Refund, error)
+	// ListPendingRefunds 列出所有等待审核的退款申请，供管理后台使用。
+	ListPendingRefunds(ctx context.Context, page, pageSize int) ([]*Refund, int64, error)
+	// QueryRefund 主动查询某笔退款的最新状态（包含向支付宝查询 processing 退款）。
 	QueryRefund(ctx context.Context, orderNo, refundNo string) (*Refund, error)
+	// ListOrderRefunds 列出某笔订单所有退款记录（用户自查）。
 	ListOrderRefunds(ctx context.Context, userID int64, orderNo string) ([]*Refund, error)
 }
 
@@ -641,6 +649,8 @@ func normalizedPageSize(pageSize int) int {
 	return pageSize
 }
 
+// RefundOrder 由用户调用：提交退款申请，进入 pending_review 状态等待管理员审核。
+// 不会立即向支付宝发起退款。
 func (s *service) RefundOrder(ctx context.Context, userID int64, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error) {
 	o, _, err := s.store.GetOrderForUser(ctx, userID, orderNo)
 	if err != nil {
@@ -649,95 +659,37 @@ func (s *service) RefundOrder(ctx context.Context, userID int64, orderNo string,
 	if o.PaymentChannel != ChannelAlipay {
 		return nil, ErrChannelMismatch
 	}
-	refundAmount := o.Amount
-	if req.Amount != nil && *req.Amount > 0 {
-		refundAmount = *req.Amount
-	}
-	return s.processRefund(ctx, o, refundAmount, req.Reason, userID)
-}
-
-func (s *service) AdminRefundOrder(ctx context.Context, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error) {
-	o, _, err := s.store.GetOrderByNo(ctx, orderNo)
-	if err != nil {
-		return nil, err
-	}
-	if o.PaymentChannel != ChannelAlipay {
-		return nil, ErrChannelMismatch
-	}
-	refundAmount := o.Amount
-	if req.Amount != nil && *req.Amount > 0 {
-		refundAmount = *req.Amount
-	}
-	return s.processRefund(ctx, o, refundAmount, req.Reason, 0)
-}
-
-func (s *service) processRefund(ctx context.Context, o *Order, refundAmount int, reason string, initiatedBy int64) (*RefundOrderResponse, error) {
-	if s.alipayClient == nil {
-		return nil, ErrAlipayNotConfigured
-	}
 	if o.OrderStatus != OrderStatusPaid && o.OrderStatus != OrderStatusFulfilled {
 		return nil, ErrOrderNotRefundable
 	}
 
-	totalRefunded, err := s.store.GetTotalRefundedAmount(ctx, o.ID)
-	if err != nil {
-		slog.Error("processRefund: get total refunded amount failed", "order_no", o.OrderNo, "error", err)
-		return nil, err
+	refundAmount := o.Amount
+	if req.Amount != nil && *req.Amount > 0 {
+		refundAmount = *req.Amount
 	}
-	remaining := o.Amount - totalRefunded
-	if remaining <= 0 {
-		slog.Warn("processRefund: no remaining amount to refund", "order_no", o.OrderNo, "remaining", remaining)
-		return nil, ErrOrderNotRefundable
-	}
-	if refundAmount > remaining {
-		slog.Info("processRefund: capping refund to remaining amount", "order_no", o.OrderNo, "requested", refundAmount, "remaining", remaining)
-		refundAmount = remaining
+	if refundAmount > o.Amount {
+		return nil, ErrRefundAmountExceeded
 	}
 
-	now := time.Now()
-	refundNo, err := generateRefundNo(now)
+	refundNo, err := generateRefundNo(time.Now())
 	if err != nil {
-		slog.Error("processRefund: generate refund no failed", "order_no", o.OrderNo, "error", err)
+		slog.Error("RefundOrder: generate refund no failed", "order_no", o.OrderNo, "error", err)
 		return nil, err
 	}
 
-	refund, err := s.store.CreateRefund(ctx, &CreateRefundInput{
+	uid := userID
+	refund, err := s.store.CreateRefundRequest(ctx, &CreateRefundInput{
 		PaymentOrderID:   o.ID,
 		RefundNo:         refundNo,
 		OutRequestNo:     refundNo,
 		Channel:          ChannelAlipay,
 		RefundAmount:     refundAmount,
 		TotalOrderAmount: o.Amount,
-		RefundReason:     reason,
-		InitiatedBy:      initiatedBy,
+		RefundReason:     req.Reason,
+		InitiatedBy:      &uid,
 	})
 	if err != nil {
-		slog.Error("processRefund: create refund record failed", "order_no", o.OrderNo, "refund_no", refundNo, "error", err)
 		return nil, err
-	}
-
-	rsp, err := s.alipayClient.Refund(&alipay.RefundRequest{
-		OutTradeNo:   o.OrderNo,
-		RefundAmount: formatAmount(refundAmount),
-		RefundReason: reason,
-		OutRequestNo: refundNo,
-	})
-	if err != nil {
-		slog.Error("processRefund: alipay refund API call failed", "order_no", o.OrderNo, "refund_no", refundNo, "error", err)
-		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
-		return nil, fmt.Errorf("alipay refund failed: %w", err)
-	}
-
-	if rsp.FundChange == "Y" {
-		refund, err = s.store.UpdateRefundSuccess(ctx, refund.ID, rsp.TradeNo, now)
-		if err != nil {
-			slog.Error("processRefund: update refund success in DB failed", "order_no", o.OrderNo, "refund_no", refundNo, "trade_no", rsp.TradeNo, "error", err)
-			return nil, err
-		}
-	} else {
-		slog.Warn("processRefund: alipay refund returned fund_change=N", "order_no", o.OrderNo, "refund_no", refundNo, "fund_change", rsp.FundChange)
-		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
-		return nil, fmt.Errorf("alipay refund fund_change not Y: %s", rsp.FundChange)
 	}
 
 	return &RefundOrderResponse{
@@ -746,6 +698,125 @@ func (s *service) processRefund(ctx context.Context, o *Order, refundAmount int,
 		RefundAmount: refund.RefundAmount,
 		Status:       refund.Status,
 	}, nil
+}
+
+// ApproveRefund 管理员审批通过：
+//  1. 把 pending_review 改为 approved（事务+行锁，幂等校验）
+//  2. 调用支付宝退款 API
+//  3. 成功后写 success；若是全额退款且会员还由该订单激活，撤销会员并把订单标记为 refunded
+//
+// 退款审批失败时（支付宝错误），把 refund 回滚到 failed 而非 rejected，
+// 让管理员后续可以查问题再重试（重新发起新申请）。
+func (s *service) ApproveRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*RefundOrderResponse, error) {
+	if s.alipayClient == nil {
+		return nil, ErrAlipayNotConfigured
+	}
+
+	refund, err := s.store.GetRefundByNo(ctx, refundNo)
+	if err != nil {
+		return nil, err
+	}
+	if refund.Status != RefundStatusPendingReview {
+		return nil, ErrRefundNotPendingReview
+	}
+
+	order, _, err := s.store.GetOrderByID(ctx, refund.PaymentOrderID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	var notePtr *string
+	if req.ReviewNote != "" {
+		notePtr = &req.ReviewNote
+	}
+
+	if _, err := s.store.MarkRefundApproved(ctx, refund.ID, reviewerID, notePtr, now); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.store.MarkRefundProcessing(ctx, refund.ID); err != nil {
+		slog.Error("ApproveRefund: mark processing failed", "refund_no", refundNo, "error", err)
+		return nil, err
+	}
+
+	rsp, err := s.alipayClient.Refund(&alipay.RefundRequest{
+		OutTradeNo:   order.OrderNo,
+		RefundAmount: formatAmount(refund.RefundAmount),
+		RefundReason: refund.RefundReason,
+		OutRequestNo: refund.OutRequestNo,
+	})
+	if err != nil {
+		slog.Error("ApproveRefund: alipay refund call failed", "refund_no", refundNo, "error", err)
+		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
+		return nil, fmt.Errorf("alipay refund failed: %w", err)
+	}
+	if rsp.FundChange != "Y" {
+		slog.Warn("ApproveRefund: alipay refund returned fund_change!=Y",
+			"refund_no", refundNo, "fund_change", rsp.FundChange)
+		_ = s.store.UpdateRefundFailed(ctx, refund.ID)
+		return nil, fmt.Errorf("alipay refund fund_change not Y: %s", rsp.FundChange)
+	}
+
+	updated, err := s.store.UpdateRefundSuccess(ctx, refund.ID, rsp.TradeNo, now)
+	if err != nil {
+		slog.Error("ApproveRefund: update refund success failed", "refund_no", refundNo, "error", err)
+		return nil, err
+	}
+
+	// 仅当全额退款时联动撤销会员与更新订单状态
+	if updated.RefundAmount == order.Amount {
+		s.finalizeFullRefund(ctx, order, refundNo)
+	}
+
+	finalOrder, _, getErr := s.store.GetOrderByID(ctx, order.ID)
+	if getErr != nil {
+		finalOrder = order
+	}
+
+	return &RefundOrderResponse{
+		Order:        ToOrderResponse(finalOrder, ""),
+		RefundNo:     updated.RefundNo,
+		RefundAmount: updated.RefundAmount,
+		Status:       updated.Status,
+	}, nil
+}
+
+// finalizeFullRefund 在全额退款成功后联动撤销会员、更新订单状态。
+// 任何一步失败仅记录日志而不阻塞主流程——资金已经退给用户，必须保证响应能返回。
+// 数据不一致由后续人工修复或定时校对脚本修正。
+func (s *service) finalizeFullRefund(ctx context.Context, order *Order, refundNo string) {
+	if _, _, err := s.membershipService.RevokeFromOrder(ctx, membership.RevokeRequest{
+		UserID:         order.UserID,
+		PaymentOrderID: order.ID,
+		IdempotencyKey: fmt.Sprintf("refund-revoke-%s", refundNo),
+	}); err != nil {
+		slog.Error("finalizeFullRefund: revoke membership failed",
+			"order_no", order.OrderNo, "refund_no", refundNo, "error", err)
+	}
+	if _, err := s.store.MarkOrderRefunded(ctx, order.ID); err != nil {
+		slog.Error("finalizeFullRefund: mark order refunded failed",
+			"order_no", order.OrderNo, "refund_no", refundNo, "error", err)
+	}
+}
+
+// RejectRefund 管理员拒绝退款申请，review_note 必填。
+func (s *service) RejectRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*Refund, error) {
+	if req.ReviewNote == "" {
+		return nil, ErrRefundReviewNoteMissing
+	}
+	refund, err := s.store.GetRefundByNo(ctx, refundNo)
+	if err != nil {
+		return nil, err
+	}
+	if refund.Status != RefundStatusPendingReview {
+		return nil, ErrRefundNotPendingReview
+	}
+	return s.store.MarkRefundRejected(ctx, refund.ID, reviewerID, req.ReviewNote, time.Now())
+}
+
+func (s *service) ListPendingRefunds(ctx context.Context, page, pageSize int) ([]*Refund, int64, error) {
+	return s.store.ListPendingRefunds(ctx, normalizedPage(page), normalizedPageSize(pageSize))
 }
 
 func (s *service) QueryRefund(ctx context.Context, orderNo, refundNo string) (*Refund, error) {

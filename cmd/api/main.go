@@ -263,7 +263,10 @@ func run() error {
 		adminRoutes.POST("/payment/orders/:order_no/close", paymentHandler.AdminCloseOrder)
 		adminRoutes.POST("/payment/orders/:order_no/redetect", paymentHandler.AdminRedetect)
 		adminRoutes.POST("/payment/orders/:order_no/regrant-membership", paymentHandler.AdminRegrantMembership)
-		adminRoutes.POST("/payment/orders/:order_no/refund", paymentHandler.AdminRefundOrder)
+		// 退款审批
+		adminRoutes.GET("/payment/refunds/pending", paymentHandler.ListPendingRefunds)
+		adminRoutes.POST("/payment/refunds/:refund_no/approve", paymentHandler.ApproveRefund)
+		adminRoutes.POST("/payment/refunds/:refund_no/reject", paymentHandler.RejectRefund)
 
 		planner.RegisterRoutes(authorized, adminRoutes, merchantHandler, profileHandler)
 

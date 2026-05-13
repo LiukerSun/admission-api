@@ -139,11 +139,16 @@ func (m *mockPaymentStore) CreateRefund(ctx context.Context, input *CreateRefund
 }
 
 func (m *mockPaymentStore) UpdateRefundSuccess(ctx context.Context, refundID int64, channelRefundNo string, now time.Time) (*Refund, error) {
-	panic("not implemented")
+	args := m.Called(ctx, refundID, channelRefundNo, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Refund), args.Error(1)
 }
 
 func (m *mockPaymentStore) UpdateRefundFailed(ctx context.Context, refundID int64) error {
-	panic("not implemented")
+	args := m.Called(ctx, refundID)
+	return args.Error(0)
 }
 
 func (m *mockPaymentStore) GetRefundByOutRequestNo(ctx context.Context, outRequestNo string) (*Refund, error) {
@@ -151,7 +156,11 @@ func (m *mockPaymentStore) GetRefundByOutRequestNo(ctx context.Context, outReque
 }
 
 func (m *mockPaymentStore) GetRefundByNo(ctx context.Context, refundNo string) (*Refund, error) {
-	panic("not implemented")
+	args := m.Called(ctx, refundNo)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Refund), args.Error(1)
 }
 
 func (m *mockPaymentStore) ListRefunds(ctx context.Context, orderID int64) ([]*Refund, error) {
@@ -160,6 +169,67 @@ func (m *mockPaymentStore) ListRefunds(ctx context.Context, orderID int64) ([]*R
 
 func (m *mockPaymentStore) GetTotalRefundedAmount(ctx context.Context, orderID int64) (int, error) {
 	panic("not implemented")
+}
+
+func (m *mockPaymentStore) GetOrderByID(ctx context.Context, orderID int64) (*Order, string, error) {
+	args := m.Called(ctx, orderID)
+	if args.Get(0) == nil {
+		return nil, "", args.Error(2)
+	}
+	return args.Get(0).(*Order), args.String(1), args.Error(2)
+}
+
+func (m *mockPaymentStore) MarkOrderRefunded(ctx context.Context, orderID int64) (*Order, error) {
+	args := m.Called(ctx, orderID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Order), args.Error(1)
+}
+
+func (m *mockPaymentStore) CreateRefundRequest(ctx context.Context, input *CreateRefundInput) (*Refund, error) {
+	args := m.Called(ctx, input)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Refund), args.Error(1)
+}
+
+func (m *mockPaymentStore) GetRefundForReview(ctx context.Context, refundNo string) (*Refund, *Order, error) {
+	args := m.Called(ctx, refundNo)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*Refund), args.Get(1).(*Order), args.Error(2)
+}
+
+func (m *mockPaymentStore) MarkRefundApproved(ctx context.Context, refundID, reviewerID int64, reviewNote *string, now time.Time) (*Refund, error) {
+	args := m.Called(ctx, refundID, reviewerID, reviewNote, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Refund), args.Error(1)
+}
+
+func (m *mockPaymentStore) MarkRefundProcessing(ctx context.Context, refundID int64) (*Refund, error) {
+	args := m.Called(ctx, refundID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Refund), args.Error(1)
+}
+
+func (m *mockPaymentStore) MarkRefundRejected(ctx context.Context, refundID, reviewerID int64, reviewNote string, now time.Time) (*Refund, error) {
+	args := m.Called(ctx, refundID, reviewerID, reviewNote, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Refund), args.Error(1)
+}
+
+func (m *mockPaymentStore) ListPendingRefunds(ctx context.Context, page, pageSize int) ([]*Refund, int64, error) {
+	args := m.Called(ctx, page, pageSize)
+	return args.Get(0).([]*Refund), args.Get(1).(int64), args.Error(2)
 }
 
 type mockMembershipSvc struct {
@@ -192,6 +262,17 @@ func (m *mockMembershipSvc) HasActiveMembership(ctx context.Context, userID int6
 func (m *mockMembershipSvc) GrantFromPaidOrder(ctx context.Context, req membership.GrantRequest) (*membership.UserMembership, *membership.Grant, bool, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).(*membership.UserMembership), args.Get(1).(*membership.Grant), args.Bool(2), args.Error(3)
+}
+
+func (m *mockMembershipSvc) RevokeFromOrder(ctx context.Context, req membership.RevokeRequest) (*membership.UserMembership, *membership.Grant, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	if args.Get(1) == nil {
+		return args.Get(0).(*membership.UserMembership), nil, args.Error(2)
+	}
+	return args.Get(0).(*membership.UserMembership), args.Get(1).(*membership.Grant), args.Error(2)
 }
 
 func TestCreateOrderUsesPlanSnapshot(t *testing.T) {

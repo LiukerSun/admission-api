@@ -369,22 +369,76 @@ func (h *Handler) ListRefunds(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(refunds))
 }
 
-func (h *Handler) AdminRefundOrder(c *gin.Context) {
-	var req RefundOrderRequest
+// ApproveRefund 管理员通过退款申请。
+func (h *Handler) ApproveRefund(c *gin.Context) {
+	reviewerID, ok := userIDFromContext(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	var req ReviewRefundRequest
+	// Body 可选：approve 时 review_note 不强制
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+			return
+		}
+		if err := h.validate.Struct(req); err != nil {
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
+			return
+		}
+	}
+	resp, err := h.service.ApproveRefund(c.Request.Context(), c.Param("refund_no"), reviewerID, req)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
+}
+
+// RejectRefund 管理员拒绝退款申请，review_note 必填。
+func (h *Handler) RejectRefund(c *gin.Context) {
+	reviewerID, ok := userIDFromContext(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	var req ReviewRefundRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	if req.ReviewNote == "" {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "review_note is required when rejecting")
 		return
 	}
 	if err := h.validate.Struct(req); err != nil {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
 		return
 	}
-	resp, err := h.service.AdminRefundOrder(c.Request.Context(), c.Param("order_no"), req)
+	refund, err := h.service.RejectRefund(c.Request.Context(), c.Param("refund_no"), reviewerID, req)
 	if err != nil {
 		h.writeError(c, err)
 		return
 	}
-	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(resp))
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(refund))
+}
+
+// ListPendingRefunds 管理员列出所有待审核退款申请。
+func (h *Handler) ListPendingRefunds(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
+	refunds, total, err := h.service.ListPendingRefunds(c.Request.Context(), page, pageSize)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(map[string]any{
+		"items":     refunds,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	}))
 }
 
 func (h *Handler) writeError(c *gin.Context, err error) {
@@ -413,6 +467,12 @@ func (h *Handler) writeError(c *gin.Context, err error) {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "refund amount exceeds remaining order amount")
 	case errors.Is(err, ErrRefundNotFound):
 		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "refund not found")
+	case errors.Is(err, ErrRefundPendingExists):
+		h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "a pending refund request already exists for this order")
+	case errors.Is(err, ErrRefundNotPendingReview):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "refund is not in pending_review state")
+	case errors.Is(err, ErrRefundReviewNoteMissing):
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "review_note is required when rejecting a refund")
 	default:
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "internal server error")
 	}

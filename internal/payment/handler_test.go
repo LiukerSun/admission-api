@@ -73,7 +73,15 @@ func (s stubPaymentService) RefundOrder(ctx context.Context, userID int64, order
 	panic("unexpected call")
 }
 
-func (s stubPaymentService) AdminRefundOrder(ctx context.Context, orderNo string, req RefundOrderRequest) (*RefundOrderResponse, error) {
+func (s stubPaymentService) ApproveRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*RefundOrderResponse, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) RejectRefund(ctx context.Context, refundNo string, reviewerID int64, req ReviewRefundRequest) (*Refund, error) {
+	panic("unexpected call")
+}
+
+func (s stubPaymentService) ListPendingRefunds(ctx context.Context, page, pageSize int) ([]*Refund, int64, error) {
 	panic("unexpected call")
 }
 

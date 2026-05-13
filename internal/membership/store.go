@@ -24,6 +24,7 @@ type Store interface {
 	GetCurrentMembership(ctx context.Context, userID int64) (*UserMembership, error)
 	HasActiveMembership(ctx context.Context, userID int64, now time.Time) (bool, error)
 	GrantMembership(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error)
+	RevokeMembershipForOrder(ctx context.Context, req RevokeRequest) (*UserMembership, *Grant, error)
 }
 
 type store struct {
@@ -269,6 +270,117 @@ func (s *store) GrantMembership(ctx context.Context, req GrantRequest) (*UserMem
 	}
 
 	return m, &grant, true, nil
+}
+
+func (s *store) RevokeMembershipForOrder(ctx context.Context, req RevokeRequest) (*UserMembership, *Grant, error) {
+	if req.Now.IsZero() {
+		req.Now = time.Now()
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin revoke membership tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// 幂等：如果已有同 idempotency_key 的 revoke 记录，直接返回
+	var existingGrant Grant
+	err = tx.QueryRow(ctx, `
+		SELECT id, user_id, payment_order_id, source_type, action, duration_days, starts_at, ends_at, idempotency_key, created_at
+		FROM membership_grants
+		WHERE idempotency_key = $1 AND action = 'revoke'
+	`, req.IdempotencyKey).Scan(
+		&existingGrant.ID,
+		&existingGrant.UserID,
+		&existingGrant.PaymentOrderID,
+		&existingGrant.SourceType,
+		&existingGrant.Action,
+		&existingGrant.DurationDays,
+		&existingGrant.StartsAt,
+		&existingGrant.EndsAt,
+		&existingGrant.IdempotencyKey,
+		&existingGrant.CreatedAt,
+	)
+	if err == nil {
+		m, getErr := membershipByUserTx(ctx, tx, req.UserID)
+		if getErr != nil {
+			return nil, nil, getErr
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, nil, fmt.Errorf("commit existing revoke tx: %w", err)
+		}
+		return m, &existingGrant, nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, fmt.Errorf("lookup revoke grant: %w", err)
+	}
+
+	current, err := membershipByUserForUpdateTx(ctx, tx, req.UserID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 仅当当前会员是被该订单激活/续期/恢复时才撤销，避免误伤后续订单的会员
+	if current == nil || current.LastOrderID == nil || *current.LastOrderID != req.PaymentOrderID {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, nil, fmt.Errorf("commit no-op revoke tx: %w", err)
+		}
+		return current, nil, nil
+	}
+
+	// duration_days 在 revoke 场景下没有业务意义，但表约束要求 > 0，写 1 作占位
+	var grant Grant
+	err = tx.QueryRow(ctx, `
+		INSERT INTO membership_grants (
+			user_id, payment_order_id, source_type, action, duration_days, starts_at, ends_at, idempotency_key
+		)
+		VALUES ($1, $2, 'payment', 'revoke', 1, $3, $3, $4)
+		RETURNING id, user_id, payment_order_id, source_type, action, duration_days, starts_at, ends_at, idempotency_key, created_at
+	`, req.UserID, req.PaymentOrderID, req.Now, req.IdempotencyKey).Scan(
+		&grant.ID,
+		&grant.UserID,
+		&grant.PaymentOrderID,
+		&grant.SourceType,
+		&grant.Action,
+		&grant.DurationDays,
+		&grant.StartsAt,
+		&grant.EndsAt,
+		&grant.IdempotencyKey,
+		&grant.CreatedAt,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, nil, ErrGrantAlreadyExists
+		}
+		return nil, nil, fmt.Errorf("insert revoke grant: %w", err)
+	}
+
+	m, err := scanMembership(tx.QueryRow(ctx, `
+		UPDATE user_memberships
+		SET status = 'refunded',
+			ends_at = $2,
+			updated_at = NOW()
+		WHERE user_id = $1
+		RETURNING id, user_id, membership_level, status, started_at, ends_at, last_order_id, created_at, updated_at
+	`, req.UserID, req.Now))
+	if err != nil {
+		return nil, nil, fmt.Errorf("update user membership to refunded: %w", err)
+	}
+
+	// 将 users.role 从 premium 改回 user，使其失去管理后台中的会员相关权限
+	if _, err := tx.Exec(ctx, `
+		UPDATE users SET role = 'user', updated_at = NOW()
+		WHERE id = $1 AND role = 'premium'
+	`, req.UserID); err != nil {
+		return nil, nil, fmt.Errorf("sync user role: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("commit revoke membership tx: %w", err)
+	}
+
+	return m, &grant, nil
 }
 
 func membershipByUserForUpdateTx(ctx context.Context, tx pgx.Tx, userID int64) (*UserMembership, error) {

@@ -14,6 +14,7 @@ type Service interface {
 	GetCurrent(ctx context.Context, userID int64) (*CurrentMembershipResponse, error)
 	HasActiveMembership(ctx context.Context, userID int64) (bool, error)
 	GrantFromPaidOrder(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error)
+	RevokeFromOrder(ctx context.Context, req RevokeRequest) (*UserMembership, *Grant, error)
 }
 
 type service struct {
@@ -77,4 +78,14 @@ func (s *service) GrantFromPaidOrder(ctx context.Context, req GrantRequest) (*Us
 		req.Now = time.Now()
 	}
 	return s.store.GrantMembership(ctx, req)
+}
+
+func (s *service) RevokeFromOrder(ctx context.Context, req RevokeRequest) (*UserMembership, *Grant, error) {
+	if req.UserID <= 0 || req.PaymentOrderID <= 0 || req.IdempotencyKey == "" {
+		return nil, nil, fmt.Errorf("invalid membership revoke request")
+	}
+	if req.Now.IsZero() {
+		req.Now = time.Now()
+	}
+	return s.store.RevokeMembershipForOrder(ctx, req)
 }
