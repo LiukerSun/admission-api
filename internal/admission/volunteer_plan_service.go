@@ -296,7 +296,7 @@ func (s *VolunteerPlanService) GetPlans(ctx context.Context, userID int64) (*Vol
 	return &VolunteerPlansResponse{Plans: plans}, nil
 }
 
-func (s *VolunteerPlanService) UpdatePlan(ctx context.Context, userID, planID int64, name string, description string) error {
+func (s *VolunteerPlanService) UpdatePlan(ctx context.Context, userID, planID int64, name, description string) error {
 	result, err := s.pool.Exec(ctx, `
 		UPDATE user_volunteer_plans
 		SET name = $1, description = $2, updated_at = NOW()
