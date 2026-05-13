@@ -218,15 +218,21 @@ func run() error {
 		authorized.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
 		authorized.POST("/conversations/:id/archive", conversationHandler.ArchiveConversation)
 		authorized.POST("/conversations/:id/rollback", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), conversationHandler.Rollback)
-		authorized.POST("/ai/chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Chat)
-		authorized.POST("/conversations/:id/ai-chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.ChatWithConversation)
-		authorized.POST("/conversations/:id/regenerate", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Regenerate)
-		authorized.GET("/conversations/:id/suggestions", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiSuggestionsHandler.Suggestions)
 		authorized.POST("/payment/orders", paymentHandler.CreateOrder)
 		authorized.GET("/payment/orders", paymentHandler.ListMyOrders)
 		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)
 		authorized.POST("/payment/orders/:order_no/pay", paymentHandler.PayMock)
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
+
+		// premium routes inherit JWT + AuthStatus from authorized and add a
+		// membership gate. Moving a route between authorized and premium is
+		// the one-line switch for toggling paywall protection.
+		premium := authorized.Group("")
+		premium.Use(middleware.RequireActiveMembership(membershipService))
+		premium.POST("/ai/chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Chat)
+		premium.POST("/conversations/:id/ai-chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.ChatWithConversation)
+		premium.POST("/conversations/:id/regenerate", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Regenerate)
+		premium.GET("/conversations/:id/suggestions", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiSuggestionsHandler.Suggestions)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireAdmin())

@@ -7,7 +7,11 @@ const (
 	ErrCodeForbidden    = 1003
 	ErrCodeNotFound     = 1004
 	ErrCodeConflict     = 1005
-	ErrCodeInternal     = 5000
+	// ErrCodeMembershipRequired signals a paywall — the frontend recognizes
+	// this code to trigger the membership upgrade modal. Permanently reserved
+	// for paywall responses; do not reuse for other forbidden cases.
+	ErrCodeMembershipRequired = 1010
+	ErrCodeInternal           = 5000
 )
 
 // AppError represents an application-level error.
