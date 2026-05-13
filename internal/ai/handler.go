@@ -430,6 +430,10 @@ func (h *Handler) verifyConversationOwnership(c *gin.Context, convID, userID int
 		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
 		return false
 	}
+	if conv.Status != "active" {
+		h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "conversation is archived")
+		return false
+	}
 	return true
 }
 

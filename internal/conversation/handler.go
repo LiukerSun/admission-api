@@ -168,7 +168,12 @@ func (h *Handler) AddMessage(c *gin.Context) {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "content exceeds maximum length")
 		return
 	}
-	if !h.canAccessConversation(c, id, userID) {
+	conv, ok := h.canAccessConversation(c, id, userID)
+	if !ok {
+		return
+	}
+	if conv.Status == "archived" {
+		h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "conversation is archived")
 		return
 	}
 	// Role is hardcoded to "user" and tool_calls / tool_results / widgets
@@ -237,7 +242,12 @@ func (h *Handler) Rollback(c *gin.Context) {
 	if req.Inclusive != nil {
 		inclusive = *req.Inclusive
 	}
-	if !h.canAccessConversation(c, id, userID) {
+	conv, ok := h.canAccessConversation(c, id, userID)
+	if !ok {
+		return
+	}
+	if conv.Status == "archived" {
+		h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "conversation is archived")
 		return
 	}
 	deleted, latest, err := h.service.Rollback(c.Request.Context(), id, req.MessageID, inclusive)
@@ -280,7 +290,7 @@ func (h *Handler) DeleteConversation(c *gin.Context) {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
 		return
 	}
-	if !h.canAccessConversation(c, id, userID) {
+	if _, ok := h.canAccessConversation(c, id, userID); !ok {
 		return
 	}
 	if err := h.service.DeleteConversation(c.Request.Context(), id); err != nil {
@@ -315,7 +325,7 @@ func (h *Handler) ArchiveConversation(c *gin.Context) {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
 		return
 	}
-	if !h.canAccessConversation(c, id, userID) {
+	if _, ok := h.canAccessConversation(c, id, userID); !ok {
 		return
 	}
 	if err := h.service.ArchiveConversation(c.Request.Context(), id); err != nil {
@@ -334,21 +344,21 @@ type WithMessages struct {
 	Messages     []*Message    `json:"messages"`
 }
 
-func (h *Handler) canAccessConversation(c *gin.Context, id, userID int64) bool {
+func (h *Handler) canAccessConversation(c *gin.Context, id, userID int64) (*Conversation, bool) {
 	conv, err := h.service.GetConversation(c.Request.Context(), id)
 	if err != nil {
 		if err == ErrConversationNotFound {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
-			return false
+			return nil, false
 		}
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to get conversation")
-		return false
+		return nil, false
 	}
 	if !ownsConversation(conv, userID) {
 		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
-		return false
+		return nil, false
 	}
-	return true
+	return conv, true
 }
 
 func ownsConversation(conv *Conversation, userID int64) bool {

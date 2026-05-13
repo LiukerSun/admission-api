@@ -42,6 +42,7 @@ import (
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
 	"admission-api/internal/user"
+	"admission-api/internal/volunteerplan"
 )
 
 func main() {
@@ -141,6 +142,10 @@ func run() error {
 	conversationStore := conversation.NewStore(database.Pool())
 	conversationService := conversation.NewService(conversationStore)
 	conversationHandler := conversation.NewHandler(conversationService)
+	volunteerDraftStore := volunteerplan.NewDraftStore(database.Pool())
+	volunteerPlanStore := volunteerplan.NewPlanStore(database.Pool())
+	volunteerPlanServiceV2 := volunteerplan.NewService(volunteerDraftStore, volunteerPlanStore, conversationService)
+	volunteerPlanHandlerV2 := volunteerplan.NewHandler(volunteerPlanServiceV2)
 
 	var llmProxy ai.LLMProxy
 	switch cfg.LLMProvider {
@@ -243,6 +248,10 @@ func run() error {
 		authorized.POST("/conversations/:id/ai-chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.ChatWithConversation)
 		authorized.POST("/conversations/:id/regenerate", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Regenerate)
 		authorized.GET("/conversations/:id/suggestions", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiSuggestionsHandler.Suggestions)
+		authorized.GET("/plan-drafts/:draft_id", volunteerPlanHandlerV2.GetDraft)
+		authorized.GET("/volunteer-plans", volunteerPlanHandlerV2.ListPlans)
+		authorized.GET("/volunteer-plans/:id", volunteerPlanHandlerV2.GetPlan)
+		authorized.POST("/volunteer-plans/adopt", volunteerPlanHandlerV2.Adopt)
 		authorized.POST("/payment/orders", paymentHandler.CreateOrder)
 		authorized.GET("/payment/orders", paymentHandler.ListMyOrders)
 		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)
