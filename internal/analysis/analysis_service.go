@@ -2,7 +2,7 @@ package analysis
 
 import "context"
 
-type AnalysisService interface {
+type Service interface {
 	GetTrend(ctx context.Context, filter *TrendFilter) (*TrendResponse, error)
 	GetGroupComparison(ctx context.Context, filter *GroupComparisonFilter) (*GroupComparisonResponse, error)
 	GetMajorDistribution(ctx context.Context, filter *MajorDistributionFilter) (*MajorDistributionResponse, error)
@@ -10,10 +10,10 @@ type AnalysisService interface {
 }
 
 type analysisService struct {
-	store AnalysisStore
+	store Store
 }
 
-func NewService(store AnalysisStore) AnalysisService {
+func NewService(store Store) Service {
 	return &analysisService{store: store}
 }
 

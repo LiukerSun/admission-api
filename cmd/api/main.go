@@ -162,7 +162,7 @@ func run() error {
 	admissionLineHandler := admission.NewAdmissionLineHandler(admissionLineService)
 	analysisStore := analysis.NewStore(database.Pool())
 	analysisService := analysis.NewService(analysisStore)
-	analysisHandler := analysis.NewAnalysisHandler(analysisService)
+	analysisHandler := analysis.NewHandler(analysisService)
 	aggregateStore := admission.NewAggregateStore(database.Pool())
 	aggregateService := admission.NewAggregateService(aggregateStore)
 	aggregateHandler := admission.NewAggregateHandler(aggregateService)

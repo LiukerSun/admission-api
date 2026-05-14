@@ -2,10 +2,10 @@ package analysis
 
 // TrendFilter defines query parameters for the university trend endpoint.
 type TrendFilter struct {
-	UniversityID    int64
-	GroupCode       string
-	LocalMajorCode  string
-	Years           int
+	UniversityID   int64
+	GroupCode      string
+	LocalMajorCode string
+	Years          int
 }
 
 // TrendResponse represents multi-year admission data for a university or major.
@@ -38,18 +38,18 @@ type EquivalentScore struct {
 
 // GroupComparisonFilter defines query parameters for the group comparison endpoint.
 type GroupComparisonFilter struct {
-	UniversityID   int64
-	AdmissionYear  *int
-	RegionCode     string
+	UniversityID        int64
+	AdmissionYear       *int
+	RegionCode          string
 	SubjectCategoryCode string
 }
 
 // GroupComparisonResponse represents all admission groups for a university in a given year.
 type GroupComparisonResponse struct {
-	UniversityID   int64                    `json:"university_id"`
-	UniversityName string                   `json:"university_name"`
-	AdmissionYear  int                      `json:"admission_year"`
-	Groups         []GroupComparisonItem    `json:"groups"`
+	UniversityID   int64                 `json:"university_id"`
+	UniversityName string                `json:"university_name"`
+	AdmissionYear  int                   `json:"admission_year"`
+	Groups         []GroupComparisonItem `json:"groups"`
 }
 
 // GroupComparisonItem holds aggregated metrics for a single admission group.
@@ -67,19 +67,19 @@ type GroupComparisonItem struct {
 
 // MajorDistributionFilter defines query parameters for the major distribution endpoint.
 type MajorDistributionFilter struct {
-	UniversityID   int64
-	GroupCode      string
-	AdmissionYear  *int
-	RegionCode     string
+	UniversityID        int64
+	GroupCode           string
+	AdmissionYear       *int
+	RegionCode          string
 	SubjectCategoryCode string
 }
 
 // MajorDistributionResponse represents major-level metrics within a single admission group.
 type MajorDistributionResponse struct {
-	UniversityID  int64                      `json:"university_id"`
-	AdmissionYear int                        `json:"admission_year"`
-	GroupCode     string                     `json:"group_code"`
-	Majors        []MajorDistributionItem    `json:"majors"`
+	UniversityID  int64                   `json:"university_id"`
+	AdmissionYear int                     `json:"admission_year"`
+	GroupCode     string                  `json:"group_code"`
+	Majors        []MajorDistributionItem `json:"majors"`
 }
 
 // MajorDistributionItem holds per-major metrics for chart rendering.
@@ -104,9 +104,9 @@ type MajorComparisonFilter struct {
 
 // MajorComparisonResponse represents the same major across multiple universities.
 type MajorComparisonResponse struct {
-	LocalMajorName string                  `json:"local_major_name"`
-	AdmissionYear  int                     `json:"admission_year"`
-	Items          []MajorComparisonItem   `json:"items"`
+	LocalMajorName string                `json:"local_major_name"`
+	AdmissionYear  int                   `json:"admission_year"`
+	Items          []MajorComparisonItem `json:"items"`
 }
 
 // MajorComparisonItem holds per-university metrics for a specific major.

@@ -9,13 +9,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type AnalysisHandler struct {
+type Handler struct {
 	web.BaseHandler
-	service AnalysisService
+	service Service
 }
 
-func NewAnalysisHandler(service AnalysisService) *AnalysisHandler {
-	return &AnalysisHandler{service: service}
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
 }
 
 // GetTrend godoc
@@ -31,7 +31,7 @@ func NewAnalysisHandler(service AnalysisService) *AnalysisHandler {
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/analysis/universities/{id}/trend [get]
-func (h *AnalysisHandler) GetTrend(c *gin.Context) {
+func (h *Handler) GetTrend(c *gin.Context) {
 	universityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || universityID <= 0 {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid university id")
@@ -76,7 +76,7 @@ func (h *AnalysisHandler) GetTrend(c *gin.Context) {
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/analysis/universities/{id}/groups [get]
-func (h *AnalysisHandler) GetGroupComparison(c *gin.Context) {
+func (h *Handler) GetGroupComparison(c *gin.Context) {
 	universityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || universityID <= 0 {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid university id")
@@ -120,7 +120,7 @@ func (h *AnalysisHandler) GetGroupComparison(c *gin.Context) {
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/analysis/universities/{id}/majors/distribution [get]
-func (h *AnalysisHandler) GetMajorDistribution(c *gin.Context) {
+func (h *Handler) GetMajorDistribution(c *gin.Context) {
 	universityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || universityID <= 0 {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid university id")
@@ -171,7 +171,7 @@ func (h *AnalysisHandler) GetMajorDistribution(c *gin.Context) {
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/analysis/majors/comparison [get]
-func (h *AnalysisHandler) GetMajorComparison(c *gin.Context) {
+func (h *Handler) GetMajorComparison(c *gin.Context) {
 	localMajorName := c.Query("local_major_name")
 	if localMajorName == "" {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "local_major_name is required")

@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type AnalysisStore interface {
+type Store interface {
 	GetTrend(ctx context.Context, filter *TrendFilter) (*TrendResponse, error)
 	GetGroupComparison(ctx context.Context, filter *GroupComparisonFilter) (*GroupComparisonResponse, error)
 	GetMajorDistribution(ctx context.Context, filter *MajorDistributionFilter) (*MajorDistributionResponse, error)
@@ -20,7 +20,7 @@ type analysisStore struct {
 	pool *pgxpool.Pool
 }
 
-func NewStore(pool *pgxpool.Pool) AnalysisStore {
+func NewStore(pool *pgxpool.Pool) Store {
 	return &analysisStore{pool: pool}
 }
 
