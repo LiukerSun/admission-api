@@ -2791,6 +2791,9 @@ const docTemplate = `{
                 "batch_code": {
                     "type": "string"
                 },
+                "batch_name": {
+                    "type": "string"
+                },
                 "batch_remark": {
                     "type": "string"
                 },
@@ -2902,10 +2905,16 @@ const docTemplate = `{
                 "subject_category_code": {
                     "type": "string"
                 },
+                "subject_category_name": {
+                    "type": "string"
+                },
                 "subject_change_2024": {
                     "type": "string"
                 },
                 "subject_requirement_code": {
+                    "type": "string"
+                },
+                "subject_requirement_name": {
                     "type": "string"
                 },
                 "subject_study_requirement": {
@@ -3105,6 +3114,9 @@ const docTemplate = `{
                 "education_level_code": {
                     "type": "string"
                 },
+                "education_level_name": {
+                    "type": "string"
+                },
                 "excellence_tags": {
                     "type": "string"
                 },
@@ -3138,6 +3150,9 @@ const docTemplate = `{
                 "ownership_type_code": {
                     "type": "string"
                 },
+                "ownership_type_name": {
+                    "type": "string"
+                },
                 "postgraduate_recommendation_rate": {
                     "type": "number"
                 },
@@ -3148,6 +3163,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "school_category_code": {
+                    "type": "string"
+                },
+                "school_category_name": {
                     "type": "string"
                 },
                 "school_level_tags": {

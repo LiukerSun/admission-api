@@ -18,8 +18,11 @@ type UniversityProfileResponse struct {
 	RegionCode                     string   `json:"region_code,omitempty"`
 	City                           string   `json:"city,omitempty"`
 	OwnershipTypeCode              string   `json:"ownership_type_code,omitempty"`
+	OwnershipTypeName              string   `json:"ownership_type_name,omitempty"`
 	SchoolCategoryCode             string   `json:"school_category_code,omitempty"`
+	SchoolCategoryName             string   `json:"school_category_name,omitempty"`
 	EducationLevelCode             string   `json:"education_level_code,omitempty"`
+	EducationLevelName             string   `json:"education_level_name,omitempty"`
 	Is985                          *bool    `json:"is_985,omitempty"`
 	Is211                          *bool    `json:"is_211,omitempty"`
 	IsDoubleFirstClass             *bool    `json:"is_double_first_class,omitempty"`
