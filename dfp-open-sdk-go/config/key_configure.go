@@ -78,6 +78,9 @@ func (config *OpenSdkConfigure) SwitchToDev() {
 }
 
 func (config *OpenSdkConfigure) AddKeyConfigure(configure *KeyConfigure) {
+	if config.KeyConfigures == nil {
+		config.KeyConfigures = make(map[string]*KeyConfigure)
+	}
 	config.KeyConfigures[configure.KeyId] = configure
 }
 
