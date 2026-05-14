@@ -254,36 +254,66 @@ definitions:
       university_name:
         type: string
     type: object
-  admission.AggregateItem:
+  admission.DetailedVolunteerPlanGroup:
     properties:
-      avg_min_rank:
-        type: number
-      avg_min_score:
-        type: number
-      avg_tuition:
-        type: number
-      code:
+      detailedMajors:
+        items:
+          $ref: '#/definitions/admission.DetailedVolunteerPlanMajor'
+        type: array
+      groupAdmissionDetails:
+        $ref: '#/definitions/admission.GroupAdmissionDetails'
+      groupCode:
         type: string
-      count:
+      groupId:
         type: integer
-      is_211_count:
+      groupName:
+        type: string
+      id:
         type: integer
-      is_985_count:
+      isObeyAdjustment:
+        type: boolean
+      majors:
+        description: Existing majors
+        items:
+          $ref: '#/definitions/admission.VolunteerPlanMajor'
+        type: array
+      orderNo:
         type: integer
-      is_double_first_class_count:
+      planId:
         type: integer
-      name:
+      remark:
+        type: string
+      universityCode:
+        type: string
+      universityDetails:
+        allOf:
+        - $ref: '#/definitions/admission.UniversityDetails'
+        description: Additional fields for rich export
+      universityId:
+        type: integer
+      universityName:
         type: string
     type: object
-  admission.AggregateResponse:
+  admission.DetailedVolunteerPlanMajor:
     properties:
-      group_by:
+      employmentDirection:
         type: string
-      items:
-        items:
-          $ref: '#/definitions/admission.AggregateItem'
-        type: array
-      total:
+      majorCode:
+        type: string
+      majorIntro:
+        type: string
+      majorName:
+        type: string
+      majorOrder:
+        description: Added for consistency with frontend
+        type: integer
+      minRank:
+        type: integer
+      minScore:
+        type: integer
+      trainingGoal:
+        type: string
+      tuition:
         type: integer
     type: object
   admission.DictionaryItem:
@@ -324,10 +354,342 @@ definitions:
           $ref: '#/definitions/admission.DictionaryItem'
         type: array
     type: object
+  admission.GroupAdmissionDetails:
+    properties:
+      minScore2022:
+        type: integer
+      minScore2023:
+        type: integer
+      minScore2024:
+        type: integer
+    type: object
   admission.LatestCatalogYearResponse:
     properties:
       catalog_year:
         type: integer
+    type: object
+  admission.PlanStatistics:
+    properties:
+      majorDistribution:
+        additionalProperties:
+          type: integer
+        description: 'e.g., { ''计算机科学与技术'': 10, ''软件工程'': 8 }'
+        type: object
+      totalGroups:
+        type: integer
+      totalMajors:
+        type: integer
+      totalUniversities:
+        type: integer
+    type: object
+  admission.RankWindow:
+    properties:
+      match_max:
+        type: integer
+      match_min:
+        type: integer
+      rush_max:
+        type: integer
+      rush_min:
+        type: integer
+      safe_max:
+        type: integer
+      safe_min:
+        type: integer
+    type: object
+  admission.RecommendationItem:
+    properties:
+      admission_group_id:
+        type: integer
+      batch_code:
+        type: string
+      city:
+        type: string
+      composite_score:
+        type: number
+      discipline_category:
+        type: string
+      equivalent_min_score:
+        type: integer
+      group_code:
+        type: string
+      historical_min_rank:
+        type: integer
+      historical_min_score:
+        type: integer
+      is_211:
+        type: boolean
+      is_985:
+        type: boolean
+      is_double_first_class:
+        type: boolean
+      is_national_feature:
+        type: boolean
+      local_major_code:
+        type: string
+      local_major_name:
+        type: string
+      major_priority_score:
+        type: number
+      major_rank:
+        type: string
+      order:
+        description: 在志愿表里的顺序（1 起，跨冲/稳/保连续编号）
+        type: integer
+      plan_count:
+        type: integer
+      probability:
+        description: 估算的录取概率 [0,1]
+        type: number
+      province_code:
+        type: string
+      reason:
+        type: string
+      score_breakdown:
+        $ref: '#/definitions/admission.ScoreBreakdown'
+      soft_rank:
+        type: string
+      tier:
+        description: '"rush" | "match" | "safe"'
+        type: string
+      tuition:
+        type: integer
+      university_code:
+        type: string
+      university_id:
+        type: integer
+      university_name:
+        type: string
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
+  admission.RecommendationRequest:
+    properties:
+      admission_year:
+        description: 默认取数据库中最新年份
+        type: integer
+      budget_tuition_max:
+        description: 经济
+        type: integer
+      career_plans:
+        description: 职业规划
+        items:
+          type: string
+        type: array
+      chinese_score:
+        type: integer
+      enable_llm_tuning:
+        description: '可选: 是否调用大模型做最终调优'
+        type: boolean
+      english_score:
+        type: integer
+      excluded_cities:
+        items:
+          type: string
+        type: array
+      excluded_keywords:
+        description: 张雪峰式避雷词
+        items:
+          type: string
+        type: array
+      excluded_majors:
+        description: 主观排除的专业关键词
+        items:
+          type: string
+        type: array
+      excluded_provinces:
+        items:
+          type: string
+        type: array
+      family_economy:
+        description: '"充裕" / "普通" / "紧张"'
+        type: string
+      family_resources:
+        description: 家庭资源
+        items:
+          type: string
+        type: array
+      gender:
+        description: 体检/性别/语种 等一刀切硬门槛
+        type: string
+      health:
+        description: 已确诊不可报考的限制
+        items:
+          type: string
+        type: array
+      holland_code:
+        description: 个人画像
+        type: string
+      language:
+        type: string
+      math_score:
+        description: 单科成绩 (硬门槛 + 能力匹配)
+        type: integer
+      physics_score:
+        type: integer
+      plan_size:
+        description: |-
+          输出规模。HLJ 新高考一次 40 个院校专业组，所以 default=40；上限放宽到 500
+          允许"批量分析"使用方式，常规用户不必关心。
+        type: integer
+      preferred_cities:
+        description: 地域偏好
+        items:
+          type: string
+        type: array
+      preferred_majors:
+        description: CHSI 标准专业 / 大类 / 关键词
+        items:
+          type: string
+        type: array
+      preferred_provinces:
+        description: region_code 列表
+        items:
+          type: string
+        type: array
+      priority_strategy:
+        description: 学校 vs 专业 优先策略
+        type: string
+      provincial_rank:
+        description: 省内位次（来自一分一段）
+        type: integer
+      region_code:
+        description: 基础（必填）
+        type: string
+      selected_subjects:
+        description: 选科列表，例如 ["物理","化学","生物"]
+        items:
+          type: string
+        type: array
+      subject_category_code:
+        description: 物理类 / 历史类
+        type: string
+      subject_requirement_code:
+        description: 选科 / 年份
+        type: string
+      total_score:
+        description: 高考总分
+        type: integer
+    required:
+    - provincial_rank
+    - region_code
+    - subject_category_code
+    - total_score
+    type: object
+  admission.RecommendationResponse:
+    properties:
+      items:
+        description: 全部 ≤ planSize 条，按冲→稳→保顺序排列
+        items:
+          $ref: '#/definitions/admission.RecommendationItem'
+        type: array
+      llm_summary:
+        type: string
+      match_count:
+        type: integer
+      notes:
+        description: 顶层提示
+        items:
+          type: string
+        type: array
+      rank_window:
+        allOf:
+        - $ref: '#/definitions/admission.RankWindow'
+        description: 冲/稳/保三段位次区间
+      rush_count:
+        type: integer
+      safe_count:
+        type: integer
+      strategy:
+        description: '"school" | "major" | "rank_window"'
+        type: string
+      strategy_reason:
+        description: 解释为什么走这个路线
+        type: string
+      volunteer_plan:
+        description: 草稿载体，给 toolExecutor 用
+        type: object
+    type: object
+  admission.RefreshResult:
+    properties:
+      errors:
+        items:
+          type: string
+        type: array
+      evaluated:
+        type: integer
+      failed:
+        type: integer
+      source:
+        type: string
+    type: object
+  admission.RichVolunteerPlan:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      detailedGroups:
+        items:
+          $ref: '#/definitions/admission.DetailedVolunteerPlanGroup'
+        type: array
+      groups:
+        items:
+          $ref: '#/definitions/admission.VolunteerPlanGroup'
+        type: array
+      id:
+        type: integer
+      name:
+        type: string
+      planStatistics:
+        $ref: '#/definitions/admission.PlanStatistics'
+      stats:
+        $ref: '#/definitions/admission.VolunteerPlanStats'
+      userDetails:
+        $ref: '#/definitions/admission.UserDetails'
+      userId:
+        type: integer
+    type: object
+  admission.ScoreBreakdown:
+    properties:
+      ability_improvement_base:
+        type: number
+      ability_improvement_reason:
+        type: string
+      ability_improvement_score:
+        type: number
+      city_base:
+        type: number
+      city_reason:
+        type: string
+      city_score:
+        type: number
+      evaluated_by:
+        description: '''algorithm'' | ''llm'' | ''manual'''
+        type: string
+      evaluator_model:
+        description: e.g. claude-opus-4-7
+        type: string
+      future_competitiveness_base:
+        type: number
+      future_competitiveness_reason:
+        type: string
+      future_competitiveness_score:
+        type: number
+      major_base:
+        type: number
+      major_reason:
+        type: string
+      major_score:
+        type: number
+      school_base:
+        type: number
+      school_reason:
+        type: string
+      school_score:
+        type: number
     type: object
   admission.StandardMajorResponse:
     properties:
@@ -352,6 +714,17 @@ definitions:
       name:
         type: string
       source_url:
+        type: string
+    type: object
+  admission.UniversityDetails:
+    properties:
+      is211:
+        type: boolean
+      is985:
+        type: boolean
+      region:
+        type: string
+      schoolCategory:
         type: string
     type: object
   admission.UniversityProfileResponse:
@@ -413,34 +786,101 @@ definitions:
     type: object
   admission.UniversityResponse:
     properties:
+      affiliation:
+        type: string
+      city:
+        type: string
+      doctoral_program_count:
+        type: integer
+      education_level_code:
+        type: string
+      education_level_name:
+        type: string
+      has_postgraduate_recommendation:
+        type: boolean
       id:
+        type: integer
+      is_211:
+        type: boolean
+      is_985:
+        type: boolean
+      is_double_first_class:
+        type: boolean
+      is_national_key:
+        type: boolean
+      is_provincial_key:
+        type: boolean
+      master_program_count:
         type: integer
       name:
         type: string
       normalized_name:
         type: string
+      ownership_type_code:
+        type: string
+      ownership_type_name:
+        type: string
+      profile_year:
+        type: integer
+      region_code:
+        type: string
+      region_name:
+        type: string
+      school_category_code:
+        type: string
+      school_category_name:
+        type: string
+      soft_rank:
+        type: string
       university_code:
         type: string
     type: object
-  admission.VolunteerPlan:
+  admission.UserDetails:
     properties:
-      columns:
-        items:
-          type: string
-        type: array
-      description:
+      email:
+        type: string
+      username:
+        type: string
+    type: object
+  admission.VolunteerPlanGroup:
+    properties:
+      groupCode:
+        type: string
+      groupId:
+        type: integer
+      groupName:
         type: string
       id:
-        type: string
-      name:
-        type: string
-      rows:
+        type: integer
+      isObeyAdjustment:
+        type: boolean
+      majors:
         items:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/admission.VolunteerPlanMajor'
         type: array
-      stats:
-        $ref: '#/definitions/admission.VolunteerPlanStats'
+      orderNo:
+        type: integer
+      remark:
+        type: string
+      universityCode:
+        type: string
+      universityId:
+        type: integer
+      universityName:
+        type: string
+    type: object
+  admission.VolunteerPlanMajor:
+    properties:
+      id:
+        type: integer
+      majorAdmissionId:
+        type: integer
+      majorCode:
+        type: string
+      majorName:
+        type: string
+      majorOrder:
+        type: integer
     type: object
   admission.VolunteerPlanStats:
     properties:
@@ -451,12 +891,14 @@ definitions:
       schoolCount:
         type: integer
     type: object
-  admission.VolunteerPlansResponse:
+  admission.refreshScoreRequest:
     properties:
-      plans:
-        items:
-          $ref: '#/definitions/admission.VolunteerPlan'
-        type: array
+      limit:
+        description: default 50
+        type: integer
+      max_age_days:
+        description: default 90
+        type: integer
     type: object
   ai.ChatRequest:
     properties:
@@ -497,25 +939,151 @@ definitions:
       type:
         type: string
     type: object
+  analysis.EquivalentScore:
+    properties:
+      reference_year:
+        type: integer
+      score:
+        type: integer
+    type: object
+  analysis.GroupComparisonItem:
+    properties:
+      admitted_count:
+        type: integer
+      batch_name:
+        type: string
+      group_code:
+        type: string
+      group_major_names:
+        type: string
+      group_min_rank:
+        type: integer
+      group_min_score:
+        type: integer
+      major_count:
+        type: integer
+      plan_count:
+        type: integer
+      subject_requirement_name:
+        type: string
+    type: object
+  analysis.GroupComparisonResponse:
+    properties:
+      admission_year:
+        type: integer
+      groups:
+        items:
+          $ref: '#/definitions/analysis.GroupComparisonItem'
+        type: array
+      university_id:
+        type: integer
+      university_name:
+        type: string
+    type: object
+  analysis.MajorComparisonItem:
+    properties:
+      admitted_count:
+        type: integer
+      equivalent_min_score:
+        type: integer
+      group_code:
+        type: string
+      local_major_code:
+        type: string
+      min_rank:
+        type: integer
+      min_score:
+        type: integer
+      plan_count:
+        type: integer
+      university_id:
+        type: integer
+      university_name:
+        type: string
+    type: object
+  analysis.MajorComparisonResponse:
+    properties:
+      admission_year:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/analysis.MajorComparisonItem'
+        type: array
+      local_major_name:
+        type: string
+    type: object
+  analysis.MajorDistributionItem:
+    properties:
+      admitted_count:
+        type: integer
+      local_major_code:
+        type: string
+      local_major_name:
+        type: string
+      min_rank:
+        type: integer
+      min_score:
+        type: integer
+      plan_count:
+        type: integer
+      tuition:
+        type: integer
+    type: object
+  analysis.MajorDistributionResponse:
+    properties:
+      admission_year:
+        type: integer
+      group_code:
+        type: string
+      majors:
+        items:
+          $ref: '#/definitions/analysis.MajorDistributionItem'
+        type: array
+      university_id:
+        type: integer
+    type: object
+  analysis.TrendResponse:
+    properties:
+      group_code:
+        type: string
+      local_major_code:
+        type: string
+      local_major_name:
+        type: string
+      university_id:
+        type: integer
+      university_name:
+        type: string
+      years:
+        items:
+          $ref: '#/definitions/analysis.TrendYear'
+        type: array
+    type: object
+  analysis.TrendYear:
+    properties:
+      admitted_count:
+        type: integer
+      equivalent_scores:
+        items:
+          $ref: '#/definitions/analysis.EquivalentScore'
+        type: array
+      group_min_rank:
+        type: integer
+      group_min_score:
+        type: integer
+      min_rank:
+        type: integer
+      min_score:
+        type: integer
+      plan_count:
+        type: integer
+      year:
+        type: integer
+    type: object
   conversation.AddMessageRequest:
     properties:
       content:
         type: string
-    type: object
-  conversation.Conversation:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: integer
-      status:
-        type: string
-      title:
-        type: string
-      updated_at:
-        type: string
-      user_id:
-        type: integer
     type: object
   conversation.CreateConversationRequest:
     properties:
@@ -524,83 +1092,32 @@ definitions:
       user_id:
         type: integer
     type: object
-  conversation.Message:
+  conversation.RollbackRequest:
     properties:
-      content:
-        type: string
-      conversation_id:
-        type: integer
-      created_at:
-        type: string
-      id:
-        type: integer
-      role:
-        type: string
-      tool_calls:
-        items:
-          type: integer
-        type: array
-      tool_results:
-        items:
-          type: integer
-        type: array
-    type: object
-  conversation.WithMessages:
-    properties:
-      conversation:
-        $ref: '#/definitions/conversation.Conversation'
-      messages:
-        items:
-          $ref: '#/definitions/conversation.Message'
-        type: array
-    type: object
-  membership.CurrentMembershipResponse:
-    properties:
-      active:
-        example: true
+      inclusive:
         type: boolean
-      ends_at:
-        example: "2026-05-23T10:00:00Z"
-        type: string
-      membership_level:
-        example: premium
-        type: string
-      started_at:
-        example: "2026-04-23T10:00:00Z"
-        type: string
-      status:
-        example: active
-        type: string
+      message_id:
+        type: integer
     type: object
-  membership.PlanResponse:
+  payment.AlipayPayResponse:
     properties:
-      currency:
-        example: CNY
+      expires_at:
         type: string
-      duration_days:
-        example: 30
-        type: integer
-      id:
-        example: 1
-        type: integer
-      membership_level:
-        example: premium
+      order_no:
+        example: MO202605101200000001
         type: string
-      plan_code:
-        example: monthly
-        type: string
-      plan_name:
-        example: 月度会员
-        type: string
-      price_amount:
-        example: 990
-        type: integer
-      status:
-        example: active
+      pay_url:
+        example: https://openapi-sandbox.dl.alipaydev.com/gateway.do?...
         type: string
     type: object
   payment.CreateOrderRequest:
     properties:
+      channel:
+        enum:
+        - mock
+        - alipay
+        example: alipay
+        type: string
       idempotency_key:
         example: checkout-123
         maxLength: 128
@@ -635,67 +1152,6 @@ definitions:
     - callback_id
     - channel_trade_no
     - order_no
-    type: object
-  payment.OrderListResponse:
-    properties:
-      items:
-        items:
-          $ref: '#/definitions/payment.OrderResponse'
-        type: array
-      page:
-        example: 1
-        type: integer
-      page_size:
-        example: 20
-        type: integer
-      total:
-        example: 1
-        type: integer
-    type: object
-  payment.OrderResponse:
-    properties:
-      amount:
-        example: 990
-        type: integer
-      closed_at:
-        example: "2026-04-23T10:15:00Z"
-        type: string
-      created_at:
-        example: "2026-04-23T10:00:00Z"
-        type: string
-      currency:
-        example: CNY
-        type: string
-      entitlement_status:
-        example: pending
-        type: string
-      expires_at:
-        example: "2026-04-23T10:15:00Z"
-        type: string
-      order_no:
-        example: MO202604231200000001
-        type: string
-      order_status:
-        example: awaiting_payment
-        type: string
-      paid_at:
-        example: "2026-04-23T10:01:00Z"
-        type: string
-      payment_channel:
-        example: mock
-        type: string
-      payment_status:
-        example: unpaid
-        type: string
-      plan_code:
-        example: monthly
-        type: string
-      subject:
-        example: 月度会员
-        type: string
-      user_id:
-        example: 1
-        type: integer
     type: object
   user.ChangePasswordRequest:
     properties:
@@ -821,6 +1277,39 @@ info:
   title: Admission API
   version: "1.0"
 paths:
+  /api/v1/admin/recommendation/scores/refresh:
+    post:
+      consumes:
+      - application/json
+      description: 扫描 recommendation_precomputed_scores 中缺失或过期（默认 90 天）的 (university
+        × major) 行，逐个调用评估器（默认 LLM）填充五维基准分。可指定批量大小。
+      parameters:
+      - description: 刷新参数
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/admission.refreshScoreRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.RefreshResult'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 刷新推荐打分缓存（管理员）
+      tags:
+      - admin
   /api/v1/admin/stats:
     get:
       consumes:
@@ -1026,14 +1515,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "401":
           description: Unauthorized
           schema:
@@ -1068,14 +1550,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "401":
           description: Unauthorized
           schema:
@@ -1116,14 +1591,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -1168,14 +1636,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -1385,12 +1846,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/admission.AggregateResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -1446,6 +1902,43 @@ paths:
       summary: Get latest major catalog year
       tags:
       - admission
+  /api/v1/admission/recommendations:
+    post:
+      consumes:
+      - application/json
+      description: 基于学生省份、选科、分数、位次、单科成绩、家庭资源、个人画像、地域偏好、专业偏好、职业规划，输出冲/稳/保三档志愿表，并对每个志愿给出综合评分与推荐理由。
+      parameters:
+      - description: 学生画像与偏好
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/admission.RecommendationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.RecommendationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 生成志愿推荐表
+      tags:
+      - admission
   /api/v1/admission/standard-majors:
     get:
       description: Returns CHSI standard majors. If catalog_year is omitted, the latest
@@ -1486,11 +1979,53 @@ paths:
       - admission
   /api/v1/admission/universities:
     get:
-      description: Returns university identities.
+      description: Returns university identities enriched with latest profile information.
+        Filters can narrow the result by region, school category, ownership type,
+        education level, and university-tier flags.
       parameters:
       - description: Search university code or name
         in: query
         name: q
+        type: string
+      - description: Comma-separated region codes
+        in: query
+        name: region_codes
+        type: string
+      - description: Comma-separated school category codes
+        in: query
+        name: school_category_codes
+        type: string
+      - description: Comma-separated school ownership type codes
+        in: query
+        name: ownership_type_codes
+        type: string
+      - description: Education level code
+        in: query
+        name: education_level_code
+        type: string
+      - description: Filter by 985 (1/0)
+        in: query
+        name: is_985
+        type: string
+      - description: Filter by 211 (1/0)
+        in: query
+        name: is_211
+        type: string
+      - description: Filter by double-first-class (1/0)
+        in: query
+        name: is_double_first_class
+        type: string
+      - description: Filter by national-key (1/0)
+        in: query
+        name: is_national_key
+        type: string
+      - description: Filter by provincial-key (1/0)
+        in: query
+        name: is_provincial_key
+        type: string
+      - description: Filter by postgraduate-recommendation eligibility (1/0)
+        in: query
+        name: has_postgraduate_recommendation
         type: string
       produces:
       - application/json
@@ -1559,12 +2094,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/admission.VolunteerPlansResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "500":
           description: Internal Server Error
           schema:
@@ -1572,12 +2102,49 @@ paths:
       summary: List volunteer plans
       tags:
       - admission
+  /api/v1/admission/volunteer-plans/{id}/rich-details:
+    get:
+      description: Returns a detailed volunteer plan with user details, statistics,
+        and rich group/major info.
+      parameters:
+      - description: Volunteer Plan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/admission.RichVolunteerPlan'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Get rich volunteer plan details
+      tags:
+      - admission
   /api/v1/ai/chat:
     post:
       consumes:
       - application/json
-      description: Streams AI responses via SSE. Send messages array; receive step_start/step_finish/text_delta/done
-        events.
+      description: Streams AI responses via SSE. Send messages array; receive text_delta
+        / tool_call_start / tool_call_end / widget / done events.
       parameters:
       - description: Chat messages
         in: body
@@ -1603,6 +2170,193 @@ paths:
       summary: AI chat with SSE streaming
       tags:
       - ai
+  /api/v1/analysis/majors/comparison:
+    get:
+      description: Returns the same major across multiple universities for comparison.
+      parameters:
+      - description: Local major name
+        in: query
+        name: local_major_name
+        required: true
+        type: string
+      - description: Admission year (default latest)
+        in: query
+        name: admission_year
+        type: integer
+      - description: Region code
+        in: query
+        name: region_code
+        type: string
+      - description: Subject category code
+        in: query
+        name: subject_category_code
+        type: string
+      - description: Max results (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.MajorComparisonResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Cross-university major comparison
+      tags:
+      - analysis
+  /api/v1/analysis/universities/{id}/groups:
+    get:
+      description: Returns all admission groups for a university in a given year with
+        aggregated metrics.
+      parameters:
+      - description: University ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Admission year (default latest)
+        in: query
+        name: admission_year
+        type: integer
+      - description: Region code
+        in: query
+        name: region_code
+        type: string
+      - description: Subject category code
+        in: query
+        name: subject_category_code
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.GroupComparisonResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: University group comparison
+      tags:
+      - analysis
+  /api/v1/analysis/universities/{id}/majors/distribution:
+    get:
+      description: Returns per-major metrics for a university admission group.
+      parameters:
+      - description: University ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Admission group code
+        in: query
+        name: group_code
+        required: true
+        type: string
+      - description: Admission year (default latest)
+        in: query
+        name: admission_year
+        type: integer
+      - description: Region code
+        in: query
+        name: region_code
+        type: string
+      - description: Subject category code
+        in: query
+        name: subject_category_code
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.MajorDistributionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Major distribution within a group
+      tags:
+      - analysis
+  /api/v1/analysis/universities/{id}/trend:
+    get:
+      description: Returns multi-year admission data for a university, optionally
+        filtered by group and major.
+      parameters:
+      - description: University ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Admission group code
+        in: query
+        name: group_code
+        type: string
+      - description: Local major code
+        in: query
+        name: local_major_code
+        type: string
+      - description: Number of years to return (default 5)
+        in: query
+        name: years
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/analysis.TrendResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: University admission trend
+      tags:
+      - analysis
   /api/v1/auth/login:
     post:
       consumes:
@@ -1720,14 +2474,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/conversation.Conversation'
-                  type: array
-              type: object
+            $ref: '#/definitions/web.Response'
         "500":
           description: Internal Server Error
           schema:
@@ -1753,12 +2500,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/conversation.Conversation'
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -1811,12 +2553,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/conversation.WithMessages'
-              type: object
+            $ref: '#/definitions/web.Response'
         "404":
           description: Not Found
           schema:
@@ -1918,12 +2655,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/conversation.Message'
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -1939,6 +2671,107 @@ paths:
       summary: Add a user message
       tags:
       - conversation
+  /api/v1/conversations/{id}/regenerate:
+    post:
+      description: Discards the most recent assistant turn (if any) and re-runs the
+        agent on the resulting history. SSE stream identical to ChatWithConversation.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Regenerate the last assistant reply
+      tags:
+      - ai
+  /api/v1/conversations/{id}/rollback:
+    post:
+      consumes:
+      - application/json
+      description: Deletes messages at or after the specified message_id (inclusive
+        by default). Used by the frontend "edit / regenerate" flows. Non-owners receive
+        404 to avoid leaking conversation existence.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rollback target
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/conversation.RollbackRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Rollback conversation history
+      tags:
+      - conversation
+  /api/v1/conversations/{id}/suggestions:
+    get:
+      description: Generates 2-4 follow-up question chips for a conversation. Cached
+        in Redis keyed by (conversation_id, last_message_id).
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: Suggested follow-up questions
+      tags:
+      - ai
   /api/v1/me:
     get:
       consumes:
@@ -1983,14 +2816,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -2022,14 +2848,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -2065,14 +2884,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -2099,12 +2911,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/membership.CurrentMembershipResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "401":
           description: Unauthorized
           schema:
@@ -2127,14 +2934,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/membership.PlanResponse'
-                  type: array
-              type: object
+            $ref: '#/definitions/web.Response'
         "401":
           description: Unauthorized
           schema:
@@ -2148,6 +2948,31 @@ paths:
       summary: 获取会员套餐列表
       tags:
       - membership
+  /api/v1/payment/callbacks/alipay:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: 支付宝异步通知参数
+        in: body
+        name: body
+        required: true
+        schema:
+          type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: success
+          schema:
+            type: string
+        "400":
+          description: fail
+          schema:
+            type: string
+      summary: 支付宝异步通知回调
+      tags:
+      - payment
   /api/v1/payment/callbacks/mock:
     post:
       consumes:
@@ -2169,12 +2994,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/payment.OrderResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -2203,12 +3023,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/payment.OrderListResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "401":
           description: Unauthorized
           schema:
@@ -2234,12 +3049,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/payment.OrderResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -2275,12 +3085,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/payment.OrderResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "401":
           description: Unauthorized
           schema:
@@ -2308,12 +3113,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/payment.OrderResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "401":
           description: Unauthorized
           schema:
@@ -2341,12 +3141,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/payment.OrderResponse'
-              type: object
+            $ref: '#/definitions/web.Response'
         "400":
           description: Bad Request
           schema:
@@ -2360,6 +3155,43 @@ paths:
       summary: mock 支付会员订单
       tags:
       - payment
+  /api/v1/payment/orders/{order_no}/pay/alipay:
+    post:
+      parameters:
+      - description: 订单号
+        in: path
+        name: order_no
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/payment.AlipayPayResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 支付宝支付（电脑网站支付）
+      tags:
+      - payment
   /health:
     get:
       consumes:
@@ -2371,14 +3203,7 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/web.Response'
-            - properties:
-                data:
-                  additionalProperties:
-                    type: string
-                  type: object
-              type: object
+            $ref: '#/definitions/web.Response'
         "503":
           description: Service Unavailable
           schema:

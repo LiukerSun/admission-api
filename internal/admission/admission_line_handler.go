@@ -39,7 +39,7 @@ func NewAdmissionLineHandler(service AdmissionLineService) *AdmissionLineHandler
 // @Param        min_rank_to query int false "Minimum rank upper bound"
 // @Param        min_score_from query int false "Minimum score lower bound"
 // @Param        min_score_to query int false "Minimum score upper bound"
-// @Success      200 {object} web.Response
+// @Success      200 {object} web.Response{data=[]AdmissionLineResponse}
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/admission-lines [get]

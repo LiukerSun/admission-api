@@ -11,6 +11,62 @@
     },
     "basePath": "/",
     "paths": {
+        "/api/v1/admin/recommendation/scores/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "扫描 recommendation_precomputed_scores 中缺失或过期（默认 90 天）的 (university × major) 行，逐个调用评估器（默认 LLM）填充五维基准分。可指定批量大小。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "刷新推荐打分缓存（管理员）",
+                "parameters": [
+                    {
+                        "description": "刷新参数",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/admission.refreshScoreRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admission.RefreshResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/stats": {
             "get": {
                 "security": [
@@ -351,22 +407,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "401": {
@@ -421,22 +462,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "401": {
@@ -500,22 +526,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -585,22 +596,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -907,19 +903,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/admission.AggregateResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -1013,6 +997,69 @@
                 }
             }
         },
+        "/api/v1/admission/recommendations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "基于学生省份、选科、分数、位次、单科成绩、家庭资源、个人画像、地域偏好、专业偏好、职业规划，输出冲/稳/保三档志愿表，并对每个志愿给出综合评分与推荐理由。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "生成志愿推荐表",
+                "parameters": [
+                    {
+                        "description": "学生画像与偏好",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admission.RecommendationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admission.RecommendationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admission/standard-majors": {
             "get": {
                 "description": "Returns CHSI standard majors. If catalog_year is omitted, the latest catalog year is used.",
@@ -1076,7 +1123,7 @@
         },
         "/api/v1/admission/universities": {
             "get": {
-                "description": "Returns university identities.",
+                "description": "Returns university identities enriched with latest profile information. Filters can narrow the result by region, school category, ownership type, education level, and university-tier flags.",
                 "produces": [
                     "application/json"
                 ],
@@ -1089,6 +1136,66 @@
                         "type": "string",
                         "description": "Search university code or name",
                         "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated region codes",
+                        "name": "region_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated school category codes",
+                        "name": "school_category_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated school ownership type codes",
+                        "name": "ownership_type_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Education level code",
+                        "name": "education_level_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by 985 (1/0)",
+                        "name": "is_985",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by 211 (1/0)",
+                        "name": "is_211",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by double-first-class (1/0)",
+                        "name": "is_double_first_class",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by national-key (1/0)",
+                        "name": "is_national_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by provincial-key (1/0)",
+                        "name": "is_provincial_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by postgraduate-recommendation eligibility (1/0)",
+                        "name": "has_postgraduate_recommendation",
                         "in": "query"
                     }
                 ],
@@ -1196,6 +1303,41 @@
                     "200": {
                         "description": "OK",
                         "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admission/volunteer-plans/{id}/rich-details": {
+            "get": {
+                "description": "Returns a detailed volunteer plan with user details, statistics, and rich group/major info.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admission"
+                ],
+                "summary": "Get rich volunteer plan details",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Volunteer Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
                             "allOf": [
                                 {
                                     "$ref": "#/definitions/web.Response"
@@ -1204,11 +1346,23 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/admission.VolunteerPlansResponse"
+                                            "$ref": "#/definitions/admission.RichVolunteerPlan"
                                         }
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "500": {
@@ -1222,7 +1376,7 @@
         },
         "/api/v1/ai/chat": {
             "post": {
-                "description": "Streams AI responses via SSE. Send messages array; receive step_start/step_finish/text_delta/done events.",
+                "description": "Streams AI responses via SSE. Send messages array; receive text_delta / tool_call_start / tool_call_end / widget / done events.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1249,6 +1403,303 @@
                         "description": "SSE stream",
                         "schema": {
                             "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/majors/comparison": {
+            "get": {
+                "description": "Returns the same major across multiple universities for comparison.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "Cross-university major comparison",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local major name",
+                        "name": "local_major_name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Admission year (default latest)",
+                        "name": "admission_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Region code",
+                        "name": "region_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Subject category code",
+                        "name": "subject_category_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max results (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.MajorComparisonResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/universities/{id}/groups": {
+            "get": {
+                "description": "Returns all admission groups for a university in a given year with aggregated metrics.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "University group comparison",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "University ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Admission year (default latest)",
+                        "name": "admission_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Region code",
+                        "name": "region_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Subject category code",
+                        "name": "subject_category_code",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.GroupComparisonResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/universities/{id}/majors/distribution": {
+            "get": {
+                "description": "Returns per-major metrics for a university admission group.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "Major distribution within a group",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "University ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Admission group code",
+                        "name": "group_code",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Admission year (default latest)",
+                        "name": "admission_year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Region code",
+                        "name": "region_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Subject category code",
+                        "name": "subject_category_code",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.MajorDistributionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/analysis/universities/{id}/trend": {
+            "get": {
+                "description": "Returns multi-year admission data for a university, optionally filtered by group and major.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analysis"
+                ],
+                "summary": "University admission trend",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "University ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Admission group code",
+                        "name": "group_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Local major code",
+                        "name": "local_major_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of years to return (default 5)",
+                        "name": "years",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/analysis.TrendResponse"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -1461,22 +1912,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/conversation.Conversation"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "500": {
@@ -1514,19 +1950,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/conversation.Conversation"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -1567,19 +1991,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/conversation.WithMessages"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "404": {
@@ -1771,19 +2183,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/conversation.Message"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -1800,6 +2200,153 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{id}/regenerate": {
+            "post": {
+                "description": "Discards the most recent assistant turn (if any) and re-runs the agent on the resulting history. SSE stream identical to ChatWithConversation.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "ai"
+                ],
+                "summary": "Regenerate the last assistant reply",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{id}/rollback": {
+            "post": {
+                "description": "Deletes messages at or after the specified message_id (inclusive by default). Used by the frontend \"edit / regenerate\" flows. Non-owners receive 404 to avoid leaking conversation existence.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "conversation"
+                ],
+                "summary": "Rollback conversation history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Rollback target",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/conversation.RollbackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{id}/suggestions": {
+            "get": {
+                "description": "Generates 2-4 follow-up question chips for a conversation. Cached in Redis keyed by (conversation_id, last_message_id).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ai"
+                ],
+                "summary": "Suggested follow-up questions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
@@ -1886,22 +2433,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -1952,22 +2484,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -2024,22 +2541,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -2082,19 +2584,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/membership.CurrentMembershipResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "401": {
@@ -2131,22 +2621,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/membership.PlanResponse"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "401": {
@@ -2159,6 +2634,45 @@
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/payment/callbacks/alipay": {
+            "post": {
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "支付宝异步通知回调",
+                "parameters": [
+                    {
+                        "description": "支付宝异步通知参数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "fail",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -2197,19 +2711,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/payment.OrderResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -2259,19 +2761,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/payment.OrderListResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "401": {
@@ -2313,19 +2803,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/payment.OrderResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "400": {
@@ -2382,19 +2860,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/payment.OrderResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "401": {
@@ -2439,19 +2905,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/payment.OrderResponse"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "401": {
@@ -2496,6 +2950,51 @@
                     "200": {
                         "description": "OK",
                         "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/payment/orders/{order_no}/pay/alipay": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "支付宝支付（电脑网站支付）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "订单号",
+                        "name": "order_no",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
                             "allOf": [
                                 {
                                     "$ref": "#/definitions/web.Response"
@@ -2504,7 +3003,7 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/payment.OrderResponse"
+                                            "$ref": "#/definitions/payment.AlipayPayResponse"
                                         }
                                     }
                                 }
@@ -2519,6 +3018,12 @@
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
@@ -2543,22 +3048,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/web.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/web.Response"
                         }
                     },
                     "503": {
@@ -2837,6 +3327,9 @@
                 "group_code": {
                     "type": "string"
                 },
+                "group_major_names": {
+                    "type": "string"
+                },
                 "group_min_rank": {
                     "type": "integer"
                 },
@@ -2935,51 +3428,97 @@
                 }
             }
         },
-        "admission.AggregateItem": {
+        "admission.DetailedVolunteerPlanGroup": {
             "type": "object",
             "properties": {
-                "avg_min_rank": {
-                    "type": "number"
+                "detailedMajors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DetailedVolunteerPlanMajor"
+                    }
                 },
-                "avg_min_score": {
-                    "type": "number"
+                "groupAdmissionDetails": {
+                    "$ref": "#/definitions/admission.GroupAdmissionDetails"
                 },
-                "avg_tuition": {
-                    "type": "number"
-                },
-                "code": {
+                "groupCode": {
                     "type": "string"
                 },
-                "count": {
+                "groupId": {
                     "type": "integer"
                 },
-                "is_211_count": {
+                "groupName": {
+                    "type": "string"
+                },
+                "id": {
                     "type": "integer"
                 },
-                "is_985_count": {
+                "isObeyAdjustment": {
+                    "type": "boolean"
+                },
+                "majors": {
+                    "description": "Existing majors",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.VolunteerPlanMajor"
+                    }
+                },
+                "orderNo": {
                     "type": "integer"
                 },
-                "is_double_first_class_count": {
+                "planId": {
                     "type": "integer"
                 },
-                "name": {
+                "remark": {
+                    "type": "string"
+                },
+                "universityCode": {
+                    "type": "string"
+                },
+                "universityDetails": {
+                    "description": "Additional fields for rich export",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/admission.UniversityDetails"
+                        }
+                    ]
+                },
+                "universityId": {
+                    "type": "integer"
+                },
+                "universityName": {
                     "type": "string"
                 }
             }
         },
-        "admission.AggregateResponse": {
+        "admission.DetailedVolunteerPlanMajor": {
             "type": "object",
             "properties": {
-                "group_by": {
+                "employmentDirection": {
                     "type": "string"
                 },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/admission.AggregateItem"
-                    }
+                "majorCode": {
+                    "type": "string"
                 },
-                "total": {
+                "majorIntro": {
+                    "type": "string"
+                },
+                "majorName": {
+                    "type": "string"
+                },
+                "majorOrder": {
+                    "description": "Added for consistency with frontend",
+                    "type": "integer"
+                },
+                "minRank": {
+                    "type": "integer"
+                },
+                "minScore": {
+                    "type": "integer"
+                },
+                "trainingGoal": {
+                    "type": "string"
+                },
+                "tuition": {
                     "type": "integer"
                 }
             }
@@ -3042,11 +3581,494 @@
                 }
             }
         },
+        "admission.GroupAdmissionDetails": {
+            "type": "object",
+            "properties": {
+                "minScore2022": {
+                    "type": "integer"
+                },
+                "minScore2023": {
+                    "type": "integer"
+                },
+                "minScore2024": {
+                    "type": "integer"
+                }
+            }
+        },
         "admission.LatestCatalogYearResponse": {
             "type": "object",
             "properties": {
                 "catalog_year": {
                     "type": "integer"
+                }
+            }
+        },
+        "admission.PlanStatistics": {
+            "type": "object",
+            "properties": {
+                "majorDistribution": {
+                    "description": "e.g., { '计算机科学与技术': 10, '软件工程': 8 }",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "totalGroups": {
+                    "type": "integer"
+                },
+                "totalMajors": {
+                    "type": "integer"
+                },
+                "totalUniversities": {
+                    "type": "integer"
+                }
+            }
+        },
+        "admission.RankWindow": {
+            "type": "object",
+            "properties": {
+                "match_max": {
+                    "type": "integer"
+                },
+                "match_min": {
+                    "type": "integer"
+                },
+                "rush_max": {
+                    "type": "integer"
+                },
+                "rush_min": {
+                    "type": "integer"
+                },
+                "safe_max": {
+                    "type": "integer"
+                },
+                "safe_min": {
+                    "type": "integer"
+                }
+            }
+        },
+        "admission.RecommendationItem": {
+            "type": "object",
+            "properties": {
+                "admission_group_id": {
+                    "type": "integer"
+                },
+                "batch_code": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "composite_score": {
+                    "type": "number"
+                },
+                "discipline_category": {
+                    "type": "string"
+                },
+                "equivalent_min_score": {
+                    "type": "integer"
+                },
+                "group_code": {
+                    "type": "string"
+                },
+                "historical_min_rank": {
+                    "type": "integer"
+                },
+                "historical_min_score": {
+                    "type": "integer"
+                },
+                "is_211": {
+                    "type": "boolean"
+                },
+                "is_985": {
+                    "type": "boolean"
+                },
+                "is_double_first_class": {
+                    "type": "boolean"
+                },
+                "is_national_feature": {
+                    "type": "boolean"
+                },
+                "local_major_code": {
+                    "type": "string"
+                },
+                "local_major_name": {
+                    "type": "string"
+                },
+                "major_priority_score": {
+                    "type": "number"
+                },
+                "major_rank": {
+                    "type": "string"
+                },
+                "order": {
+                    "description": "在志愿表里的顺序（1 起，跨冲/稳/保连续编号）",
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "probability": {
+                    "description": "估算的录取概率 [0,1]",
+                    "type": "number"
+                },
+                "province_code": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "score_breakdown": {
+                    "$ref": "#/definitions/admission.ScoreBreakdown"
+                },
+                "soft_rank": {
+                    "type": "string"
+                },
+                "tier": {
+                    "description": "\"rush\" | \"match\" | \"safe\"",
+                    "type": "string"
+                },
+                "tuition": {
+                    "type": "integer"
+                },
+                "university_code": {
+                    "type": "string"
+                },
+                "university_id": {
+                    "type": "integer"
+                },
+                "university_name": {
+                    "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "admission.RecommendationRequest": {
+            "type": "object",
+            "required": [
+                "provincial_rank",
+                "region_code",
+                "subject_category_code",
+                "total_score"
+            ],
+            "properties": {
+                "admission_year": {
+                    "description": "默认取数据库中最新年份",
+                    "type": "integer"
+                },
+                "budget_tuition_max": {
+                    "description": "经济",
+                    "type": "integer"
+                },
+                "career_plans": {
+                    "description": "职业规划",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "chinese_score": {
+                    "type": "integer"
+                },
+                "enable_llm_tuning": {
+                    "description": "可选: 是否调用大模型做最终调优",
+                    "type": "boolean"
+                },
+                "english_score": {
+                    "type": "integer"
+                },
+                "excluded_cities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded_keywords": {
+                    "description": "张雪峰式避雷词",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded_majors": {
+                    "description": "主观排除的专业关键词",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded_provinces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "family_economy": {
+                    "description": "\"充裕\" / \"普通\" / \"紧张\"",
+                    "type": "string"
+                },
+                "family_resources": {
+                    "description": "家庭资源",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "gender": {
+                    "description": "体检/性别/语种 等一刀切硬门槛",
+                    "type": "string"
+                },
+                "health": {
+                    "description": "已确诊不可报考的限制",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "holland_code": {
+                    "description": "个人画像",
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "math_score": {
+                    "description": "单科成绩 (硬门槛 + 能力匹配)",
+                    "type": "integer"
+                },
+                "physics_score": {
+                    "type": "integer"
+                },
+                "plan_size": {
+                    "description": "输出规模。HLJ 新高考一次 40 个院校专业组，所以 default=40；上限放宽到 500\n允许\"批量分析\"使用方式，常规用户不必关心。",
+                    "type": "integer"
+                },
+                "preferred_cities": {
+                    "description": "地域偏好",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_majors": {
+                    "description": "CHSI 标准专业 / 大类 / 关键词",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_provinces": {
+                    "description": "region_code 列表",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "priority_strategy": {
+                    "description": "学校 vs 专业 优先策略",
+                    "type": "string"
+                },
+                "provincial_rank": {
+                    "description": "省内位次（来自一分一段）",
+                    "type": "integer"
+                },
+                "region_code": {
+                    "description": "基础（必填）",
+                    "type": "string"
+                },
+                "selected_subjects": {
+                    "description": "选科列表，例如 [\"物理\",\"化学\",\"生物\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subject_category_code": {
+                    "description": "物理类 / 历史类",
+                    "type": "string"
+                },
+                "subject_requirement_code": {
+                    "description": "选科 / 年份",
+                    "type": "string"
+                },
+                "total_score": {
+                    "description": "高考总分",
+                    "type": "integer"
+                }
+            }
+        },
+        "admission.RecommendationResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "全部 ≤ planSize 条，按冲→稳→保顺序排列",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.RecommendationItem"
+                    }
+                },
+                "llm_summary": {
+                    "type": "string"
+                },
+                "match_count": {
+                    "type": "integer"
+                },
+                "notes": {
+                    "description": "顶层提示",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rank_window": {
+                    "description": "冲/稳/保三段位次区间",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/admission.RankWindow"
+                        }
+                    ]
+                },
+                "rush_count": {
+                    "type": "integer"
+                },
+                "safe_count": {
+                    "type": "integer"
+                },
+                "strategy": {
+                    "description": "\"school\" | \"major\" | \"rank_window\"",
+                    "type": "string"
+                },
+                "strategy_reason": {
+                    "description": "解释为什么走这个路线",
+                    "type": "string"
+                },
+                "volunteer_plan": {
+                    "description": "草稿载体，给 toolExecutor 用",
+                    "type": "object"
+                }
+            }
+        },
+        "admission.RefreshResult": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "evaluated": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.RichVolunteerPlan": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "detailedGroups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.DetailedVolunteerPlanGroup"
+                    }
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admission.VolunteerPlanGroup"
+                    }
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "planStatistics": {
+                    "$ref": "#/definitions/admission.PlanStatistics"
+                },
+                "stats": {
+                    "$ref": "#/definitions/admission.VolunteerPlanStats"
+                },
+                "userDetails": {
+                    "$ref": "#/definitions/admission.UserDetails"
+                },
+                "userId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "admission.ScoreBreakdown": {
+            "type": "object",
+            "properties": {
+                "ability_improvement_base": {
+                    "type": "number"
+                },
+                "ability_improvement_reason": {
+                    "type": "string"
+                },
+                "ability_improvement_score": {
+                    "type": "number"
+                },
+                "city_base": {
+                    "type": "number"
+                },
+                "city_reason": {
+                    "type": "string"
+                },
+                "city_score": {
+                    "type": "number"
+                },
+                "evaluated_by": {
+                    "description": "'algorithm' | 'llm' | 'manual'",
+                    "type": "string"
+                },
+                "evaluator_model": {
+                    "description": "e.g. claude-opus-4-7",
+                    "type": "string"
+                },
+                "future_competitiveness_base": {
+                    "type": "number"
+                },
+                "future_competitiveness_reason": {
+                    "type": "string"
+                },
+                "future_competitiveness_score": {
+                    "type": "number"
+                },
+                "major_base": {
+                    "type": "number"
+                },
+                "major_reason": {
+                    "type": "string"
+                },
+                "major_score": {
+                    "type": "number"
+                },
+                "school_base": {
+                    "type": "number"
+                },
+                "school_reason": {
+                    "type": "string"
+                },
+                "school_score": {
+                    "type": "number"
                 }
             }
         },
@@ -3084,6 +4106,23 @@
                     "type": "string"
                 },
                 "source_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.UniversityDetails": {
+            "type": "object",
+            "properties": {
+                "is211": {
+                    "type": "boolean"
+                },
+                "is985": {
+                    "type": "boolean"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "schoolCategory": {
                     "type": "string"
                 }
             }
@@ -3177,7 +4216,43 @@
         "admission.UniversityResponse": {
             "type": "object",
             "properties": {
+                "affiliation": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "doctoral_program_count": {
+                    "type": "integer"
+                },
+                "education_level_code": {
+                    "type": "string"
+                },
+                "education_level_name": {
+                    "type": "string"
+                },
+                "has_postgraduate_recommendation": {
+                    "type": "boolean"
+                },
                 "id": {
+                    "type": "integer"
+                },
+                "is_211": {
+                    "type": "boolean"
+                },
+                "is_985": {
+                    "type": "boolean"
+                },
+                "is_double_first_class": {
+                    "type": "boolean"
+                },
+                "is_national_key": {
+                    "type": "boolean"
+                },
+                "is_provincial_key": {
+                    "type": "boolean"
+                },
+                "master_program_count": {
                     "type": "integer"
                 },
                 "name": {
@@ -3186,38 +4261,104 @@
                 "normalized_name": {
                     "type": "string"
                 },
+                "ownership_type_code": {
+                    "type": "string"
+                },
+                "ownership_type_name": {
+                    "type": "string"
+                },
+                "profile_year": {
+                    "type": "integer"
+                },
+                "region_code": {
+                    "type": "string"
+                },
+                "region_name": {
+                    "type": "string"
+                },
+                "school_category_code": {
+                    "type": "string"
+                },
+                "school_category_name": {
+                    "type": "string"
+                },
+                "soft_rank": {
+                    "type": "string"
+                },
                 "university_code": {
                     "type": "string"
                 }
             }
         },
-        "admission.VolunteerPlan": {
+        "admission.UserDetails": {
             "type": "object",
             "properties": {
-                "columns": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "email": {
+                    "type": "string"
                 },
-                "description": {
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.VolunteerPlanGroup": {
+            "type": "object",
+            "properties": {
+                "groupCode": {
+                    "type": "string"
+                },
+                "groupId": {
+                    "type": "integer"
+                },
+                "groupName": {
                     "type": "string"
                 },
                 "id": {
-                    "type": "string"
+                    "type": "integer"
                 },
-                "name": {
-                    "type": "string"
+                "isObeyAdjustment": {
+                    "type": "boolean"
                 },
-                "rows": {
+                "majors": {
                     "type": "array",
                     "items": {
-                        "type": "object",
-                        "additionalProperties": true
+                        "$ref": "#/definitions/admission.VolunteerPlanMajor"
                     }
                 },
-                "stats": {
-                    "$ref": "#/definitions/admission.VolunteerPlanStats"
+                "orderNo": {
+                    "type": "integer"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "universityCode": {
+                    "type": "string"
+                },
+                "universityId": {
+                    "type": "integer"
+                },
+                "universityName": {
+                    "type": "string"
+                }
+            }
+        },
+        "admission.VolunteerPlanMajor": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "majorAdmissionId": {
+                    "type": "integer"
+                },
+                "majorCode": {
+                    "type": "string"
+                },
+                "majorName": {
+                    "type": "string"
+                },
+                "majorOrder": {
+                    "type": "integer"
                 }
             }
         },
@@ -3235,14 +4376,16 @@
                 }
             }
         },
-        "admission.VolunteerPlansResponse": {
+        "admission.refreshScoreRequest": {
             "type": "object",
             "properties": {
-                "plans": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/admission.VolunteerPlan"
-                    }
+                "limit": {
+                    "description": "default 50",
+                    "type": "integer"
+                },
+                "max_age_days": {
+                    "description": "default 90",
+                    "type": "integer"
                 }
             }
         },
@@ -3307,34 +4450,227 @@
                 }
             }
         },
+        "analysis.EquivalentScore": {
+            "type": "object",
+            "properties": {
+                "reference_year": {
+                    "type": "integer"
+                },
+                "score": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.GroupComparisonItem": {
+            "type": "object",
+            "properties": {
+                "admitted_count": {
+                    "type": "integer"
+                },
+                "batch_name": {
+                    "type": "string"
+                },
+                "group_code": {
+                    "type": "string"
+                },
+                "group_major_names": {
+                    "type": "string"
+                },
+                "group_min_rank": {
+                    "type": "integer"
+                },
+                "group_min_score": {
+                    "type": "integer"
+                },
+                "major_count": {
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "subject_requirement_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.GroupComparisonResponse": {
+            "type": "object",
+            "properties": {
+                "admission_year": {
+                    "type": "integer"
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.GroupComparisonItem"
+                    }
+                },
+                "university_id": {
+                    "type": "integer"
+                },
+                "university_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.MajorComparisonItem": {
+            "type": "object",
+            "properties": {
+                "admitted_count": {
+                    "type": "integer"
+                },
+                "equivalent_min_score": {
+                    "type": "integer"
+                },
+                "group_code": {
+                    "type": "string"
+                },
+                "local_major_code": {
+                    "type": "string"
+                },
+                "min_rank": {
+                    "type": "integer"
+                },
+                "min_score": {
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "university_id": {
+                    "type": "integer"
+                },
+                "university_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.MajorComparisonResponse": {
+            "type": "object",
+            "properties": {
+                "admission_year": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.MajorComparisonItem"
+                    }
+                },
+                "local_major_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "analysis.MajorDistributionItem": {
+            "type": "object",
+            "properties": {
+                "admitted_count": {
+                    "type": "integer"
+                },
+                "local_major_code": {
+                    "type": "string"
+                },
+                "local_major_name": {
+                    "type": "string"
+                },
+                "min_rank": {
+                    "type": "integer"
+                },
+                "min_score": {
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "tuition": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.MajorDistributionResponse": {
+            "type": "object",
+            "properties": {
+                "admission_year": {
+                    "type": "integer"
+                },
+                "group_code": {
+                    "type": "string"
+                },
+                "majors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.MajorDistributionItem"
+                    }
+                },
+                "university_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "analysis.TrendResponse": {
+            "type": "object",
+            "properties": {
+                "group_code": {
+                    "type": "string"
+                },
+                "local_major_code": {
+                    "type": "string"
+                },
+                "local_major_name": {
+                    "type": "string"
+                },
+                "university_id": {
+                    "type": "integer"
+                },
+                "university_name": {
+                    "type": "string"
+                },
+                "years": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.TrendYear"
+                    }
+                }
+            }
+        },
+        "analysis.TrendYear": {
+            "type": "object",
+            "properties": {
+                "admitted_count": {
+                    "type": "integer"
+                },
+                "equivalent_scores": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analysis.EquivalentScore"
+                    }
+                },
+                "group_min_rank": {
+                    "type": "integer"
+                },
+                "group_min_score": {
+                    "type": "integer"
+                },
+                "min_rank": {
+                    "type": "integer"
+                },
+                "min_score": {
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
         "conversation.AddMessageRequest": {
             "type": "object",
             "properties": {
                 "content": {
                     "type": "string"
-                }
-            }
-        },
-        "conversation.Conversation": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "user_id": {
-                    "type": "integer"
                 }
             }
         },
@@ -3349,111 +4685,30 @@
                 }
             }
         },
-        "conversation.Message": {
+        "conversation.RollbackRequest": {
             "type": "object",
             "properties": {
-                "content": {
-                    "type": "string"
+                "inclusive": {
+                    "type": "boolean"
                 },
-                "conversation_id": {
+                "message_id": {
                     "type": "integer"
-                },
-                "created_at": {
+                }
+            }
+        },
+        "payment.AlipayPayResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
                     "type": "string"
                 },
-                "id": {
-                    "type": "integer"
-                },
-                "role": {
-                    "type": "string"
-                },
-                "tool_calls": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "tool_results": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                }
-            }
-        },
-        "conversation.WithMessages": {
-            "type": "object",
-            "properties": {
-                "conversation": {
-                    "$ref": "#/definitions/conversation.Conversation"
-                },
-                "messages": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/conversation.Message"
-                    }
-                }
-            }
-        },
-        "membership.CurrentMembershipResponse": {
-            "type": "object",
-            "properties": {
-                "active": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "ends_at": {
+                "order_no": {
                     "type": "string",
-                    "example": "2026-05-23T10:00:00Z"
+                    "example": "MO202605101200000001"
                 },
-                "membership_level": {
+                "pay_url": {
                     "type": "string",
-                    "example": "premium"
-                },
-                "started_at": {
-                    "type": "string",
-                    "example": "2026-04-23T10:00:00Z"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "active"
-                }
-            }
-        },
-        "membership.PlanResponse": {
-            "type": "object",
-            "properties": {
-                "currency": {
-                    "type": "string",
-                    "example": "CNY"
-                },
-                "duration_days": {
-                    "type": "integer",
-                    "example": 30
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "membership_level": {
-                    "type": "string",
-                    "example": "premium"
-                },
-                "plan_code": {
-                    "type": "string",
-                    "example": "monthly"
-                },
-                "plan_name": {
-                    "type": "string",
-                    "example": "月度会员"
-                },
-                "price_amount": {
-                    "type": "integer",
-                    "example": 990
-                },
-                "status": {
-                    "type": "string",
-                    "example": "active"
+                    "example": "https://openapi-sandbox.dl.alipaydev.com/gateway.do?..."
                 }
             }
         },
@@ -3463,6 +4718,14 @@
                 "plan_code"
             ],
             "properties": {
+                "channel": {
+                    "type": "string",
+                    "enum": [
+                        "mock",
+                        "alipay"
+                    ],
+                    "example": "alipay"
+                },
                 "idempotency_key": {
                     "type": "string",
                     "maxLength": 128,
@@ -3504,90 +4767,6 @@
                 "success": {
                     "type": "boolean",
                     "example": true
-                }
-            }
-        },
-        "payment.OrderListResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/payment.OrderResponse"
-                    }
-                },
-                "page": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "page_size": {
-                    "type": "integer",
-                    "example": 20
-                },
-                "total": {
-                    "type": "integer",
-                    "example": 1
-                }
-            }
-        },
-        "payment.OrderResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "integer",
-                    "example": 990
-                },
-                "closed_at": {
-                    "type": "string",
-                    "example": "2026-04-23T10:15:00Z"
-                },
-                "created_at": {
-                    "type": "string",
-                    "example": "2026-04-23T10:00:00Z"
-                },
-                "currency": {
-                    "type": "string",
-                    "example": "CNY"
-                },
-                "entitlement_status": {
-                    "type": "string",
-                    "example": "pending"
-                },
-                "expires_at": {
-                    "type": "string",
-                    "example": "2026-04-23T10:15:00Z"
-                },
-                "order_no": {
-                    "type": "string",
-                    "example": "MO202604231200000001"
-                },
-                "order_status": {
-                    "type": "string",
-                    "example": "awaiting_payment"
-                },
-                "paid_at": {
-                    "type": "string",
-                    "example": "2026-04-23T10:01:00Z"
-                },
-                "payment_channel": {
-                    "type": "string",
-                    "example": "mock"
-                },
-                "payment_status": {
-                    "type": "string",
-                    "example": "unpaid"
-                },
-                "plan_code": {
-                    "type": "string",
-                    "example": "monthly"
-                },
-                "subject": {
-                    "type": "string",
-                    "example": "月度会员"
-                },
-                "user_id": {
-                    "type": "integer",
-                    "example": 1
                 }
             }
         },

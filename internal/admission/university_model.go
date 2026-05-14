@@ -1,14 +1,44 @@
 package admission
 
 type UniversityFilter struct {
-	Query string
+	Query                         string
+	RegionCodes                   []string
+	SchoolCategoryCodes           []string
+	OwnershipTypeCodes            []string
+	EducationLevelCode            string
+	Is985                         *bool
+	Is211                         *bool
+	IsDoubleFirstClass            *bool
+	IsNationalKey                 *bool
+	IsProvincialKey               *bool
+	HasPostgraduateRecommendation *bool
 }
 
 type UniversityResponse struct {
-	ID             int64  `json:"id"`
-	UniversityCode string `json:"university_code"`
-	Name           string `json:"name"`
-	NormalizedName string `json:"normalized_name,omitempty"`
+	ID                            int64  `json:"id"`
+	UniversityCode                string `json:"university_code"`
+	Name                          string `json:"name"`
+	NormalizedName                string `json:"normalized_name,omitempty"`
+	ProfileYear                   *int   `json:"profile_year,omitempty"`
+	RegionCode                    string `json:"region_code,omitempty"`
+	RegionName                    string `json:"region_name,omitempty"`
+	City                          string `json:"city,omitempty"`
+	OwnershipTypeCode             string `json:"ownership_type_code,omitempty"`
+	OwnershipTypeName             string `json:"ownership_type_name,omitempty"`
+	SchoolCategoryCode            string `json:"school_category_code,omitempty"`
+	SchoolCategoryName            string `json:"school_category_name,omitempty"`
+	EducationLevelCode            string `json:"education_level_code,omitempty"`
+	EducationLevelName            string `json:"education_level_name,omitempty"`
+	Is985                         *bool  `json:"is_985,omitempty"`
+	Is211                         *bool  `json:"is_211,omitempty"`
+	IsDoubleFirstClass            *bool  `json:"is_double_first_class,omitempty"`
+	IsNationalKey                 *bool  `json:"is_national_key,omitempty"`
+	IsProvincialKey               *bool  `json:"is_provincial_key,omitempty"`
+	HasPostgraduateRecommendation *bool  `json:"has_postgraduate_recommendation,omitempty"`
+	SoftRank                      string `json:"soft_rank,omitempty"`
+	MasterProgramCount            *int   `json:"master_program_count,omitempty"`
+	DoctoralProgramCount          *int   `json:"doctoral_program_count,omitempty"`
+	Affiliation                   string `json:"affiliation,omitempty"`
 }
 
 type UniversityProfileResponse struct {
