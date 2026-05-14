@@ -167,6 +167,125 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 	return resp, nil
 }
 
+// Preview 是 RecommendationService 接口里的"漏斗式探测"实现：跑硬过滤但不做
+// plan_size 截断和同校多样性约束，把过滤后真实候选池规模 + 三档真实分布报给调用方。
+// 详细契约见 recommendation.go PreviewResponse 的注释。
+//
+// 输出与 Recommend 的差异由实现而非参数控制——Preview 复用 Recommend 的所有前置步骤
+// （validate、年份、metadata、位次窗口、SQL 拉取、filterByPreference），仅在
+// pickBucket 这一步换成不带 quota / 同校配额的简化版本。
+func (s *recommendationService) Preview(ctx context.Context, req *RecommendationRequest) (*PreviewResponse, error) {
+	if err := validateRequest(req); err != nil {
+		return nil, err
+	}
+	applyDefaultCounts(req)
+
+	year, err := s.resolveAdmissionYear(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	md, err := s.metadata.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rushW, matchW, safeW := computeBucketWindows(req.ProvincialRank)
+	baseQ := CandidateQuery{
+		AdmissionYear:          year,
+		RegionCode:             req.RegionCode,
+		SubjectCategoryCode:    req.SubjectCategoryCode,
+		SubjectRequirementCode: req.SubjectRequirementCode,
+		BudgetTuitionMax:       req.BudgetTuitionMax,
+		ExcludedProvinces:      req.ExcludedProvinces,
+		ExcludedCities:         req.ExcludedCities,
+	}
+	candidates, err := s.fetchBucketCandidates(ctx, &baseQ, rushW, matchW, safeW)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered, notes := filterByPreference(candidates, req, md)
+	strategy, _ := decideStrategy(req, md)
+
+	// 真实三档分布：按位次窗口把过滤后的候选直接分桶计数，没有 quota 限制。
+	// 同一候选只可能落在一个档位（windows 不重叠 / 重叠区按 rush 优先）。
+	var poolRush, poolMatch, poolSafe int
+	for i := range filtered {
+		c := &filtered[i]
+		if c.MinRank == nil {
+			continue
+		}
+		r := *c.MinRank
+		switch {
+		case r >= rushW.Min && r <= rushW.Max:
+			poolRush++
+		case r >= matchW.Min && r <= matchW.Max:
+			poolMatch++
+		case r >= safeW.Min && r <= safeW.Max:
+			poolSafe++
+		}
+	}
+
+	// sample_items：按 composite_score 排序取前 plan_size 条做样例，
+	// 跨档不去重、不限制同校数量——纯粹"让模型 / 用户看一眼候选长什么样"。
+	// scoreCandidates 需要 tier 标签，这里按候选自身落入的窗口给一个。
+	scored := make([]scoredItem, 0, len(filtered))
+	for i := range filtered {
+		c := &filtered[i]
+		if c.MinRank == nil {
+			continue
+		}
+		r := *c.MinRank
+		var tier string
+		switch {
+		case r >= rushW.Min && r <= rushW.Max:
+			tier = "rush"
+		case r >= matchW.Min && r <= matchW.Max:
+			tier = "match"
+		case r >= safeW.Min && r <= safeW.Max:
+			tier = "safe"
+		default:
+			continue
+		}
+		one := scoreCandidates([]RecommendationCandidate{*c}, req, md, tier, strategy)
+		if len(one) == 0 {
+			continue
+		}
+		one[0].item.Tier = tier
+		scored = append(scored, one[0])
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].item.CompositeScore > scored[j].item.CompositeScore
+	})
+	sampleLimit := req.PlanSize
+	if sampleLimit <= 0 || sampleLimit > len(scored) {
+		sampleLimit = len(scored)
+	}
+	sample := make([]RecommendationItem, 0, sampleLimit)
+	for i := 0; i < sampleLimit; i++ {
+		sample = append(sample, scored[i].item)
+	}
+
+	return &PreviewResponse{
+		PlanSize:     req.PlanSize,
+		PoolSize:     len(filtered),
+		PoolRushCnt:  poolRush,
+		PoolMatchCnt: poolMatch,
+		PoolSafeCnt:  poolSafe,
+		RankWindow: RankWindow{
+			RushMin:  rushW.Min,
+			RushMax:  rushW.Max,
+			MatchMin: matchW.Min,
+			MatchMax: matchW.Max,
+			SafeMin:  safeW.Min,
+			SafeMax:  safeW.Max,
+		},
+		Strategy:    strategy,
+		SampleItems: sample,
+		Notes:       notes,
+	}, nil
+}
+
 // fetchBucketCandidates 分别查冲/稳/保三段，每段独立 LIMIT，合并后按 uma.id 去重。
 // 三段窗口在边界处有 1000 位次的重叠（match 与 rush/safe 各 1000），重叠区候选会被两段都取到，
 // 这里去重一次避免后续 scoreCandidates 重复打分。

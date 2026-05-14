@@ -13,6 +13,7 @@
 
 # Compiled binaries
 /api
+/aichat-repl
 /integration.test
 /user.test
 

@@ -98,10 +98,20 @@ func (e *ToolExecutor) Execute(ctx context.Context, call ToolCall, execCtx ToolE
 	}
 }
 
+// previewItemCap 限制 dry_run 返回给模型的预览条目数量。
+// 太多会撑大 prompt context；模型只需要知道「冲/稳/保各一两条样例」即可叙述。
+const previewItemCap = 3
+
 func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, call ToolCall, execCtx ToolExecContext) (*ToolResult, error) {
 	if execCtx.UserID <= 0 || execCtx.ConversationID <= 0 {
 		return &ToolResult{ToolCallID: call.ID, Content: `{"status":"failed","error":"generate_volunteer_plan_draft requires conversation context"}`}, nil
 	}
+
+	// 先抽取 dry_run 标志位；剩余字段反序列化为 RecommendationRequest（未知字段会被忽略）。
+	var meta struct {
+		DryRun bool `json:"dry_run"`
+	}
+	_ = json.Unmarshal([]byte(call.Function.Arguments), &meta)
 
 	var req admission.RecommendationRequest
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &req); err != nil {
@@ -113,6 +123,37 @@ func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, ca
 	}
 	if req.RegionCode != "230000" {
 		return &ToolResult{ToolCallID: call.ID, Content: `{"status":"failed","error":"only supports region_code=230000"}`}, nil
+	}
+
+	// dry_run：跑一次算法但不落库，把过滤后真实候选池规模 + 三档真实分布
+	// + 少量预览条目返回给模型，让它据此判断是否继续追问偏好或进入正式落盘。
+	// 注意：dry_run 走 Preview 路径，不做 plan_size 截断、不做同校多样性约束，
+	// 所以 pool_size 会随用户偏好的硬过滤真实变化（漏斗效果）。
+	if meta.DryRun {
+		resp, err := e.recommendations.Preview(ctx, &req)
+		if err != nil {
+			payload := map[string]any{"status": "preview_failed", "error": err.Error()}
+			content, _ := json.Marshal(payload)
+			return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+		}
+		hard, soft, unused := classifyRequestFields(&req)
+		out := map[string]any{
+			"status":              "preview",
+			"strategy":            resp.Strategy,
+			"plan_size":           resp.PlanSize,
+			"pool_size":           resp.PoolSize,
+			"pool_rush_count":     resp.PoolRushCnt,
+			"pool_match_count":    resp.PoolMatchCnt,
+			"pool_safe_count":     resp.PoolSafeCnt,
+			"rank_window":         resp.RankWindow,
+			"notes":               resp.Notes,
+			"sample_items":        trimPreviewItems(resp.SampleItems, previewItemCap),
+			"active_hard_filters": hard,
+			"active_soft_scoring": soft,
+			"unused_fields":       unused,
+		}
+		content, _ := json.Marshal(out)
+		return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
 	}
 
 	inputJSON, _ := json.Marshal(req)
@@ -152,6 +193,116 @@ func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, ca
 	}
 	content, _ := json.Marshal(out)
 	return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+}
+
+// classifyRequestFields 按当前推荐算法的实际行为，把请求里非空的字段拆成三类：
+//   - hard：会真正剔除候选的硬过滤（SQL where 或 in-memory filter）
+//   - soft：仅影响排序加权、不剔除候选的软加分
+//   - unused：当前算法实现没有读取的字段（保留作为 future-proof，模型若收集了也应告知用户暂未生效）
+//
+// 这个映射必须随算法演化同步维护——单元测试 tools_test.go 应该断言所有
+// RecommendationRequest 公开字段都被分类，避免漏项。
+func classifyRequestFields(req *admission.RecommendationRequest) (hard, soft, unused []string) {
+	// 硬过滤组（SQL 层 + filterByPreference 层）
+	if req.RegionCode != "" {
+		hard = append(hard, "region_code")
+	}
+	if req.SubjectCategoryCode != "" {
+		hard = append(hard, "subject_category_code")
+	}
+	if req.SubjectRequirementCode != "" {
+		hard = append(hard, "subject_requirement_code")
+	}
+	if req.AdmissionYear != nil {
+		hard = append(hard, "admission_year")
+	}
+	if req.BudgetTuitionMax != nil {
+		hard = append(hard, "budget_tuition_max")
+	}
+	if len(req.ExcludedProvinces) > 0 {
+		hard = append(hard, "excluded_provinces")
+	}
+	if len(req.ExcludedCities) > 0 {
+		hard = append(hard, "excluded_cities")
+	}
+	if len(req.ExcludedMajors) > 0 {
+		hard = append(hard, "excluded_majors")
+	}
+	if len(req.ExcludedKeywords) > 0 {
+		hard = append(hard, "excluded_keywords")
+	}
+	if req.MathScore != nil {
+		hard = append(hard, "math_score")
+	}
+	if req.PhysicsScore != nil {
+		hard = append(hard, "physics_score")
+	}
+	if req.ChineseScore != nil {
+		hard = append(hard, "chinese_score")
+	}
+	if req.EnglishScore != nil {
+		hard = append(hard, "english_score")
+	}
+
+	// 软加分组（影响 composite_score 排序，不剔除）
+	if len(req.PreferredCities) > 0 {
+		soft = append(soft, "preferred_cities")
+	}
+	if len(req.PreferredProvinces) > 0 {
+		soft = append(soft, "preferred_provinces")
+	}
+	if len(req.PreferredMajors) > 0 {
+		soft = append(soft, "preferred_majors")
+	}
+	if len(req.FamilyResources) > 0 {
+		soft = append(soft, "family_resources")
+	}
+	if req.FamilyEconomy != "" {
+		soft = append(soft, "family_economy")
+	}
+	if req.HollandCode != "" {
+		soft = append(soft, "holland_code")
+	}
+	if len(req.CareerPlans) > 0 {
+		soft = append(soft, "career_plans")
+	}
+
+	// 未被算法读取的字段（如有）— 当前没有"已收集但完全不读"的字段，
+	// 保留切片留作算法演化时的对账位。
+	if req.Gender != "" {
+		unused = append(unused, "gender")
+	}
+	if req.Language != "" {
+		unused = append(unused, "language")
+	}
+	if len(req.Health) > 0 {
+		unused = append(unused, "health")
+	}
+	return hard, soft, unused
+}
+
+// trimPreviewItems 把推荐结果按三档各取若干条返回给模型，仅保留最少必要字段，
+// 避免 dry_run 在多轮对话里把 prompt context 撑爆。
+func trimPreviewItems(items []admission.RecommendationItem, perTier int) []map[string]any {
+	if perTier <= 0 || len(items) == 0 {
+		return nil
+	}
+	counts := map[string]int{}
+	out := make([]map[string]any, 0, perTier*3)
+	for _, it := range items {
+		if counts[it.Tier] >= perTier {
+			continue
+		}
+		counts[it.Tier]++
+		out = append(out, map[string]any{
+			"tier":             it.Tier,
+			"university_name":  it.UniversityName,
+			"group_code":       it.GroupCode,
+			"local_major_name": it.LocalMajorName,
+			"probability":      it.Probability,
+		})
+	}
+	return out
 }
 
 func (e *ToolExecutor) executeApplyFilter(ctx context.Context, call ToolCall) (*ToolResult, error) {
@@ -544,12 +695,12 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "apply_filter",
-				Description: "Apply a filter to the admission search. filter_type semantics: replace = 用 filter_data 整体替换当前筛选（用户切换关注点，最常用；放宽/降级层次时优先用此模式）；add = 在不冲突的维度上追加；remove = 单点移除一个条件；reset = 清空所有筛选。Use snake_case filter_data fields such as region_code, subject_category_code, exclude_provinces, is_985, min_score_from, min_score_to, tag_query.",
+				Description: "对当前的院校查询施加筛选条件。filter_type 语义：replace=用 filter_data 整体替换当前筛选（用户切换关注点时最常用，放宽/降级层次也走这个）；add=在不冲突的维度上追加；remove=单点移除一个条件；reset=清空所有筛选。filter_data 必须使用 snake_case 字段名，例如 region_code、subject_category_code、exclude_provinces、is_985、min_score_from、min_score_to、tag_query。注意：志愿表主流程不依赖此工具，仅在用户进行探索性查询时使用。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
-						"filter_type": map[string]any{"type": "string", "enum": []string{"add", "remove", "replace", "reset"}, "description": "How to modify the current filter"},
-						"filter_data": map[string]any{"type": "object", "description": "Filter fields as JSON object"},
+						"filter_type": map[string]any{"type": "string", "enum": []string{"add", "remove", "replace", "reset"}, "description": "如何修改当前筛选条件"},
+						"filter_data": map[string]any{"type": "object", "description": "筛选字段，JSON 对象"},
 					},
 					Required: []string{"filter_type", "filter_data"},
 				},
@@ -563,12 +714,12 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "search_universities",
-				Description: "Search universities with the current filter. Returns count and top results. Use snake_case filter fields such as region_code, subject_category_code, exclude_provinces, is_985, min_score_from, min_score_to, tag_query.",
+				Description: "按筛选条件查询院校列表，返回命中数量和前若干条结果。filter 必须使用 snake_case 字段名（region_code、subject_category_code、exclude_provinces、is_985、min_score_from、min_score_to、tag_query 等）。用于用户的点查问题（『XX 大学今年位次』『某分数能上哪些 211』），志愿表生成流程不依赖此工具。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
-						"filter": map[string]any{"type": "object", "description": "AdmissionLineFilter as JSON object"},
-						"limit":  map[string]any{"type": "integer", "description": "Max results to return (default 5, max 20)"},
+						"filter": map[string]any{"type": "object", "description": "AdmissionLineFilter，JSON 对象"},
+						"limit":  map[string]any{"type": "integer", "description": "返回结果上限（默认 5，最大 20）"},
 					},
 					Required: []string{"filter"},
 				},
@@ -582,11 +733,11 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "aggregate_data",
-				Description: "Aggregate admission data by a dimension (province, city, etc.). Returns grouped statistics. Use snake_case filter fields.",
+				Description: "按维度（省份、城市、院校层次等）对录取数据做聚合统计。filter 字段使用 snake_case，包含 group_by 和 metrics。用于回答『各省份招生人数分布』这类聚合问题。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
-						"filter": map[string]any{"type": "object", "description": "AggregateFilter as JSON object with group_by and metrics"},
+						"filter": map[string]any{"type": "object", "description": "AggregateFilter，JSON 对象，含 group_by 和 metrics"},
 					},
 					Required: []string{"filter"},
 				},
@@ -600,10 +751,11 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "generate_volunteer_plan_draft",
-				Description: "Generate a volunteer plan draft for the current conversation by running the recommendation algorithm. Requires region_code=230000, subject_category_code, total_score, provincial_rank. Returns draft_id and summary.",
+				Description: "运行志愿推荐算法，根据 dry_run 切换两种模式：\n• dry_run=true（预览模式）：跑算法但不写库，返回 rush_count / match_count / safe_count / total_count / plan_size / rank_window / preview_items。多轮对话中每收到一项新偏好就调一次，用于把当前候选规模和分布告诉用户，决定是否继续追问。每次都要传【累计的完整参数集合】，不传增量。\n• dry_run=false（落盘模式）：把推荐结果写入草稿表，返回 draft_id。一次会话只在临门一脚时调用一次——通常是 dry_run 显示候选数量已经够（total_count ≥ plan_size × 0.8 且冲/稳/保三档都非空），或用户主动要求保存方案。\n必填字段：region_code（仅 230000）、subject_category_code（physics 或 history）、total_score、provincial_rank。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
+						"dry_run":                  map[string]any{"type": "boolean", "description": "true=预览（不写库）；false 或省略=正式落盘并返回 draft_id"},
 						"region_code":              map[string]any{"type": "string"},
 						"subject_category_code":    map[string]any{"type": "string", "enum": []string{"physics", "history"}},
 						"subject_requirement_code": map[string]any{"type": "string"},
@@ -633,16 +785,16 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "render_chart",
-				Description: "Render a chart in the chat UI. Only use when the user explicitly asks for a visualization or when comparing several numeric series side-by-side is clearly more useful than prose. Supply data via inline_data or by referencing a prior tool_result.",
+				Description: "在聊天界面渲染一张图表。仅当用户明确要求可视化、或多组数值并排比较确实比文字更直观时才使用。数据可以通过 inline_data 直接传入，也可以通过 \"tool_result:<call_id>\" 引用本轮之前某次工具调用的输出。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
-						"chart_type":  map[string]any{"type": "string", "enum": []string{"bar", "line", "pie"}, "description": "Chart shape"},
-						"title":       map[string]any{"type": "string", "description": "Chart title"},
-						"data_source": map[string]any{"type": "string", "description": "\"inline\" to use inline_data, or \"tool_result:<call_id>\" to chart a previous tool result from this run"},
-						"inline_data": map[string]any{"type": "array", "description": "Rows used when data_source is \"inline\"; each row is an object with x_field and y_fields keys"},
-						"x_field":     map[string]any{"type": "string", "description": "Field name used as the x-axis category"},
-						"y_fields":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Numeric fields plotted as series (one series per field)"},
+						"chart_type":  map[string]any{"type": "string", "enum": []string{"bar", "line", "pie"}, "description": "图表类型"},
+						"title":       map[string]any{"type": "string", "description": "图表标题"},
+						"data_source": map[string]any{"type": "string", "description": "\"inline\" 表示用 inline_data；\"tool_result:<call_id>\" 表示引用本轮之前某次工具调用的结果"},
+						"inline_data": map[string]any{"type": "array", "description": "data_source=inline 时使用的行数据数组；每行是包含 x_field 与 y_fields 键的对象"},
+						"x_field":     map[string]any{"type": "string", "description": "用作 x 轴分类的字段名"},
+						"y_fields":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "作为数值序列的字段（每个字段一条 series）"},
 					},
 					Required: []string{"chart_type", "x_field"},
 				},
@@ -656,15 +808,15 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "render_card",
-				Description: "Render a structured information card (e.g. for a university or a major). Use when summarizing a single entity with a few key metrics, not for free-form prose.",
+				Description: "在聊天界面渲染一张结构化信息卡片（例如一所院校、一个专业的关键指标汇总）。适合用几个关键指标概括单个实体，不适合大段文字。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
-						"title":       map[string]any{"type": "string", "description": "Card title"},
-						"description": map[string]any{"type": "string", "description": "One-line subtitle"},
+						"title":       map[string]any{"type": "string", "description": "卡片标题"},
+						"description": map[string]any{"type": "string", "description": "一行副标题"},
 						"metrics": map[string]any{
 							"type":        "array",
-							"description": "Up to ~4 metric tiles displayed on the card",
+							"description": "卡片上展示的指标块（建议不超过 4 个）",
 							"items": map[string]any{
 								"type": "object",
 								"properties": map[string]any{
@@ -679,7 +831,7 @@ func DefaultTools() []ToolDefinition {
 							"type": "object",
 							"properties": map[string]any{
 								"text": map[string]any{"type": "string"},
-								"href": map[string]any{"type": "string", "description": "Relative path or whitelisted https URL"},
+								"href": map[string]any{"type": "string", "description": "站内相对路径或白名单内的 https URL"},
 							},
 						},
 					},

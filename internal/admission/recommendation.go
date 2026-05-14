@@ -161,8 +161,32 @@ type RankWindow struct {
 // RecommendationService is the orchestrator for the volunteer recommendation algorithm.
 // 实现见 recommendation_service.go。noopRecommendationService 留作单元测试和 tools.go
 // 接线时的最小兜底（在 service 还没初始化好时也不要 panic）。
+//
+// Recommend 与 Preview 的契约区别：
+//   - Recommend  = 终态推荐。会做 plan_size 截断 + 同校多样性约束 + 跨档去重，
+//                  最终返回 ≤ plan_size 条 RecommendationItem，写入 draft。
+//   - Preview    = 漏斗式探测。只跑硬过滤（SQL where + filterByPreference），
+//                  不做 plan_size 截断，也不做同校配额限制。返回过滤后
+//                  真实的候选池规模和三档真实分布，供 AI 多轮收集偏好时
+//                  报告漏斗变化用。preview_items 仍取按 composite_score 排序的前 N
+//                  条做样例（N=plan_size，避免 prompt context 爆炸）。
 type RecommendationService interface {
 	Recommend(ctx context.Context, req *RecommendationRequest) (*RecommendationResponse, error)
+	Preview(ctx context.Context, req *RecommendationRequest) (*PreviewResponse, error)
+}
+
+// PreviewResponse 是 Preview() 的返回。字段命名上避免和 RecommendationResponse 混淆：
+// Pool* 强调"真实候选池总数"，Sample* 强调"按分排过的 top-N 样例"。
+type PreviewResponse struct {
+	PlanSize     int                  `json:"plan_size"`                // 算法回填后的实际 plan_size（用户没传时是 defaultPlanSize=40）
+	PoolSize     int                  `json:"pool_size"`                // 过滤后真实候选池大小（不受 plan_size 影响）
+	PoolRushCnt  int                  `json:"pool_rush_count"`          // 过滤后落在『冲』位次窗口的真实候选数
+	PoolMatchCnt int                  `json:"pool_match_count"`         // 过滤后落在『稳』位次窗口的真实候选数
+	PoolSafeCnt  int                  `json:"pool_safe_count"`          // 过滤后落在『保』位次窗口的真实候选数
+	RankWindow   RankWindow           `json:"rank_window"`              // 三档位次窗口（与 Recommend 一致）
+	Strategy     string               `json:"strategy"`                 // 当前 strategy (school/major/auto)
+	SampleItems  []RecommendationItem `json:"sample_items,omitempty"`   // 按 composite_score 排序的样例条目（一般 ≤ plan_size）
+	Notes        []string             `json:"notes,omitempty"`          // filterByPreference 产出的提示（如『已根据物理分数排除强依赖专业』）
 }
 
 // RecommendationTuner is the optional final-pass tuner (LLM or human).
@@ -182,4 +206,8 @@ func (noopRecommendationService) Recommend(_ context.Context, _ *RecommendationR
 	return &RecommendationResponse{
 		VolunteerPlan: json.RawMessage(`{"items":[]}`),
 	}, nil
+}
+
+func (noopRecommendationService) Preview(_ context.Context, _ *RecommendationRequest) (*PreviewResponse, error) {
+	return &PreviewResponse{}, nil
 }
