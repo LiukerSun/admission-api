@@ -66,7 +66,7 @@ func (h *UniversityHandler) ListUniversities(c *gin.Context) {
 		HasPostgraduateRecommendation: parseTriBool(c.Query("has_postgraduate_recommendation")),
 	}
 
-	resp, err := h.service.ListUniversities(c.Request.Context(), filter)
+	resp, err := h.service.ListUniversities(c.Request.Context(), &filter)
 	if err != nil {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to list universities")
 		return

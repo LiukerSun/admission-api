@@ -19,7 +19,7 @@ type stubUniversityService struct {
 	err          error
 }
 
-func (s stubUniversityService) ListUniversities(ctx context.Context, filter UniversityFilter) ([]UniversityResponse, error) {
+func (s stubUniversityService) ListUniversities(ctx context.Context, filter *UniversityFilter) ([]UniversityResponse, error) {
 	return s.universities, s.err
 }
 

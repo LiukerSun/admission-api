@@ -13,7 +13,7 @@ type stubUniversityStore struct {
 	err          error
 }
 
-func (s stubUniversityStore) ListUniversities(ctx context.Context, filter UniversityFilter) ([]UniversityResponse, error) {
+func (s stubUniversityStore) ListUniversities(ctx context.Context, filter *UniversityFilter) ([]UniversityResponse, error) {
 	return s.universities, s.err
 }
 
@@ -26,7 +26,7 @@ func TestUniversityServiceListsUniversities(t *testing.T) {
 		{ID: 1, UniversityCode: "1003", Name: "清华大学"},
 	}})
 
-	universities, err := service.ListUniversities(context.Background(), UniversityFilter{Query: "清华"})
+	universities, err := service.ListUniversities(context.Background(), &UniversityFilter{Query: "清华"})
 
 	require.NoError(t, err)
 	require.Len(t, universities, 1)

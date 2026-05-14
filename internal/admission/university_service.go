@@ -3,7 +3,7 @@ package admission
 import "context"
 
 type UniversityService interface {
-	ListUniversities(ctx context.Context, filter UniversityFilter) ([]UniversityResponse, error)
+	ListUniversities(ctx context.Context, filter *UniversityFilter) ([]UniversityResponse, error)
 	GetUniversityProfile(ctx context.Context, universityID int64, profileYear *int) (*UniversityProfileResponse, error)
 }
 
@@ -15,7 +15,7 @@ func NewUniversityService(store UniversityStore) UniversityService {
 	return &universityService{store: store}
 }
 
-func (s *universityService) ListUniversities(ctx context.Context, filter UniversityFilter) ([]UniversityResponse, error) {
+func (s *universityService) ListUniversities(ctx context.Context, filter *UniversityFilter) ([]UniversityResponse, error) {
 	return s.store.ListUniversities(ctx, filter)
 }
 

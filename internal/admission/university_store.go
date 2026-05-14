@@ -9,7 +9,7 @@ import (
 )
 
 type UniversityStore interface {
-	ListUniversities(ctx context.Context, filter UniversityFilter) ([]UniversityResponse, error)
+	ListUniversities(ctx context.Context, filter *UniversityFilter) ([]UniversityResponse, error)
 	GetUniversityProfile(ctx context.Context, universityID int64, profileYear *int) (*UniversityProfileResponse, error)
 }
 
@@ -21,7 +21,7 @@ func NewUniversityStore(pool *pgxpool.Pool) UniversityStore {
 	return &universityStore{pool: pool}
 }
 
-func (s *universityStore) ListUniversities(ctx context.Context, filter UniversityFilter) ([]UniversityResponse, error) {
+func (s *universityStore) ListUniversities(ctx context.Context, filter *UniversityFilter) ([]UniversityResponse, error) {
 	args := []any{}
 	conditions := []string{"1 = 1"}
 
