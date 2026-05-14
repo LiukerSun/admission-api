@@ -289,7 +289,9 @@ func trimPreviewItems(items []admission.RecommendationItem, perTier int) []map[s
 	}
 	counts := map[string]int{}
 	out := make([]map[string]any, 0, perTier*3)
-	for _, it := range items {
+	// 用索引迭代避免每次复制 RecommendationItem（结构体较大，gocritic 会告警）。
+	for i := range items {
+		it := &items[i]
 		if counts[it.Tier] >= perTier {
 			continue
 		}

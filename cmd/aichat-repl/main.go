@@ -350,4 +350,3 @@ func (m *memDraftStore) MarkAdopted(_ context.Context, userID, draftID int64) er
 	d.UpdatedAt = time.Now()
 	return nil
 }
-
