@@ -23,7 +23,7 @@ func NewMajorCatalogHandler(service MajorCatalogService) *MajorCatalogHandler {
 // @Description  Returns the latest available CHSI standard major catalog year.
 // @Tags         admission
 // @Produce      json
-// @Success      200 {object} web.Response{data=LatestCatalogYearResponse}
+// @Success      200 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/major-catalog/latest-year [get]
 func (h *MajorCatalogHandler) LatestCatalogYear(c *gin.Context) {
@@ -42,7 +42,7 @@ func (h *MajorCatalogHandler) LatestCatalogYear(c *gin.Context) {
 // @Produce      json
 // @Param        catalog_year query int false "Catalog year"
 // @Param        q query string false "Search major code or name"
-// @Success      200 {object} web.Response{data=[]StandardMajorResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/standard-majors [get]

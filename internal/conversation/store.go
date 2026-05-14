@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +24,17 @@ var ErrConversationNotFound = errors.New("conversation not found")
 // rows per request.
 const MaxMessagesReturned = 500
 
+func isUndefinedColumn(err error, column string) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if column == "" {
+		return strings.Contains(msg, "column") && strings.Contains(msg, "does not exist")
+	}
+	return strings.Contains(msg, fmt.Sprintf("column %q", column)) && strings.Contains(msg, "does not exist")
+}
+
 type Store interface {
 	CreateConversation(ctx context.Context, title string, userID *int64) (*Conversation, error)
 	GetConversation(ctx context.Context, id int64) (*Conversation, error)
@@ -31,8 +43,21 @@ type Store interface {
 	UpdateConversationStatus(ctx context.Context, id int64, status string) error
 	DeleteConversation(ctx context.Context, id int64) error
 
-	AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error)
+	AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error)
 	ListMessages(ctx context.Context, conversationID int64) ([]*Message, error)
+	// Rollback removes every message in conversationID whose
+	// (created_at, id) sorts at or after the row identified by
+	// messageID. When inclusive is false, the messageID row itself is
+	// kept and only later rows are deleted. The (created_at, id) tuple
+	// comparison guarantees stable ordering even when multiple rows
+	// share the same created_at value (same-second inserts under load).
+	//
+	// Returns the number of rows deleted and the latest remaining
+	// message id (nil if the conversation is now empty). If messageID
+	// does not belong to conversationID, returns ErrConversationNotFound
+	// — callers should already have authorized the conversation, so
+	// this only fires on programming bugs or torn deletes.
+	Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (deletedCount int, latestMessageID *int64, err error)
 }
 
 type store struct {
@@ -165,17 +190,32 @@ func (s *store) DeleteConversation(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *store) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error) {
+func (s *store) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error) {
 	query := `
-		INSERT INTO conversation_messages (conversation_id, role, content, tool_calls, tool_results)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, conversation_id, role, content, tool_calls, tool_results, created_at
+		INSERT INTO conversation_messages (conversation_id, role, content, tool_calls, tool_results, widgets)
+		VALUES ($1, $2, $3, $4, $5, COALESCE($6, '[]'::jsonb))
+		RETURNING id, conversation_id, role, content, tool_calls, tool_results, widgets, created_at
 	`
 	var msg Message
-	err := s.pool.QueryRow(ctx, query, conversationID, role, content, toolCalls, toolResults).Scan(
-		&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ToolCalls, &msg.ToolResults, &msg.CreatedAt,
+	err := s.pool.QueryRow(ctx, query, conversationID, role, content, toolCalls, toolResults, widgets).Scan(
+		&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ToolCalls, &msg.ToolResults, &msg.Widgets, &msg.CreatedAt,
 	)
 	if err != nil {
+		if isUndefinedColumn(err, "widgets") {
+			legacyQuery := `
+				INSERT INTO conversation_messages (conversation_id, role, content, tool_calls, tool_results)
+				VALUES ($1, $2, $3, $4, $5)
+				RETURNING id, conversation_id, role, content, tool_calls, tool_results, created_at
+			`
+			var legacy Message
+			if legacyErr := s.pool.QueryRow(ctx, legacyQuery, conversationID, role, content, toolCalls, toolResults).Scan(
+				&legacy.ID, &legacy.ConversationID, &legacy.Role, &legacy.Content, &legacy.ToolCalls, &legacy.ToolResults, &legacy.CreatedAt,
+			); legacyErr != nil {
+				return nil, fmt.Errorf("add message: %w", legacyErr)
+			}
+			_, _ = s.pool.Exec(ctx, `UPDATE conversations SET updated_at = NOW() WHERE id = $1`, conversationID)
+			return &legacy, nil
+		}
 		return nil, fmt.Errorf("add message: %w", err)
 	}
 
@@ -193,18 +233,52 @@ func (s *store) ListMessages(ctx context.Context, conversationID int64) ([]*Mess
 	// history before slicing it.
 	query := `
 		WITH recent AS (
-			SELECT id, conversation_id, role, content, tool_calls, tool_results, created_at
+			SELECT id, conversation_id, role, content, tool_calls, tool_results, widgets, created_at
 			FROM conversation_messages
 			WHERE conversation_id = $1
 			ORDER BY created_at DESC, id DESC
 			LIMIT $2
 		)
-		SELECT id, conversation_id, role, content, tool_calls, tool_results, created_at
+		SELECT id, conversation_id, role, content, tool_calls, tool_results, widgets, created_at
 		FROM recent
 		ORDER BY created_at ASC, id ASC
 	`
 	rows, err := s.pool.Query(ctx, query, conversationID, MaxMessagesReturned)
 	if err != nil {
+		if isUndefinedColumn(err, "widgets") {
+			legacyQuery := `
+				WITH recent AS (
+					SELECT id, conversation_id, role, content, tool_calls, tool_results, created_at
+					FROM conversation_messages
+					WHERE conversation_id = $1
+					ORDER BY created_at DESC, id DESC
+					LIMIT $2
+				)
+				SELECT id, conversation_id, role, content, tool_calls, tool_results, created_at
+				FROM recent
+				ORDER BY created_at ASC, id ASC
+			`
+			legacyRows, legacyErr := s.pool.Query(ctx, legacyQuery, conversationID, MaxMessagesReturned)
+			if legacyErr != nil {
+				return nil, fmt.Errorf("list messages: %w", legacyErr)
+			}
+			defer legacyRows.Close()
+
+			var messages []*Message
+			for legacyRows.Next() {
+				var msg Message
+				if err := legacyRows.Scan(
+					&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ToolCalls, &msg.ToolResults, &msg.CreatedAt,
+				); err != nil {
+					return nil, fmt.Errorf("scan message: %w", err)
+				}
+				messages = append(messages, &msg)
+			}
+			if err := legacyRows.Err(); err != nil {
+				return nil, fmt.Errorf("iterate messages: %w", err)
+			}
+			return messages, nil
+		}
 		return nil, fmt.Errorf("list messages: %w", err)
 	}
 	defer rows.Close()
@@ -213,7 +287,7 @@ func (s *store) ListMessages(ctx context.Context, conversationID int64) ([]*Mess
 	for rows.Next() {
 		var msg Message
 		if err := rows.Scan(
-			&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ToolCalls, &msg.ToolResults, &msg.CreatedAt,
+			&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ToolCalls, &msg.ToolResults, &msg.Widgets, &msg.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
 		}
@@ -223,4 +297,64 @@ func (s *store) ListMessages(ctx context.Context, conversationID int64) ([]*Mess
 		return nil, fmt.Errorf("iterate messages: %w", err)
 	}
 	return messages, nil
+}
+
+func (s *store) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (deleted int, latest *int64, err error) {
+	// Compare on (created_at, id) instead of id alone: two messages
+	// inserted in the same wall-second can sort by id in either order
+	// across servers / replicas, but the tuple comparison is total even
+	// when timestamps collide. The anchor row is fetched in the same
+	// query as the delete so we don't race against a concurrent rollback
+	// on the same conversation.
+	cmp := ">="
+	if !inclusive {
+		cmp = ">"
+	}
+	query := fmt.Sprintf(`
+		WITH anchor AS (
+			SELECT created_at, id
+			FROM conversation_messages
+			WHERE id = $2 AND conversation_id = $1
+		)
+		DELETE FROM conversation_messages
+		WHERE conversation_id = $1
+		  AND (created_at, id) %s (SELECT created_at, id FROM anchor)
+	`, cmp)
+	tag, err := s.pool.Exec(ctx, query, conversationID, messageID)
+	if err != nil {
+		return 0, nil, fmt.Errorf("rollback messages: %w", err)
+	}
+	deleted = int(tag.RowsAffected())
+	if deleted == 0 {
+		// Either the anchor row didn't exist (wrong conversation /
+		// message), or inclusive=false with no later rows. Distinguish
+		// by probing for the anchor: if it exists, we just had nothing
+		// later to delete; if it doesn't, signal not-found so the
+		// handler can return 404.
+		var exists bool
+		_ = s.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE id = $1 AND conversation_id = $2)`,
+			messageID, conversationID).Scan(&exists)
+		if !exists {
+			return 0, nil, ErrConversationNotFound
+		}
+	}
+
+	var id int64
+	err = s.pool.QueryRow(ctx,
+		`SELECT id FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
+		conversationID).Scan(&id)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// Conversation is empty after the delete; leave latest nil.
+	case err != nil:
+		return deleted, nil, fmt.Errorf("rollback fetch latest id: %w", err)
+	default:
+		latest = &id
+	}
+
+	// Touch conversation.updated_at so list endpoints reflect the
+	// rollback in chronological order.
+	_, _ = s.pool.Exec(ctx, `UPDATE conversations SET updated_at = NOW() WHERE id = $1`, conversationID)
+	return deleted, latest, nil
 }

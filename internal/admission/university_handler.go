@@ -24,7 +24,7 @@ func NewUniversityHandler(service UniversityService) *UniversityHandler {
 // @Tags         admission
 // @Produce      json
 // @Param        q query string false "Search university code or name"
-// @Success      200 {object} web.Response{data=[]UniversityResponse}
+// @Success      200 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/universities [get]
 func (h *UniversityHandler) ListUniversities(c *gin.Context) {
@@ -43,7 +43,7 @@ func (h *UniversityHandler) ListUniversities(c *gin.Context) {
 // @Produce      json
 // @Param        id path int true "University ID"
 // @Param        profile_year query int false "Profile year"
-// @Success      200 {object} web.Response{data=UniversityProfileResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      500 {object} web.Response
 // @Router       /api/v1/admission/universities/{id}/profile [get]

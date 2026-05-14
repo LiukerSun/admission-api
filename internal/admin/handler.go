@@ -36,7 +36,7 @@ func NewHandler(service Service) *Handler {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id    path      int  true  "用户 ID"
-// @Success      200   {object}  web.Response{data=UserResponse}
+// @Success      200   {object}  web.Response
 // @Failure      400   {object}  web.Response
 // @Failure      401   {object}  web.Response
 // @Failure      403   {object}  web.Response
@@ -77,7 +77,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 // @Param        role        query     string  false  "角色过滤 (user/premium)"
 // @Param        is_admin    query     bool    false  "管理员权限过滤"
 // @Param        status      query     string  false  "状态过滤 (active/banned)"
-// @Success      200         {object}  web.Response{data=UserListResponse}
+// @Success      200         {object}  web.Response
 // @Failure      401         {object}  web.Response
 // @Failure      403         {object}  web.Response
 // @Router       /api/v1/admin/users [get]
@@ -118,7 +118,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id    path      int                true  "用户 ID"
 // @Param        body  body      UpdateUserRequest  true  "用户信息"
-// @Success      200   {object}  web.Response{data=UserResponse}
+// @Success      200   {object}  web.Response
 // @Failure      400   {object}  web.Response
 // @Failure      401   {object}  web.Response
 // @Failure      403   {object}  web.Response
@@ -170,7 +170,7 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id    path      int               true  "用户 ID"
 // @Param        body  body      UpdateRoleRequest  true  "角色信息"
-// @Success      200   {object}  web.Response{data=map[string]string}
+// @Success      200   {object}  web.Response
 // @Failure      400   {object}  web.Response
 // @Failure      401   {object}  web.Response
 // @Failure      403   {object}  web.Response
@@ -216,7 +216,7 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id    path      int                   true  "用户 ID"
 // @Param        body  body      ResetPasswordRequest  true  "新密码"
-// @Success      200   {object}  web.Response{data=map[string]string}
+// @Success      200   {object}  web.Response
 // @Failure      400   {object}  web.Response
 // @Failure      401   {object}  web.Response
 // @Failure      403   {object}  web.Response
@@ -265,7 +265,7 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id   path      int  true  "用户 ID"
-// @Success      200  {object}  web.Response{data=map[string]string}
+// @Success      200  {object}  web.Response
 // @Failure      401  {object}  web.Response
 // @Failure      403  {object}  web.Response
 // @Failure      404  {object}  web.Response
@@ -298,7 +298,7 @@ func (h *Handler) DisableUser(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id   path      int  true  "用户 ID"
-// @Success      200  {object}  web.Response{data=map[string]string}
+// @Success      200  {object}  web.Response
 // @Failure      401  {object}  web.Response
 // @Failure      403  {object}  web.Response
 // @Failure      404  {object}  web.Response
@@ -335,7 +335,7 @@ func isInvalidPasswordError(err error) bool {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  web.Response{data=StatsResponse}
+// @Success      200  {object}  web.Response
 // @Failure      401  {object}  web.Response
 // @Failure      403  {object}  web.Response
 // @Router       /api/v1/admin/stats [get]

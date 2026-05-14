@@ -43,6 +43,7 @@ import (
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
 	"admission-api/internal/user"
+	"admission-api/internal/volunteerplan"
 )
 
 func main() {
@@ -166,18 +167,31 @@ func run() error {
 	conversationStore := conversation.NewStore(database.Pool())
 	conversationService := conversation.NewService(conversationStore)
 	conversationHandler := conversation.NewHandler(conversationService)
+	volunteerDraftStore := volunteerplan.NewDraftStore(database.Pool())
+	volunteerPlanStore := volunteerplan.NewPlanStore(database.Pool())
+	volunteerPlanServiceV2 := volunteerplan.NewService(volunteerDraftStore, volunteerPlanStore, conversationService)
+	volunteerPlanHandlerV2 := volunteerplan.NewHandler(volunteerPlanServiceV2)
 
 	var llmProxy ai.LLMProxy
 	switch cfg.LLMProvider {
 	case "anthropic":
+		// True Anthropic streaming is not implemented yet; the client
+		// satisfies ChatCompletionStream by wrapping a single
+		// ChatCompletion call. First-token latency therefore equals
+		// total generation time on this backend.
+		slog.Warn("anthropic provider falls back to non-streaming completion in this version")
 		llmProxy = ai.NewAnthropicClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
 	default:
 		llmProxy = ai.NewOpenAIClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
 	}
-	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore)
+
+	recommendationService := admission.NewRecommendationService(admissionLineStore)
+
+	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, recommendationService, volunteerDraftStore)
+	toolExecutor.SetCardLinkWhitelist(cfg.CardLinkWhitelist)
 	agent := ai.NewAgent(llmProxy, toolExecutor)
 	aiHandler := ai.NewHandler(agent, conversationService)
-
+	aiSuggestionsHandler := ai.NewSuggestionsHandler(llmProxy, conversationService, redisClient)
 	healthHandler := health.NewHandler(database)
 
 	// Initialize admin module
@@ -239,8 +253,16 @@ func run() error {
 		authorized.POST("/conversations/:id/messages", conversationHandler.AddMessage)
 		authorized.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
 		authorized.POST("/conversations/:id/archive", conversationHandler.ArchiveConversation)
+		authorized.POST("/conversations/:id/rollback", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), conversationHandler.Rollback)
 		authorized.POST("/ai/chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Chat)
 		authorized.POST("/conversations/:id/ai-chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.ChatWithConversation)
+		authorized.POST("/conversations/:id/regenerate", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Regenerate)
+		authorized.GET("/conversations/:id/suggestions", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiSuggestionsHandler.Suggestions)
+		authorized.GET("/conversations/:id/plan-drafts", volunteerPlanHandlerV2.ListDraftsByConversation)
+		authorized.GET("/plan-drafts/:draft_id", volunteerPlanHandlerV2.GetDraft)
+		authorized.GET("/volunteer-plans", volunteerPlanHandlerV2.ListPlans)
+		authorized.GET("/volunteer-plans/:id", volunteerPlanHandlerV2.GetPlan)
+		authorized.POST("/volunteer-plans/adopt", volunteerPlanHandlerV2.Adopt)
 		authorized.POST("/payment/orders", paymentHandler.CreateOrder)
 		authorized.GET("/payment/orders", paymentHandler.ListMyOrders)
 		authorized.GET("/payment/orders/:order_no", paymentHandler.GetMyOrder)

@@ -21,7 +21,8 @@ type stubConversationService struct {
 	listFunc         func(ctx context.Context, userID *int64) ([]*Conversation, error)
 	archiveFunc      func(ctx context.Context, id int64) error
 	deleteFunc       func(ctx context.Context, id int64) error
-	addMessageFunc   func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error)
+	addMessageFunc   func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error)
+	rollbackFunc     func(ctx context.Context, conversationID, messageID int64, inclusive bool) (int, *int64, error)
 	listMessagesFunc func(ctx context.Context, conversationID int64) ([]*Message, error)
 }
 
@@ -45,12 +46,16 @@ func (s stubConversationService) DeleteConversation(ctx context.Context, id int6
 	return s.deleteFunc(ctx, id)
 }
 
-func (s stubConversationService) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error) {
-	return s.addMessageFunc(ctx, conversationID, role, content, toolCalls, toolResults)
+func (s stubConversationService) AddMessage(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error) {
+	return s.addMessageFunc(ctx, conversationID, role, content, toolCalls, toolResults, widgets)
 }
 
 func (s stubConversationService) ListMessages(ctx context.Context, conversationID int64) ([]*Message, error) {
 	return s.listMessagesFunc(ctx, conversationID)
+}
+
+func (s stubConversationService) Rollback(ctx context.Context, conversationID, messageID int64, inclusive bool) (deleted int, latest *int64, err error) {
+	return s.rollbackFunc(ctx, conversationID, messageID, inclusive)
 }
 
 func withUser(userID int64) gin.HandlerFunc {
@@ -200,7 +205,7 @@ func TestAddMessageRequiresOwnedConversation(t *testing.T) {
 		getFunc: func(ctx context.Context, id int64) (*Conversation, error) {
 			return &Conversation{ID: id, UserID: &userID, Status: "active"}, nil
 		},
-		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error) {
+		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error) {
 			require.Equal(t, int64(1), conversationID)
 			require.Equal(t, "user", role)
 			require.Equal(t, "hello", content)
@@ -282,7 +287,7 @@ func TestAddMessageRejectsClientSuppliedAssistantRole(t *testing.T) {
 		getFunc: func(ctx context.Context, id int64) (*Conversation, error) {
 			return &Conversation{ID: id, UserID: &userID, Status: "active"}, nil
 		},
-		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error) {
+		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error) {
 			capturedRole = role
 			return &Message{ID: 3, ConversationID: conversationID, Role: role, Content: content}, nil
 		},
@@ -316,7 +321,7 @@ func TestAddMessageIgnoresClientSuppliedToolCalls(t *testing.T) {
 		getFunc: func(ctx context.Context, id int64) (*Conversation, error) {
 			return &Conversation{ID: id, UserID: &userID, Status: "active"}, nil
 		},
-		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults []byte) (*Message, error) {
+		addMessageFunc: func(ctx context.Context, conversationID int64, role, content string, toolCalls, toolResults, widgets []byte) (*Message, error) {
 			capturedToolCalls = toolCalls
 			capturedToolResults = toolResults
 			return &Message{ID: 3, ConversationID: conversationID, Role: role, Content: content}, nil

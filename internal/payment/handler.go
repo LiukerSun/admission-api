@@ -47,7 +47,7 @@ func NewHandler(service Service, opts HandlerOptions) *Handler {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        body body CreateOrderRequest true "订单信息"
-// @Success      200 {object} web.Response{data=OrderResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Failure      404 {object} web.Response
@@ -83,7 +83,7 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        page      query int false "页码"
 // @Param        page_size query int false "每页数量"
-// @Success      200 {object} web.Response{data=OrderListResponse}
+// @Success      200 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Router       /api/v1/payment/orders [get]
 func (h *Handler) ListMyOrders(c *gin.Context) {
@@ -108,7 +108,7 @@ func (h *Handler) ListMyOrders(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        order_no path string true "订单号"
-// @Success      200 {object} web.Response{data=OrderResponse}
+// @Success      200 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Router       /api/v1/payment/orders/{order_no} [get]
@@ -132,7 +132,7 @@ func (h *Handler) GetMyOrder(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        order_no path string true "订单号"
-// @Success      200 {object} web.Response{data=OrderResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Router       /api/v1/payment/orders/{order_no}/pay [post]
@@ -216,7 +216,7 @@ func (h *Handler) AlipayCallback(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        order_no path string true "订单号"
-// @Success      200 {object} web.Response{data=OrderResponse}
+// @Success      200 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Failure      404 {object} web.Response
 // @Router       /api/v1/payment/orders/{order_no}/detect [post]
@@ -241,7 +241,7 @@ func (h *Handler) Detect(c *gin.Context) {
 // @Produce      json
 // @Param        X-Mock-Callback-Secret header string false "非开发环境下必填的内部 mock 回调密钥"
 // @Param        body body MockCallbackRequest true "mock 回调"
-// @Success      200 {object} web.Response{data=OrderResponse}
+// @Success      200 {object} web.Response
 // @Failure      400 {object} web.Response
 // @Failure      401 {object} web.Response
 // @Router       /api/v1/payment/callbacks/mock [post]

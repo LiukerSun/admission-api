@@ -90,11 +90,29 @@ type ConversationChatRequest struct {
 }
 
 // SSEEvent is a server-sent event.
+//
+// Field usage by event type:
+//   - "text_delta": Content holds the token slice
+//   - "tool_call_start" / "tool_call_end": Data holds a structured payload
+//   - "widget": Data holds the Widget value
+//   - "done": Data holds the final AgentResult
+//   - "error" / "warning": Content holds a human-readable message
+//
+// The legacy "step_start" / "step_finish" / Step fields are retained
+// only to avoid a breaking shape change on the wire; new code paths do
+// not emit them.
 type SSEEvent struct {
-	Type    string `json:"type"`
-	Step    string `json:"step,omitempty"`
-	Content string `json:"content,omitempty"`
-	Data    any    `json:"data,omitempty"`
+	Type     string `json:"type"`
+	Step     string `json:"step,omitempty"`
+	Content  string `json:"content,omitempty"`
+	Data     any    `json:"data,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	Payload  any    `json:"payload,omitempty"`
+	CallID   string `json:"call_id,omitempty"`
+	ToolName string `json:"tool_name,omitempty"`
+	Success  *bool  `json:"success,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 // Handler handles AI chat endpoints.
@@ -109,9 +127,92 @@ func NewHandler(agent *Agent, conversationService conversation.Service) *Handler
 	return &Handler{agent: agent, conversationService: conversationService}
 }
 
+// streamWriter encapsulates the SSE write loop for a single request so
+// Chat, ChatWithConversation, and Regenerate share one implementation.
+type streamWriter struct {
+	c     *gin.Context
+	flush func()
+}
+
+func newStreamWriter(c *gin.Context) *streamWriter {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.WriteHeader(http.StatusOK)
+	extendWriteDeadline(c, aiStreamTimeout)
+	flush := func() {}
+	if f, ok := c.Writer.(http.Flusher); ok {
+		flush = f.Flush
+	}
+	return &streamWriter{c: c, flush: flush}
+}
+
+func (w *streamWriter) write(event *SSEEvent) {
+	data, err := json.Marshal(event)
+	if err != nil {
+		// Marshal failure on an SSE event is exotic — most commonly an
+		// unsupported type in event.Data. Log it but keep the stream
+		// alive; the next event may succeed.
+		slog.Error("marshal sse event", "type", event.Type, "error", err)
+		return
+	}
+	if _, err := fmt.Fprintf(w.c.Writer, "data: %s\n\n", data); err != nil {
+		slog.Warn("sse write failed", "type", event.Type, "error", err)
+		return
+	}
+	w.flush()
+	// Refresh the per-write deadline every time we ship a chunk; long
+	// LLM calls can otherwise hit the connection's hard write timeout.
+	extendWriteDeadline(w.c, aiStreamTimeout)
+}
+
+// runAgentOnHistory is the single streaming pipeline used by all three
+// AI entrypoints (Chat, ChatWithConversation, Regenerate). It owns the
+// translation from AgentCallbacks to SSE events. The agent itself never
+// knows about HTTP; this keeps tests easy and prevents three drifting
+// implementations of the streaming protocol.
+//
+// On success it returns the final AgentResult so the caller can persist
+// the assistant message (when in conversation mode). On failure it has
+// already written an "error" event to sw — the caller need not re-emit.
+func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, history []Message, opts RunOptions) (*AgentResult, error) {
+	cb := AgentCallbacks{
+		OnTextDelta: func(content string) {
+			sw.write(&SSEEvent{Type: "text_delta", Content: content})
+		},
+		OnToolCallStart: func(callID, toolName string) {
+			sw.write(&SSEEvent{
+				Type:     "tool_call_start",
+				CallID:   callID,
+				ToolName: toolName,
+				Data:     map[string]any{"call_id": callID, "tool_name": toolName},
+			})
+		},
+		OnToolCallEnd: func(callID string, success bool, errMsg string) {
+			payload := map[string]any{"call_id": callID, "success": success}
+			if errMsg != "" {
+				payload["error"] = errMsg
+			}
+			ok := success
+			sw.write(&SSEEvent{Type: "tool_call_end", CallID: callID, Success: &ok, Error: errMsg, Data: payload})
+		},
+		OnWidget: func(widget Widget) {
+			sw.write(&SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
+		},
+	}
+
+	result, err := h.agent.RunStreamWithOptions(ctx, history, cb, opts)
+	if err != nil {
+		slog.Error("agent run failed", "error", err)
+		sw.write(&SSEEvent{Type: "error", Content: err.Error()})
+		return nil, err
+	}
+	return result, nil
+}
+
 // Chat godoc
 // @Summary      AI chat with SSE streaming
-// @Description  Streams AI responses via SSE. Send messages array; receive step_start/step_finish/text_delta/done events.
+// @Description  Streams AI responses via SSE. Send messages array; receive text_delta / tool_call_start / tool_call_end / widget / done events.
 // @Tags         ai
 // @Accept       json
 // @Produce      text/event-stream
@@ -132,48 +233,15 @@ func (h *Handler) Chat(c *gin.Context) {
 		return
 	}
 
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.WriteHeader(http.StatusOK)
-	extendWriteDeadline(c, aiStreamTimeout)
-
-	flush := func() {
-		if f, ok := c.Writer.(http.Flusher); ok {
-			f.Flush()
-		}
-	}
-
-	writeEvent := func(event SSEEvent) {
-		data, _ := json.Marshal(event)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		flush()
-	}
-
+	sw := newStreamWriter(c)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), aiStreamTimeout)
 	defer cancel()
 
-	writeEvent(SSEEvent{Type: "step_start", Step: "thinking"})
-
-	result, err := h.agent.Run(ctx, req.Messages)
+	result, err := h.runAgentOnHistory(ctx, sw, req.Messages, RunOptions{})
 	if err != nil {
-		writeEvent(SSEEvent{Type: "error", Content: err.Error()})
 		return
 	}
-
-	writeEvent(SSEEvent{Type: "step_finish", Step: "thinking"})
-
-	// Stream text in chunks to simulate typing
-	runes := []rune(result.Text)
-	for i := 0; i < len(runes); i += 10 {
-		end := i + 10
-		if end > len(runes) {
-			end = len(runes)
-		}
-		writeEvent(SSEEvent{Type: "text_delta", Content: string(runes[i:end])})
-	}
-
-	writeEvent(SSEEvent{Type: "done", Data: result})
+	sw.write(&SSEEvent{Type: "done", Data: result})
 }
 
 // ChatWithConversation godoc
@@ -222,18 +290,7 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 	}
 	req.Message = trimmed
 
-	// Verify conversation exists
-	conv, err := h.conversationService.GetConversation(c.Request.Context(), convID)
-	if err != nil {
-		if err == conversation.ErrConversationNotFound {
-			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
-			return
-		}
-		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to get conversation")
-		return
-	}
-	if conv.UserID == nil || *conv.UserID != userID {
-		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+	if !h.verifyConversationOwnership(c, convID, userID) {
 		return
 	}
 
@@ -242,75 +299,100 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 	// that's missing the latest question, fabricate a reply, and that
 	// reply will then be persisted as if it answered nothing — corrupting
 	// every future replay of this conversation.
-	if _, err := h.conversationService.AddMessage(c.Request.Context(), convID, "user", req.Message, nil, nil); err != nil {
+	if _, err := h.conversationService.AddMessage(c.Request.Context(), convID, "user", req.Message, nil, nil, nil); err != nil {
 		slog.Error("failed to persist user message before AI run", "error", err, "conversationID", convID)
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to save message")
 		return
 	}
 
-	// Load conversation history
+	h.streamConversationTurn(c, convID, userID)
+}
+
+// Regenerate godoc
+// @Summary      Regenerate the last assistant reply
+// @Description  Discards the most recent assistant turn (if any) and re-runs the agent on the resulting history. SSE stream identical to ChatWithConversation.
+// @Tags         ai
+// @Produce      text/event-stream
+// @Param        id path int true "Conversation ID"
+// @Success      200 {string} string "SSE stream"
+// @Failure      400 {object} web.Response
+// @Failure      404 {object} web.Response
+// @Failure      500 {object} web.Response
+// @Router       /api/v1/conversations/{id}/regenerate [post]
+func (h *Handler) Regenerate(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	convID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+	if !h.verifyConversationOwnership(c, convID, userID) {
+		return
+	}
+
+	// Inspect the last message: if assistant, roll it back inclusive so
+	// the agent re-runs against the same history that produced it. If
+	// user, leave it alone — the model gets a second chance at the
+	// same question. Empty history is a 400, because there is nothing
+	// to regenerate from.
 	msgs, err := h.conversationService.ListMessages(c.Request.Context(), convID)
 	if err != nil {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to load messages")
 		return
 	}
-
-	aiMessages := conversationMessagesToAIMessages(msgs)
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.WriteHeader(http.StatusOK)
-	extendWriteDeadline(c, aiStreamTimeout)
-
-	flush := func() {
-		if f, ok := c.Writer.(http.Flusher); ok {
-			f.Flush()
+	if len(msgs) == 0 {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "conversation has no messages to regenerate")
+		return
+	}
+	last := msgs[len(msgs)-1]
+	if last.Role == "assistant" {
+		if _, _, err := h.conversationService.Rollback(c.Request.Context(), convID, last.ID, true); err != nil {
+			slog.Error("regenerate rollback failed", "error", err, "conversationID", convID, "messageID", last.ID)
+			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to rollback last assistant message")
+			return
 		}
 	}
 
-	writeEvent := func(event SSEEvent) {
-		data, _ := json.Marshal(event)
-		n, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		slog.Info("sse write", "type", event.Type, "bytes", n, "err", err)
-		flush()
-	}
+	h.streamConversationTurn(c, convID, userID)
+}
 
+// streamConversationTurn loads the current conversation history, runs
+// the agent over it with SSE callbacks, then persists the assistant
+// reply. Used by both ChatWithConversation (after inserting the new
+// user message) and Regenerate (after optionally rolling back the last
+// assistant message). Keeps the persistence + SSE pattern in exactly
+// one place.
+func (h *Handler) streamConversationTurn(c *gin.Context, convID, userID int64) {
+	msgs, err := h.conversationService.ListMessages(c.Request.Context(), convID)
+	if err != nil {
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to load messages")
+		return
+	}
+	aiMessages := conversationMessagesToAIMessages(msgs)
+
+	sw := newStreamWriter(c)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), aiStreamTimeout)
 	defer cancel()
 
-	writeEvent(SSEEvent{Type: "step_start", Step: "thinking"})
-
-	result, err := h.agent.Run(ctx, aiMessages)
+	result, err := h.runAgentOnHistory(ctx, sw, aiMessages, RunOptions{
+		ToolContext: ToolExecContext{
+			UserID:         userID,
+			ConversationID: convID,
+		},
+	})
 	if err != nil {
-		slog.Error("agent run failed", "error", err)
-		writeEvent(SSEEvent{Type: "error", Content: err.Error()})
 		return
 	}
 
-	writeEvent(SSEEvent{Type: "step_finish", Step: "thinking"})
-
-	// Stream text
-	runes := []rune(result.Text)
-	slog.Info("streaming text", "charCount", len(runes))
-	for i := 0; i < len(runes); i += 10 {
-		end := i + 10
-		if end > len(runes) {
-			end = len(runes)
-		}
-		writeEvent(SSEEvent{Type: "text_delta", Content: string(runes[i:end])})
-	}
-
-	writeEvent(SSEEvent{Type: "done", Data: result})
-	slog.Info("sse stream complete")
-
-	// Save assistant message with tool calls. The SSE stream has already
-	// been flushed to the client by this point, so a save failure can't
-	// be turned into a non-200 status — but we MUST surface it in logs
-	// (and on the wire as a non-fatal warn event) instead of silently
-	// dropping it. Otherwise the next request to this conversation will
-	// replay history without the assistant's reply, the LLM will repeat
-	// itself, and ops has no signal that anything went wrong.
+	// Save assistant message with tool calls + widgets. The SSE stream
+	// has already been flushed to the client by this point, so a save
+	// failure can't be turned into a non-200 status — but we MUST surface
+	// it on the wire so the user sees that history won't be persisted,
+	// and in logs so ops sees the failure.
 	var toolCallsJSON []byte
 	if len(result.ToolCalls) > 0 {
 		toolCallsJSON, _ = json.Marshal(result.ToolCalls)
@@ -319,10 +401,45 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 	if len(result.ToolResults) > 0 {
 		toolResultsJSON, _ = json.Marshal(result.ToolResults)
 	}
-	if _, err := h.conversationService.AddMessage(c.Request.Context(), convID, "assistant", result.Text, toolCallsJSON, toolResultsJSON); err != nil {
-		slog.Error("failed to persist assistant message after AI run", "error", err, "conversationID", convID)
-		writeEvent(SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
+	var widgetsJSON []byte
+	if len(result.Widgets) > 0 {
+		widgetsJSON, _ = json.Marshal(result.Widgets)
 	}
+	if _, err := h.conversationService.AddMessage(c.Request.Context(), convID, "assistant", result.Text, toolCallsJSON, toolResultsJSON, widgetsJSON); err != nil {
+		slog.Error("failed to persist assistant message after AI run", "error", err, "conversationID", convID)
+		sw.write(&SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
+	}
+
+	sw.write(&SSEEvent{Type: "done", Data: result})
+	slog.Info("sse stream complete")
+}
+
+// verifyConversationOwnership writes the appropriate error response and
+// returns false if the conversation is missing or owned by someone
+// else. Mirrors conversation.Handler.canAccessConversation but uses the
+// AI handler's BaseHandler instance.
+//
+// Returns 404 (not 403) when the user is not the owner so the API does
+// not leak the existence of conversations belonging to other users.
+func (h *Handler) verifyConversationOwnership(c *gin.Context, convID, userID int64) bool {
+	conv, err := h.conversationService.GetConversation(c.Request.Context(), convID)
+	if err != nil {
+		if errors.Is(err, conversation.ErrConversationNotFound) {
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+			return false
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to get conversation")
+		return false
+	}
+	if conv.UserID == nil || *conv.UserID != userID {
+		h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "conversation not found")
+		return false
+	}
+	if conv.Status != "active" {
+		h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "conversation is archived")
+		return false
+	}
+	return true
 }
 
 func conversationMessagesToAIMessages(messages []*conversation.Message) []Message {
