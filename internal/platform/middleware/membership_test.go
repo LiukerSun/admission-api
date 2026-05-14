@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"admission-api/internal/platform/web"
 )
 
 type mockMembershipChecker struct {
@@ -55,4 +58,14 @@ func TestRequireActiveMembershipRejectsExpiredMember(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), "active membership required")
+
+	var body struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, web.ErrCodeMembershipRequired, body.Code)
+	assert.Equal(t, web.PaywallReasonMembershipRequired, body.Data["reason"])
+	assert.Equal(t, "premium", body.Data["required_level"])
+	assert.Equal(t, "quarterly", body.Data["recommended_plan"])
 }
