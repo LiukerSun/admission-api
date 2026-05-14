@@ -120,20 +120,19 @@ func run() error {
 	var alipayClient alipay.Client
 	if cfg.AlipayAppID != "" &&
 		(cfg.AlipayAppPrivateKey != "" || cfg.AlipayAppPrivateKeyPath != "") &&
-		cfg.AlipayAppPublicCertPath != "" && cfg.AlipayAlipayPublicCertPath != "" && cfg.AlipayAlipayRootCertPath != "" {
+		cfg.AlipayAppPublicCert != "" && cfg.AlipayAlipayPublicCert != "" && cfg.AlipayAlipayRootCert != "" {
 		var err error
 		alipayClient, err = alipay.NewClient(&alipay.Config{
-			AppID:                cfg.AlipayAppID,
-			AppPrivateKey:        cfg.AlipayAppPrivateKey,
-			AppPrivateKeyPath:    cfg.AlipayAppPrivateKeyPath,
-			AppPublicCertPath:    cfg.AlipayAppPublicCertPath,
-			AlipayPublicCertPath: cfg.AlipayAlipayPublicCertPath,
-			AlipayRootCertPath:   cfg.AlipayAlipayRootCertPath,
-			NotifyURL:            cfg.AlipayNotifyURL,
-			ReturnURL:            cfg.AlipayReturnURL,
-			IsProduction:         !cfg.AlipaySandbox,
-			EncryptKey:           cfg.AlipayEncryptKey,
-			DecryptKey:           cfg.AlipayDecryptKey,
+			AppID:             cfg.AlipayAppID,
+			AppPrivateKey:     cfg.AlipayAppPrivateKey,
+			AppPrivateKeyPath: cfg.AlipayAppPrivateKeyPath,
+			AppPublicCert:     cfg.AlipayAppPublicCert,
+			AlipayPublicCert:  cfg.AlipayAlipayPublicCert,
+			AlipayRootCert:    cfg.AlipayAlipayRootCert,
+			NotifyURL:         cfg.AlipayNotifyURL,
+			ReturnURL:         cfg.AlipayReturnURL,
+			EncryptKey:        cfg.AlipayEncryptKey,
+			DecryptKey:        cfg.AlipayDecryptKey,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to initialize alipay client: %w", err)

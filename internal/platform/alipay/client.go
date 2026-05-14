@@ -75,8 +75,8 @@ type alipayClient struct {
 func NewClient(cfg *Config) (Client, error) {
 	if cfg.AppID == "" ||
 		(cfg.AppPrivateKey == "" && cfg.AppPrivateKeyPath == "") ||
-		cfg.AppPublicCertPath == "" || cfg.AlipayPublicCertPath == "" || cfg.AlipayRootCertPath == "" {
-		return nil, fmt.Errorf("alipay config is incomplete: app_id, app_private_key (or app_private_key_path), and cert paths are required")
+		cfg.AppPublicCert == "" || cfg.AlipayPublicCert == "" || cfg.AlipayRootCert == "" {
+		return nil, fmt.Errorf("alipay config is incomplete: app_id, app_private_key (or app_private_key_path), and cert strings are required")
 	}
 
 	privateKey := cfg.AppPrivateKey
@@ -88,18 +88,18 @@ func NewClient(cfg *Config) (Client, error) {
 		privateKey = strings.TrimSpace(string(data))
 	}
 
-	client, err := alipay.New(cfg.AppID, privateKey, cfg.IsProduction)
+	client, err := alipay.New(cfg.AppID, privateKey, true)
 	if err != nil {
 		return nil, fmt.Errorf("create alipay client: %w", err)
 	}
 
-	if err := client.LoadAppCertPublicKeyFromFile(cfg.AppPublicCertPath); err != nil {
+	if err := client.LoadAppCertPublicKey(cfg.AppPublicCert); err != nil {
 		return nil, fmt.Errorf("load app public cert: %w", err)
 	}
-	if err := client.LoadAlipayCertPublicKeyFromFile(cfg.AlipayPublicCertPath); err != nil {
+	if err := client.LoadAlipayCertPublicKey(cfg.AlipayPublicCert); err != nil {
 		return nil, fmt.Errorf("load alipay public cert: %w", err)
 	}
-	if err := client.LoadAliPayRootCertFromFile(cfg.AlipayRootCertPath); err != nil {
+	if err := client.LoadAliPayRootCert(cfg.AlipayRootCert); err != nil {
 		return nil, fmt.Errorf("load alipay root cert: %w", err)
 	}
 

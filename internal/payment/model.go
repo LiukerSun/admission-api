@@ -155,7 +155,7 @@ type CreateOrderInput struct {
 
 type AlipayPayResponse struct {
 	OrderNo   string    `json:"order_no" example:"MO202605101200000001"`
-	PayURL    string    `json:"pay_url" example:"https://openapi-sandbox.dl.alipaydev.com/gateway.do?..."`
+	PayURL    string    `json:"pay_url" example:"https://openapi.alipay.com/gateway.do?..."`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
