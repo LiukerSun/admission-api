@@ -3,207 +3,1106 @@ package admission
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
+	"sync"
 )
 
+// RecommendationService / RecommendationTuner 接口定义在 recommendation.go。
+// 这里只保留实现。
+
 type recommendationService struct {
-	lines AdmissionLineStore
+	store    RecommendationStore
+	metadata RecommendationMetadataStore
+	tuner    RecommendationTuner // optional, may be nil
 }
 
-type recommendationVolunteerPlan struct {
-	ID          string             `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Columns     []string           `json:"columns"`
-	Rows        []map[string]any   `json:"rows"`
-	Stats       VolunteerPlanStats `json:"stats"`
+func NewRecommendationService(store RecommendationStore, metadata RecommendationMetadataStore, tuner RecommendationTuner) RecommendationService {
+	return &recommendationService{store: store, metadata: metadata, tuner: tuner}
 }
 
-func NewRecommendationService(lines AdmissionLineStore) RecommendationService {
-	return &recommendationService{lines: lines}
+// 张雪峰式生化环材避雷需要的 CHSI 大类码常量。这些是国标专业目录里
+// 客观存在的代码，不是业务策略，所以保留为常量；其余阈值/映射全部 DB 化。
+const (
+	chsiCategoryChemistry     = "0703" // 化学类
+	chsiCategoryChemicalEng   = "0813" // 化工与制药类
+	chsiCategoryMaterials     = "0804" // 材料类
+	chsiCategoryEnvironmental = "0825" // 环境科学与工程类
+	chsiCategoryBio           = "0710" // 生物科学类
+)
+
+const (
+	// 一张表里混合冲/稳/保。defaultPlanSize 跟 HLJ 政策一致：40 个院校专业组；
+	// planSizeCap 仅作为防 OOM 的硬上限，远高于政策值，允许用户做"批量分析"场景。
+	planSizeCap     = 500
+	defaultPlanSize = 40
+
+	// 一张表里冲/稳/保的位次窗口，按学生位次 R 的比例计算。
+	// 原来用绝对差（R-15000 ~ R-2000）只在 R 较大时合理；
+	// R=2555 这种高分段时，下界被 clamp 到 1，把全省前 555 名的清北档全卷进冲档。
+	// 改为比例可在 R=2555 / R=30000 / R=100000 三段都给出合理窗口。
+	//   冲 [R*(1-rushGapMaxRatio), R*(1-rushGapMinRatio)] — 比 R 强 15%~50%
+	//   稳 [R*(1-matchGapRatio),   R*(1+matchGapRatio)]   — R ±15%
+	//   保 [R*(1+safeGapMinRatio), R*(1+safeGapMaxRatio)] — 比 R 弱 15%~100%
+	rushGapMinRatio = 0.15
+	rushGapMaxRatio = 0.50
+	matchGapRatio   = 0.15
+	safeGapMinRatio = 0.15
+	safeGapMaxRatio = 1.00
+
+	// 黑龙江志愿单位是"院校专业组"——同一 (university, group_code) 在真实志愿表里就是
+	// 一个志愿位。所以这里按 group 去重；同一学校多个 group 算多个志愿位。
+	// 每校最多 maxGroupsPerSchool 个组，仍然保留对大体量学校的多样性约束。
+	maxGroupsPerSchool = 4
+)
+
+// bucketWindow 是单个档位（冲/稳/保）的位次范围，仅在 service 内部使用，不暴露到 JSON。
+type bucketWindow struct {
+	Min int
+	Max int
 }
 
 func (s *recommendationService) Recommend(ctx context.Context, req *RecommendationRequest) (*RecommendationResponse, error) {
-	planSize := req.PlanSize
-	if planSize <= 0 {
-		planSize = 40
+	if err := validateRequest(req); err != nil {
+		return nil, err
 	}
-	if planSize > 200 {
-		planSize = 200
-	}
+	applyDefaultCounts(req)
 
-	minRankFrom, minRankTo := rankWindow(req.ProvincialRank)
-	filter := &AdmissionLineFilter{
-		RegionCode:          req.RegionCode,
-		SubjectCategoryCode: req.SubjectCategoryCode,
-		MinRankFrom:         &minRankFrom,
-		MinRankTo:           &minRankTo,
-	}
-	if len(req.PreferredCities) > 0 {
-		filter.Cities = req.PreferredCities
-	}
-
-	lines, err := s.lines.ListAdmissionLines(ctx, filter)
+	year, err := s.resolveAdmissionYear(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	buildScored := func(src []AdmissionLineResponse) []*AdmissionLineResponse {
-		out := make([]*AdmissionLineResponse, 0, len(src))
-		for i := range src {
-			l := &src[i]
-			if l.MinRank == nil {
-				continue
-			}
-			if len(req.PreferredMajors) > 0 && !matchesAnyKeyword(l.LocalMajorName, req.PreferredMajors) {
-				continue
-			}
-			out = append(out, l)
-		}
-		return out
+	md, err := s.metadata.Load(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	scored := buildScored(lines)
-	if len(scored) == 0 {
-		filter.MinRankFrom = nil
-		filter.MinRankTo = nil
-		lines2, err := s.lines.ListAdmissionLines(ctx, filter)
-		if err == nil {
-			scored = buildScored(lines2)
-		}
+	// 一张志愿表（≤40 条）按位次轴分成冲/稳/保三段。每段独立查 DB 是为了能各自 LIMIT，
+	// 避免"一次大查询 LIMIT 5000 + ORDER BY min_rank ASC"把高位次（保档）整段截没。
+	// 窗口按学生位次 R 的比例计算——见 rushGapMin/MaxRatio 等常量上的说明。
+	rushW, matchW, safeW := computeBucketWindows(req.ProvincialRank)
+
+	baseQ := CandidateQuery{
+		AdmissionYear:          year,
+		RegionCode:             req.RegionCode,
+		SubjectCategoryCode:    req.SubjectCategoryCode,
+		SubjectRequirementCode: req.SubjectRequirementCode,
+		BudgetTuitionMax:       req.BudgetTuitionMax,
+		ExcludedProvinces:      req.ExcludedProvinces,
+		ExcludedCities:         req.ExcludedCities,
+	}
+	candidates, err := s.fetchBucketCandidates(ctx, &baseQ, rushW, matchW, safeW)
+	if err != nil {
+		return nil, err
 	}
 
-	sort.Slice(scored, func(i, j int) bool {
-		ai := absInt(*scored[i].MinRank - req.ProvincialRank)
-		aj := absInt(*scored[j].MinRank - req.ProvincialRank)
-		if ai != aj {
-			return ai < aj
-		}
-		if scored[i].UniversityName != scored[j].UniversityName {
-			return scored[i].UniversityName < scored[j].UniversityName
-		}
-		if scored[i].GroupCode != scored[j].GroupCode {
-			return scored[i].GroupCode < scored[j].GroupCode
-		}
-		return scored[i].LocalMajorCode < scored[j].LocalMajorCode
-	})
+	strategy, strategyReason := decideStrategy(req, md)
 
-	if len(scored) > planSize {
-		scored = scored[:planSize]
+	filtered, filterNotes := filterByPreference(candidates, req, md)
+	notes := make([]string, 0, len(filterNotes))
+	notes = append(notes, filterNotes...)
+
+	rushQuota, matchQuota, safeQuota := splitTierQuota(req.PlanSize)
+
+	// 跨档共享去重——同一院校专业组只能进表一次，同一学校最多 maxGroupsPerSchool 个 group
+	seenGroups := map[string]struct{}{}
+	usedSchools := map[string]int{}
+
+	// 配额下溢回填：如果上一档取不满（如学生位次太靠前，rush 窗口 clamp 成 [1,1]
+	// 几乎没候选），把剩余名额加到下一档，保证总条数仍尽量靠近 planSize。
+	rushItems := pickBucket(filtered, req, md, strategy, "rush", rushW, rushQuota, seenGroups, usedSchools)
+	matchQuota += rushQuota - len(rushItems)
+	matchItems := pickBucket(filtered, req, md, strategy, "match", matchW, matchQuota, seenGroups, usedSchools)
+	safeQuota += matchQuota - len(matchItems)
+	safeItems := pickBucket(filtered, req, md, strategy, "safe", safeW, safeQuota, seenGroups, usedSchools)
+	safeItems = ensureSafeQuality(safeItems, req)
+
+	if rushQuota > 0 && len(rushItems) == 0 {
+		notes = append(notes, "你的位次太靠前，'冲'档已无更高目标可推荐，名额已转给'稳'档")
 	}
 
-	columns := []string{"学校", "组代码", "专业", "最低分", "最低位次", "批次"}
-	rows := make([]map[string]interface{}, 0, len(scored))
-	schools := map[int64]struct{}{}
-	groups := map[string]struct{}{}
-	rush, match, safe := 0, 0, 0
-
-	for _, l := range scored {
-		schools[l.UniversityID] = struct{}{}
-		if l.GroupCode != "" {
-			groups[l.GroupCode] = struct{}{}
-		}
-		if l.MinRank != nil {
-			switch bucketByRank(*l.MinRank, req.ProvincialRank) {
-			case "rush":
-				rush++
-			case "safe":
-				safe++
-			default:
-				match++
-			}
-		}
-		rows = append(rows, map[string]interface{}{
-			"学校":   l.UniversityName,
-			"组代码":  l.GroupCode,
-			"专业":   l.LocalMajorName,
-			"最低分":  toIntOrEmpty(l.MinScore),
-			"最低位次": toIntOrEmpty(l.MinRank),
-			"批次":   l.BatchCode,
-		})
+	items := make([]RecommendationItem, 0, len(rushItems)+len(matchItems)+len(safeItems))
+	items = append(items, rushItems...)
+	items = append(items, matchItems...)
+	items = append(items, safeItems...)
+	for i := range items {
+		items[i].Order = i + 1
 	}
 
-	plan := recommendationVolunteerPlan{
-		ID:          "smart_recommendation",
-		Name:        "智能推荐",
-		Description: "根据位次窗口匹配的志愿方案（自动生成）",
-		Columns:     columns,
-		Rows:        rows,
-		Stats: VolunteerPlanStats{
-			SchoolCount: len(schools),
-			GroupCount:  len(groups),
-			RecordCount: len(rows),
+	resp := &RecommendationResponse{
+		Strategy:       strategy,
+		StrategyReason: strategyReason,
+		Items:          items,
+		RushCount:      len(rushItems),
+		MatchCount:     len(matchItems),
+		SafeCount:      len(safeItems),
+		RankWindow: RankWindow{
+			RushMin:  rushW.Min,
+			RushMax:  rushW.Max,
+			MatchMin: matchW.Min,
+			MatchMax: matchW.Max,
+			SafeMin:  safeW.Min,
+			SafeMax:  safeW.Max,
 		},
+		Notes: notes,
 	}
-	planJSON, _ := json.Marshal(plan)
 
-	return &RecommendationResponse{
-		Strategy:      "rank_window",
-		RushCount:     rush,
-		MatchCount:    match,
-		SafeCount:     safe,
-		RankWindow:    map[string]any{"min_rank_from": minRankFrom, "min_rank_to": minRankTo},
-		VolunteerPlan: planJSON,
-	}, nil
+	if req.EnableLLMTuning && s.tuner != nil {
+		tuned, err := s.tuner.Tune(ctx, req, resp)
+		if err == nil && tuned != nil {
+			resp = tuned
+		}
+	}
+
+	// 把 items 序列化进 VolunteerPlan，满足 ai/tools.go generate_volunteer_plan_draft
+	// 工具对 RecommendationResponse 的契约：草稿载体 VolunteerPlan 不能为空。
+	if planJSON, mErr := json.Marshal(map[string]any{"items": resp.Items}); mErr == nil {
+		resp.VolunteerPlan = planJSON
+	}
+
+	return resp, nil
 }
 
-func rankWindow(rank int) (from, to int) {
-	if rank <= 0 {
-		return 0, 0
+// fetchBucketCandidates 分别查冲/稳/保三段，每段独立 LIMIT，合并后按 uma.id 去重。
+// 三段窗口在边界处有 1000 位次的重叠（match 与 rush/safe 各 1000），重叠区候选会被两段都取到，
+// 这里去重一次避免后续 scoreCandidates 重复打分。
+const (
+	rushBucketLimit  = 2000
+	matchBucketLimit = 2000
+	safeBucketLimit  = 1000
+)
+
+func (s *recommendationService) fetchBucketCandidates(ctx context.Context, baseQ *CandidateQuery, rushW, matchW, safeW bucketWindow) ([]RecommendationCandidate, error) {
+	type bucketSpec struct {
+		window bucketWindow
+		limit  int
 	}
-	from = int(math.Floor(float64(rank) * 0.6))
-	to = int(math.Ceil(float64(rank) * 1.4))
-	if from < 1 {
-		from = 1
+	specs := []bucketSpec{
+		{rushW, rushBucketLimit},
+		{matchW, matchBucketLimit},
+		{safeW, safeBucketLimit},
 	}
-	if to < from {
-		to = from
+
+	merged := make([]RecommendationCandidate, 0, rushBucketLimit+matchBucketLimit+safeBucketLimit)
+	seen := make(map[int64]struct{}, cap(merged))
+	for _, spec := range specs {
+		q := *baseQ
+		q.RankMin = spec.window.Min
+		q.RankMax = spec.window.Max
+		q.Limit = spec.limit
+		rows, err := s.store.FetchCandidates(ctx, &q)
+		if err != nil {
+			return nil, err
+		}
+		for i := range rows {
+			id := rows[i].UniversityMajorAdmissionID
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			merged = append(merged, rows[i])
+		}
 	}
-	return from, to
+	return merged, nil
 }
 
-func bucketByRank(cutoffRank, userRank int) string {
-	if cutoffRank <= 0 || userRank <= 0 {
-		return "match"
+// pickBucket 从全量候选中筛出位次落在 window 内的，按 strategy 打分，挑出 quota 条带上 tier 标签。
+// 跨档去重通过共享的 seenGroups / usedSchools 实现——靠前的档位（冲）先挑，避免稳/保截到同一个组。
+func pickBucket(
+	candidates []RecommendationCandidate,
+	req *RecommendationRequest,
+	md *RecommendationMetadata,
+	strategy, tier string,
+	window bucketWindow,
+	quota int,
+	seenGroups map[string]struct{},
+	usedSchools map[string]int,
+) []RecommendationItem {
+	if quota <= 0 {
+		return nil
 	}
-	if float64(cutoffRank) < float64(userRank)*0.9 {
-		return "rush"
-	}
-	if float64(cutoffRank) > float64(userRank)*1.1 {
-		return "safe"
-	}
-	return "match"
-}
-
-func matchesAnyKeyword(text string, keywords []string) bool {
-	t := strings.ToLower(strings.TrimSpace(text))
-	if t == "" {
-		return false
-	}
-	for _, kw := range keywords {
-		k := strings.ToLower(strings.TrimSpace(kw))
-		if k == "" {
+	inWindow := make([]RecommendationCandidate, 0, len(candidates))
+	for i := range candidates {
+		c := &candidates[i]
+		if c.MinRank == nil {
 			continue
 		}
-		if strings.Contains(t, k) {
+		r := *c.MinRank
+		if r >= window.Min && r <= window.Max {
+			inWindow = append(inWindow, candidates[i])
+		}
+	}
+	scored := scoreCandidates(inWindow, req, md, tier, strategy)
+	out := make([]RecommendationItem, 0, quota)
+	for i := range scored {
+		it := &scored[i].item
+		groupKey := it.UniversityCode + "|" + it.GroupCode
+		if _, dup := seenGroups[groupKey]; dup {
+			continue
+		}
+		if usedSchools[it.UniversityCode] >= maxGroupsPerSchool {
+			continue
+		}
+		it.Tier = tier
+		out = append(out, *it)
+		seenGroups[groupKey] = struct{}{}
+		usedSchools[it.UniversityCode]++
+		if len(out) >= quota {
+			break
+		}
+	}
+	return out
+}
+
+func clampBucketWindow(minRank, maxRank int) bucketWindow {
+	if minRank < 1 {
+		minRank = 1
+	}
+	if maxRank < minRank {
+		maxRank = minRank
+	}
+	return bucketWindow{Min: minRank, Max: maxRank}
+}
+
+// computeBucketWindows turns the student's provincial rank into the three
+// 冲/稳/保 windows. Uses ratios on top of R so high-rank students (small R)
+// don't collapse the rush window into "top 555 in the province" (which was
+// the symptom in the original absolute-gap formulation).
+//
+// Each bound is rounded down so windows do not overlap their neighbour by a
+// rounding artefact. Match window grows by one rank on the upper end so
+// safe.Min and match.Max meet exactly when ratios are equal.
+func computeBucketWindows(rank int) (rush, match, safe bucketWindow) {
+	rushMin := int(float64(rank) * (1 - rushGapMaxRatio))
+	rushMax := int(float64(rank) * (1 - rushGapMinRatio))
+	matchMin := int(float64(rank) * (1 - matchGapRatio))
+	matchMax := int(float64(rank) * (1 + matchGapRatio))
+	safeMin := int(float64(rank) * (1 + safeGapMinRatio))
+	safeMax := int(float64(rank) * (1 + safeGapMaxRatio))
+	return clampBucketWindow(rushMin, rushMax),
+		clampBucketWindow(matchMin, matchMax),
+		clampBucketWindow(safeMin, safeMax)
+}
+
+// splitTierQuota 按 1:2:1 把总志愿表条数拆给冲/稳/保。
+// 例：planSize=40 → 10/20/10。下取整后剩余余数全归到稳，保证总和等于 planSize。
+func splitTierQuota(planSize int) (rush, match, safe int) {
+	if planSize <= 0 {
+		return 0, 0, 0
+	}
+	rush = planSize / 4
+	safe = planSize / 4
+	match = planSize - rush - safe
+	return rush, match, safe
+}
+
+func validateRequest(req *RecommendationRequest) error {
+	if req == nil {
+		return fmt.Errorf("nil request")
+	}
+	if req.RegionCode == "" {
+		return fmt.Errorf("region_code is required")
+	}
+	if req.SubjectCategoryCode == "" {
+		return fmt.Errorf("subject_category_code is required")
+	}
+	if req.TotalScore <= 0 {
+		return fmt.Errorf("total_score must be positive")
+	}
+	if req.ProvincialRank <= 0 {
+		return fmt.Errorf("provincial_rank must be positive")
+	}
+	return nil
+}
+
+func applyDefaultCounts(req *RecommendationRequest) {
+	if req.PlanSize <= 0 {
+		req.PlanSize = defaultPlanSize
+	}
+	if req.PlanSize > planSizeCap {
+		req.PlanSize = planSizeCap
+	}
+	if req.PriorityStrategy == "" {
+		req.PriorityStrategy = "auto"
+	}
+}
+
+func (s *recommendationService) resolveAdmissionYear(ctx context.Context, req *RecommendationRequest) (int, error) {
+	if req.AdmissionYear != nil && *req.AdmissionYear > 0 {
+		return *req.AdmissionYear, nil
+	}
+	year, err := s.store.LatestAdmissionYear(ctx, req.RegionCode, req.SubjectCategoryCode)
+	if err != nil {
+		return 0, err
+	}
+	if year == 0 {
+		return 0, fmt.Errorf("no admission data for region=%s category=%s", req.RegionCode, req.SubjectCategoryCode)
+	}
+	return year, nil
+}
+
+// fallbackStemKeywords / fallbackHumanitiesKeywords mirror the seeds in
+// migration 010. They kick in when recommendation_strategy_keywords is empty
+// (migration not yet run, or DB seed wiped), so decideStrategy doesn't silently
+// degrade to "always 默认 major" — which would lose the humanities → school
+// branch entirely.
+var (
+	fallbackStemKeywords       = []string{"计算机", "电子", "电气", "自动化", "机械", "通信", "软件", "人工智能", "数学", "物理", "土木", "航空", "材料"}
+	fallbackHumanitiesKeywords = []string{"法学", "汉语言", "新闻", "金融", "会计", "经济", "管理", "外语", "教育", "心理"}
+	strategyFallbackWarnOnce   sync.Once
+)
+
+// decideStrategy implements 逻辑二: STEM intent → major-first, humanities → school-first.
+// 关键字优先来自 recommendation_strategy_keywords 表（migration 010），便于业务运营调整无需发版。
+// 表为空时回退到 fallbackStemKeywords / fallbackHumanitiesKeywords 并打一次 warn 日志。
+// 用户显式指定 PriorityStrategy 时直接采用。
+func decideStrategy(req *RecommendationRequest, md *RecommendationMetadata) (strategy, reason string) {
+	if req.PriorityStrategy == "school" || req.PriorityStrategy == "major" {
+		return req.PriorityStrategy, "用户显式指定"
+	}
+	stemKeywords, humanitiesKeywords := strategyKeywords(md)
+	stem := containsAny(req.PreferredMajors, stemKeywords...)
+	humanities := containsAny(req.PreferredMajors, humanitiesKeywords...)
+	switch {
+	case stem && !humanities:
+		return "major", "理工类专业有专业壁垒，专业重要性 > 学校牌子"
+	case humanities && !stem:
+		return "school", "文管类无强专业壁垒，学校牌子（圈层、城市、平台）权重更高"
+	default:
+		return "major", "未指明强偏好，默认按专业优先（保留‘卡档边缘’时再切换到学校优先）"
+	}
+}
+
+// strategyKeywords returns the STEM / humanities keyword lists from metadata if
+// either is populated, otherwise the hardcoded fallback (with a single warn).
+func strategyKeywords(md *RecommendationMetadata) (stem, humanities []string) {
+	if md != nil {
+		stem = md.StrategyKeywords["stem"]
+		humanities = md.StrategyKeywords["humanities"]
+	}
+	if len(stem) == 0 && len(humanities) == 0 {
+		strategyFallbackWarnOnce.Do(func() {
+			slog.Warn("recommendation_strategy_keywords is empty; using hardcoded fallback. Run migration 010 to populate.")
+		})
+		return fallbackStemKeywords, fallbackHumanitiesKeywords
+	}
+	return stem, humanities
+}
+
+// filterByPreference applies in-memory排除法 + 匹配法.
+// 返回过滤后的候选集 + 顶层 notes（向用户解释做了什么排除）。
+//
+// 能力门槛、张雪峰式避雷的关键字/阈值都来自 metadata（DB 表
+// recommendation_major_ability_rules），不再硬编码。
+func filterByPreference(candidates []RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata) (filtered []RecommendationCandidate, notes []string) {
+	notes = []string{}
+
+	// 把 ability rules 折叠成 "(category, subject) → exclude_below"
+	excludeRules := map[string]map[string]int{}
+	for cat, rules := range md.AbilityRules {
+		for i := range rules {
+			r := rules[i]
+			if _, ok := excludeRules[cat]; !ok {
+				excludeRules[cat] = map[string]int{}
+			}
+			excludeRules[cat][r.Subject] = r.ExcludeBelowScore
+		}
+	}
+	subjectScore := func(subject string) (int, bool) {
+		switch subject {
+		case "physics":
+			if req.PhysicsScore != nil {
+				return *req.PhysicsScore, true
+			}
+		case "math":
+			if req.MathScore != nil {
+				return *req.MathScore, true
+			}
+		case "chinese":
+			if req.ChineseScore != nil {
+				return *req.ChineseScore, true
+			}
+		case "english":
+			if req.EnglishScore != nil {
+				return *req.EnglishScore, true
+			}
+		}
+		return 0, false
+	}
+
+	noteSubjects := map[string]bool{}
+
+	// 张雪峰式避雷：把用户给的关键字精确映射到对应的 CHSI 大类，避免一刀切。
+	//   "生化环材" → 五大类全部
+	//   "化学"     → 化学 + 化工
+	//   "生物"     → 生物科学类
+	//   "材料"     → 材料类
+	//   "环境"     → 环境科学与工程类
+	// 单关键字粒度匹配后只屏蔽用户真正点名的方向。
+	keywordToCats := map[string][]string{
+		"生化环材": {chsiCategoryChemistry, chsiCategoryChemicalEng, chsiCategoryMaterials, chsiCategoryEnvironmental, chsiCategoryBio},
+		"化学":   {chsiCategoryChemistry, chsiCategoryChemicalEng},
+		"生物":   {chsiCategoryBio},
+		"材料":   {chsiCategoryMaterials},
+		"环境":   {chsiCategoryEnvironmental},
+	}
+	zhangAvoid := map[string]struct{}{}
+	for _, kw := range req.ExcludedKeywords {
+		for trigger, cats := range keywordToCats {
+			if strings.Contains(kw, trigger) {
+				for _, c := range cats {
+					zhangAvoid[c] = struct{}{}
+				}
+			}
+		}
+	}
+
+	out := candidates[:0]
+	for i := range candidates {
+		c := &candidates[i]
+		cat := firstNonEmpty(c.TagCategoryCodes)
+
+		// 能力门槛
+		excludedHere := false
+		if rules, ok := excludeRules[cat]; ok {
+			for subject, threshold := range rules {
+				if score, present := subjectScore(subject); present && score < threshold {
+					excludedHere = true
+					if !noteSubjects[subject] {
+						notes = append(notes, fmt.Sprintf("已根据%s分数排除强依赖专业", subjectChineseName(subject)))
+						noteSubjects[subject] = true
+					}
+					break
+				}
+			}
+		}
+		if excludedHere {
+			continue
+		}
+		if _, ok := zhangAvoid[cat]; ok {
+			continue
+		}
+		if hasExcludedKeyword(c, req.ExcludedMajors) {
+			continue
+		}
+		if hasExcludedKeyword(c, req.ExcludedKeywords) {
+			continue
+		}
+		out = append(out, *c)
+	}
+	return out, notes
+}
+
+func subjectChineseName(subject string) string {
+	switch subject {
+	case "physics":
+		return "物理"
+	case "math":
+		return "数学"
+	case "chinese":
+		return "语文"
+	case "english":
+		return "英语"
+	default:
+		return subject
+	}
+}
+
+// scoredItem is the in-memory pair used during sorting.
+type scoredItem struct {
+	item RecommendationItem
+}
+
+func scoreCandidates(candidates []RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata, planLabel, strategy string) []scoredItem {
+	scored := make([]scoredItem, 0, len(candidates))
+	for i := range candidates {
+		c := &candidates[i]
+		bd := scoreBreakdown(c, req, md)
+		composite := bd.CityScore * bd.SchoolScore * bd.MajorScore * bd.AbilityImprovementScore * bd.FutureCompetitivenessScore
+		// 学校优先时把学校权重再放大；专业优先时放大专业 & 未来竞争力
+		if strategy == "school" {
+			composite *= math.Pow(bd.SchoolScore, 0.5)
+		} else {
+			composite *= math.Pow(bd.MajorScore*bd.FutureCompetitivenessScore, 0.25)
+		}
+
+		item := RecommendationItem{
+			CompositeScore:     round(composite, 4),
+			ScoreBreakdown:     bd,
+			Reason:             buildReason(c, req, md, &bd, planLabel),
+			Probability:        estimateProbability(c, req, planLabel),
+			UniversityID:       c.UniversityID,
+			UniversityCode:     c.UniversityCode,
+			UniversityName:     c.UniversityName,
+			City:               c.City,
+			ProvinceCode:       c.ProvinceCode,
+			Is985:              c.Is985,
+			Is211:              c.Is211,
+			IsDoubleClass:      c.IsDoubleClass,
+			SoftRank:           c.SoftRank,
+			AdmissionGroupID:   c.AdmissionGroupID,
+			GroupCode:          c.GroupCode,
+			BatchCode:          c.BatchCode,
+			LocalMajorCode:     c.LocalMajorCode,
+			LocalMajorName:     c.LocalMajorName,
+			DisciplineCategory: c.DisciplineCategory,
+			MajorRank:          c.MajorRank,
+			IsNationalFeature:  c.IsNationalFeature,
+			HistoricalMinScore: c.MinScore,
+			HistoricalMinRank:  c.MinRank,
+			EquivalentMinScore: c.EquivalentMinScore,
+			PlanCount:          c.PlanCount,
+			Tuition:            c.Tuition,
+			Warnings:           buildWarnings(c, req, md),
+		}
+		scored = append(scored, scoredItem{item: item})
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].item.CompositeScore > scored[j].item.CompositeScore
+	})
+	return scored
+}
+
+// personalizationClampMin / personalizationClampMax bound each runtime personalization
+// modifier before it multiplies the base. Without this, stacking 4 distinct ×1.2 bonuses
+// (preferred city + preferred major + family resource + career plan) compounds to ~2.07x
+// and a single ×1.2 bonus on a 985 could rank it above 清北 (school_base 2.0 vs 1.5).
+// Clamping to [0.7, 1.3] caps each dimension's runtime effect at ±30%, keeping the base
+// (which reflects objective tier / precomputed quality) as the dominant signal.
+const (
+	personalizationClampMin = 0.7
+	personalizationClampMax = 1.3
+)
+
+// scoreBreakdown computes the five sub-scores.
+//
+// Each dimension is `precomputed_base × clamp(personalization_modifier)`:
+//   - Base lives in `recommendation_precomputed_scores` (city/school/major/
+//     ability_improvement/future_competitiveness). When NULL, falls back to
+//     the legacy on-the-fly formula so partial population is fine.
+//   - Personalization is the runtime overlay: preferred cities, preferred
+//     majors, family resources, holland, career plans, single-subject ability fit.
+//     Clamped to [0.7, 1.3] per dimension to keep the runtime signal from
+//     overwhelming the objective base.
+func scoreBreakdown(c *RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata) ScoreBreakdown {
+	cityBase := defaultFloatPtr(c.PrecomputedCityScore, fallbackCityBase(c, md))
+	schoolBase := defaultFloatPtr(c.PrecomputedSchoolScore, fallbackSchoolBase(c))
+	majorBase := defaultFloatPtr(c.PrecomputedMajorScore, fallbackMajorBase(c))
+	abilityBase := defaultFloatPtr(c.PrecomputedAbilityImprovementScore, 1.0)
+	futureBase := defaultFloatPtr(c.PrecomputedFutureCompetitivenessScore, fallbackFutureBase(c))
+
+	city := cityBase * clampPersonalization(cityPersonalization(c, req, md))
+	school := schoolBase * clampPersonalization(schoolPersonalization(c))
+	major := majorBase * clampPersonalization(majorPersonalization(c, req, md))
+	ability := abilityBase * clampPersonalization(abilityFitScore(c, req, md))
+	future := futureBase * clampPersonalization(futurePersonalization(c))
+
+	return ScoreBreakdown{
+		CityScore:                  round(city, 3),
+		SchoolScore:                round(school, 3),
+		MajorScore:                 round(major, 3),
+		AbilityImprovementScore:    round(ability, 3),
+		FutureCompetitivenessScore: round(future, 3),
+
+		CityBase:                  round(cityBase, 3),
+		SchoolBase:                round(schoolBase, 3),
+		MajorBase:                 round(majorBase, 3),
+		AbilityImprovementBase:    round(abilityBase, 3),
+		FutureCompetitivenessBase: round(futureBase, 3),
+
+		CityReason:                  c.PrecomputedCityReason,
+		SchoolReason:                c.PrecomputedSchoolReason,
+		MajorReason:                 c.PrecomputedMajorReason,
+		AbilityImprovementReason:    c.PrecomputedAbilityImprovementReason,
+		FutureCompetitivenessReason: c.PrecomputedFutureCompetitivenessReason,
+
+		EvaluatedBy:    c.PrecomputedEvaluatedBy,
+		EvaluatorModel: c.PrecomputedEvaluatorModel,
+	}
+}
+
+// --- runtime personalization modifiers (multipliers on top of the base) ---
+
+func cityPersonalization(c *RecommendationCandidate, req *RecommendationRequest, _ *RecommendationMetadata) float64 {
+	mod := 1.0
+	if containsString(req.PreferredCities, c.City) {
+		mod *= 1.4
+	}
+	if containsString(req.PreferredProvinces, c.ProvinceCode) {
+		mod *= 1.2
+	}
+	return mod
+}
+
+func schoolPersonalization(c *RecommendationCandidate) float64 {
+	// 软科排名是 string（"100" / "100强" / "全国第 100 名"等），
+	// 取首段数字尝试转 int；失败就返回 1.0。
+	if c.SoftRank == nil || *c.SoftRank == "" {
+		return 1.0
+	}
+	if rank, ok := parseLeadingInt(*c.SoftRank); ok && rank > 0 && rank <= 100 {
+		return 1.05
+	}
+	return 1.0
+}
+
+func parseLeadingInt(s string) (int, bool) {
+	out := 0
+	matched := false
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			out = out*10 + int(r-'0')
+			matched = true
+		} else if matched {
+			break
+		}
+	}
+	return out, matched
+}
+
+func majorPersonalization(c *RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata) float64 {
+	mod := 1.0
+	if matchesPreferredMajors(c, req.PreferredMajors) {
+		mod *= 1.25
+	}
+	if w := familyResourceWeight(c, req.FamilyResources, md); w > 1.0 {
+		mod *= w
+	}
+	if w := hollandWeight(c, req.HollandCode, md); w > 1.0 {
+		mod *= w
+	}
+	if matchesCareerPlan(c, req.CareerPlans) {
+		mod *= 1.15
+	}
+	return mod
+}
+
+func futurePersonalization(_ *RecommendationCandidate) float64 {
+	// 未来竞争力是专业固有属性，没有 per-student 修饰
+	return 1.0
+}
+
+// --- fallbacks used when no precomputed_score row exists ---
+
+func fallbackCityBase(c *RecommendationCandidate, md *RecommendationMetadata) float64 {
+	if _, ok := md.CityToGroupCode[c.City]; ok {
+		return 1.1
+	}
+	return 1.0
+}
+
+func fallbackSchoolBase(c *RecommendationCandidate) float64 {
+	return schoolScoreForCandidate(c)
+}
+
+func fallbackMajorBase(c *RecommendationCandidate) float64 {
+	base := 1.0
+	if c.IsNationalFeature != nil && *c.IsNationalFeature {
+		base *= 1.2
+	}
+	if isStrongEval(c.SoftMajorGrade) {
+		base *= 1.15
+	}
+	if c.MajorEvaluationScore != nil {
+		base *= 1.0 + math.Min(*c.MajorEvaluationScore/200.0, 0.25)
+	}
+	return base
+}
+
+func fallbackFutureBase(c *RecommendationCandidate) float64 {
+	base := 1.0
+	if c.PostgraduateRecommendationRate != nil && *c.PostgraduateRecommendationRate > 0 {
+		base *= 1.0 + math.Min(*c.PostgraduateRecommendationRate/50.0, 0.3)
+	}
+	switch {
+	case strings.Contains(c.DisciplineCategory, "工学"):
+		base *= 1.1
+	case strings.Contains(c.DisciplineCategory, "医学"):
+		base *= 1.05
+	case strings.Contains(c.DisciplineCategory, "法学"):
+		base *= 1.05
+	case strings.Contains(c.DisciplineCategory, "管理学"):
+		base *= 1.0
+	case strings.Contains(c.DisciplineCategory, "文学"):
+		base *= 0.95
+	case strings.Contains(c.DisciplineCategory, "农学"):
+		base *= 0.9
+	}
+	return base
+}
+
+func defaultFloatPtr(p *float64, fallback float64) float64 {
+	if p == nil {
+		return fallback
+	}
+	return *p
+}
+
+// clampPersonalization keeps any single dimension's runtime modifier within
+// [personalizationClampMin, personalizationClampMax]. See personalizationClampMin
+// for the rationale.
+func clampPersonalization(v float64) float64 {
+	if v < personalizationClampMin {
+		return personalizationClampMin
+	}
+	if v > personalizationClampMax {
+		return personalizationClampMax
+	}
+	return v
+}
+
+// estimateProbability is a lightweight heuristic. With more data we'd train a logistic
+// model; for now we compare gap to the student's rank as a ratio so the buckets
+// scale across high-rank and low-rank students.
+//
+//	ratio = (historical_min_rank - student_rank) / student_rank
+//	  ratio > 0  → school admits a lower-ranked student than us → easier
+//	  ratio < 0  → school admits a higher-ranked student than us → harder
+//
+// The planLabel argument is kept for future use (e.g. plan-specific risk modeling).
+func estimateProbability(c *RecommendationCandidate, req *RecommendationRequest, _ string) float64 {
+	if c.MinRank == nil || req.ProvincialRank <= 0 {
+		return 0.5
+	}
+	ratio := float64(*c.MinRank-req.ProvincialRank) / float64(req.ProvincialRank)
+	switch {
+	case ratio >= 1.5:
+		return 0.95
+	case ratio >= 0.5:
+		return 0.85
+	case ratio >= 0.2:
+		return 0.7
+	case ratio >= 0:
+		return 0.55
+	case ratio >= -0.1:
+		return 0.4
+	case ratio >= -0.3:
+		return 0.25
+	default:
+		return 0.1
+	}
+	// 注：tier 仅用于解释性，概率纯粹由 rank ratio 决定
+}
+
+func buildReason(c *RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata, bd *ScoreBreakdown, _ string) string {
+	parts := []string{}
+	// 该 item 属于哪套方案由外层 plan 决定；reason 这里不再重复"冲/稳/保"，
+	// 由 plan 自身的 description 表达整体取向。
+	switch tierForCandidate(c) {
+	case "top_2":
+		parts = append(parts, "清北")
+	case "hua_5":
+		parts = append(parts, "华5")
+	case "c9":
+		parts = append(parts, "C9")
+	case "985_other":
+		parts = append(parts, "985 院校")
+	case "211_double":
+		parts = append(parts, "211 / 双一流")
+	}
+	if matchesPreferredMajors(c, req.PreferredMajors) {
+		parts = append(parts, "命中你的专业偏好")
+	}
+	if familyResourceWeight(c, req.FamilyResources, md) > 1.0 {
+		parts = append(parts, "与家庭资源方向匹配")
+	}
+	if c.IsNationalFeature != nil && *c.IsNationalFeature {
+		parts = append(parts, "国家特色专业")
+	}
+	if bd.CityScore > 1.1 {
+		if code, ok := md.CityToGroupCode[c.City]; ok {
+			parts = append(parts, md.GroupCodeToName[code])
+		} else {
+			parts = append(parts, "在你的偏好城市/省份")
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+func buildWarnings(c *RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata) []string {
+	w := []string{}
+	if req.PhysicsScore != nil {
+		if rule, ok := hasAbilityRuleForSubject(c, "physics", md); ok && *req.PhysicsScore < rule.WarnBelowScore {
+			w = append(w, fmt.Sprintf("物理 %d 分偏弱（建议 %d 分以上），%s", *req.PhysicsScore, rule.WarnBelowScore, rule.Note))
+		}
+	}
+	if req.MathScore != nil {
+		if rule, ok := hasAbilityRuleForSubject(c, "math", md); ok && *req.MathScore < rule.WarnBelowScore {
+			w = append(w, fmt.Sprintf("数学 %d 分偏弱（建议 %d 分以上），%s", *req.MathScore, rule.WarnBelowScore, rule.Note))
+		}
+	}
+	if isBioChemEnvMat(c) {
+		w = append(w, "生化环材类，本科直接就业难，需做好读研准备")
+	}
+	if c.PlanCount != nil && *c.PlanCount <= 2 {
+		w = append(w, "本省招生计划很少，录取分数波动大")
+	}
+	return w
+}
+
+func ensureSafeQuality(items []RecommendationItem, _ *RecommendationRequest) []RecommendationItem {
+	out := make([]RecommendationItem, 0, len(items))
+	for i := range items {
+		// 保底要求招生计划 ≥ 5（"招生人数多"），缺数据则放过
+		if items[i].PlanCount != nil && *items[i].PlanCount > 0 && *items[i].PlanCount < 5 {
+			continue
+		}
+		out = append(out, items[i])
+	}
+	return out
+}
+
+// ---- helpers ----
+
+func containsString(list []string, target string) bool {
+	if target == "" {
+		return false
+	}
+	for _, v := range list {
+		if v == target {
 			return true
 		}
 	}
 	return false
 }
 
-func absInt(x int) int {
-	if x < 0 {
-		return -x
+func containsAny(list []string, needles ...string) bool {
+	for _, v := range list {
+		for _, n := range needles {
+			if strings.Contains(v, n) {
+				return true
+			}
+		}
 	}
-	return x
+	return false
 }
 
-func toIntOrEmpty(v *int) any {
-	if v == nil {
+func firstNonEmpty(csv string) string {
+	if csv == "" {
 		return ""
 	}
-	return *v
+	if i := strings.Index(csv, ","); i >= 0 {
+		return csv[:i]
+	}
+	return csv
+}
+
+func hasExcludedKeyword(c *RecommendationCandidate, keywords []string) bool {
+	if len(keywords) == 0 {
+		return false
+	}
+	hay := strings.ToLower(c.LocalMajorName + " " + c.DisciplineCategory + " " + c.FirstLevelDiscipline + " " + c.TagNames)
+	for _, kw := range keywords {
+		if kw == "" {
+			continue
+		}
+		if strings.Contains(hay, strings.ToLower(kw)) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesPreferredMajors(c *RecommendationCandidate, prefs []string) bool {
+	if len(prefs) == 0 {
+		return false
+	}
+	hay := strings.ToLower(c.LocalMajorName + " " + c.DisciplineCategory + " " + c.FirstLevelDiscipline + " " + c.TagNames)
+	for _, p := range prefs {
+		if p == "" {
+			continue
+		}
+		if strings.Contains(hay, strings.ToLower(p)) {
+			return true
+		}
+	}
+	return false
+}
+
+// familyResourceWeight returns a multiplicative bonus driven by the DB-backed
+// `recommendation_family_resource_keywords` table. Returns 1.0 if no match.
+func familyResourceWeight(c *RecommendationCandidate, resources []string, md *RecommendationMetadata) float64 {
+	if len(resources) == 0 || len(md.FamilyResourceKeywords) == 0 {
+		return 1.0
+	}
+	hay := c.LocalMajorName + " " + c.DisciplineCategory + " " + c.FirstLevelDiscipline + " " + c.TagNames
+	best := 1.0
+	for _, r := range resources {
+		for _, kw := range md.FamilyResourceKeywords[r] {
+			if kw.Keyword == "" {
+				continue
+			}
+			if strings.Contains(hay, kw.Keyword) && kw.Weight > best {
+				best = kw.Weight
+			}
+		}
+	}
+	return best
+}
+
+// hollandWeight returns a multiplicative bonus from the DB-backed RIASEC mapping.
+// 仅做正向加分，不做硬过滤。
+func hollandWeight(c *RecommendationCandidate, code string, md *RecommendationMetadata) float64 {
+	if code == "" || len(md.HollandKeywords) == 0 {
+		return 1.0
+	}
+	disc := c.DisciplineCategory + " " + c.LocalMajorName
+	best := 1.0
+	for _, ch := range strings.ToUpper(code) {
+		for _, kw := range md.HollandKeywords[string(ch)] {
+			if kw.Keyword == "" {
+				continue
+			}
+			if strings.Contains(disc, kw.Keyword) && kw.Weight > best {
+				best = kw.Weight
+			}
+		}
+	}
+	return best
+}
+
+func matchesCareerPlan(c *RecommendationCandidate, plans []string) bool {
+	if len(plans) == 0 {
+		return false
+	}
+	hay := c.LocalMajorName + " " + c.DisciplineCategory + " " + c.FirstLevelDiscipline
+	for _, p := range plans {
+		switch p {
+		case "考公":
+			if strings.Contains(hay, "法学") || strings.Contains(hay, "会计") || strings.Contains(hay, "财务") ||
+				strings.Contains(hay, "汉语言") || strings.Contains(hay, "审计") {
+				return true
+			}
+		case "从医":
+			if strings.Contains(hay, "医学") {
+				return true
+			}
+		case "电网":
+			if strings.Contains(hay, "电气") || strings.Contains(hay, "能源") {
+				return true
+			}
+		case "考研", "深造":
+			if c.PostgraduateRecommendationRate != nil && *c.PostgraduateRecommendationRate >= 15 {
+				return true
+			}
+		case "留学":
+			if c.Is985 || c.Is211 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasAbilityRuleForSubject reports whether the candidate's CHSI category has
+// any DB-backed ability rule for the given subject. Used by warning generation
+// and the abilityFitScore weighting.
+func hasAbilityRuleForSubject(c *RecommendationCandidate, subject string, md *RecommendationMetadata) (AbilityRule, bool) {
+	cat := firstNonEmpty(c.TagCategoryCodes)
+	if cat == "" {
+		return AbilityRule{}, false
+	}
+	for _, r := range md.AbilityRules[cat] {
+		if r.Subject == subject {
+			return r, true
+		}
+	}
+	return AbilityRule{}, false
+}
+
+func isBioChemEnvMat(c *RecommendationCandidate) bool {
+	cats := c.TagCategoryCodes
+	return strings.Contains(cats, chsiCategoryChemistry) ||
+		strings.Contains(cats, chsiCategoryChemicalEng) ||
+		strings.Contains(cats, chsiCategoryMaterials) ||
+		strings.Contains(cats, chsiCategoryEnvironmental) ||
+		strings.Contains(cats, chsiCategoryBio)
+}
+
+// --- 学校档次判断 (data-driven via university_profiles.university_tier) ---
+
+// tierForCandidate reads university_profiles.university_tier first; if empty,
+// falls back to is_985 / is_211 / is_double_first_class / is_national_key flags.
+func tierForCandidate(c *RecommendationCandidate) string {
+	if c.UniversityTier != "" {
+		return c.UniversityTier
+	}
+	switch {
+	case c.Is985:
+		return "985_other"
+	case c.Is211 || c.IsDoubleClass:
+		return "211_double"
+	case c.IsNationalKey:
+		return "key"
+	default:
+		return "regular"
+	}
+}
+
+// schoolScoreForCandidate maps a tier code to its multiplicative weight.
+// Tier values come from university_profiles.university_tier (top_2 / hua_5 / c9 / 985_other / 211_double / key / regular / private / vocational).
+func schoolScoreForCandidate(c *RecommendationCandidate) float64 {
+	switch tierForCandidate(c) {
+	case "top_2":
+		return 2.0
+	case "hua_5":
+		return 1.8
+	case "c9":
+		return 1.7
+	case "985_other":
+		return 1.5
+	case "211_double":
+		return 1.3
+	case "key":
+		return 1.15
+	case "private":
+		return 0.85
+	case "vocational":
+		return 0.7
+	default: // "regular" or unknown
+		return 1.0
+	}
+}
+
+// abilityFitScore boosts/penalizes based on the gap between the student's
+// single-subject score and the DB-backed ability rule for the candidate's CHSI category.
+func abilityFitScore(c *RecommendationCandidate, req *RecommendationRequest, md *RecommendationMetadata) float64 {
+	fit := 1.0
+	for _, subject := range []string{"physics", "math"} {
+		rule, ok := hasAbilityRuleForSubject(c, subject, md)
+		if !ok {
+			continue
+		}
+		var score *int
+		switch subject {
+		case "physics":
+			score = req.PhysicsScore
+		case "math":
+			score = req.MathScore
+		}
+		if score == nil {
+			continue
+		}
+		switch {
+		case *score >= rule.WarnBelowScore+30:
+			fit *= 1.2
+		case *score < rule.WarnBelowScore:
+			fit *= 0.8
+		}
+	}
+	return fit
+}
+
+func isStrongEval(grade string) bool {
+	g := strings.TrimSpace(grade)
+	return g == "A+" || g == "A" || g == "A-"
+}
+
+func round(v float64, digits int) float64 {
+	p := math.Pow10(digits)
+	return math.Round(v*p) / p
 }

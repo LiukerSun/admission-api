@@ -185,7 +185,28 @@ func run() error {
 		llmProxy = ai.NewOpenAIClient(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
 	}
 
-	recommendationService := admission.NewRecommendationService(admissionLineStore)
+	// 推荐算法栈：store + metadata + LLM tuner 组装出 v2 service。
+	// 在 toolExecutor 之前初始化，因为 AI 工具 generate_volunteer_plan_draft 要调它。
+	recommendationStore := admission.NewRecommendationStore(database.Pool())
+	recommendationMetadataStore := admission.NewRecommendationMetadataStore(database.Pool())
+	recommendationTuner := ai.NewRecommendationTuner(llmProxy)
+	recommendationService := admission.NewRecommendationService(recommendationStore, recommendationMetadataStore, recommendationTuner)
+	recommendationHandler := admission.NewRecommendationHandler(recommendationService)
+
+	recommendationScoreStore := admission.NewRecommendationScoreStore(database.Pool())
+	// AlgorithmicScoreEvaluator 需要 metadata snapshot 来跑 fallback 公式（城市群匹配等）。
+	// Load 失败不阻塞启动——只是 fallback 评估器拿到空 metadata，退化成全 1.0。
+	startupMD, mdErr := recommendationMetadataStore.Load(context.Background())
+	if mdErr != nil {
+		slog.Warn("load recommendation metadata at startup failed; algorithmic evaluator will use empty snapshot", "error", mdErr)
+		startupMD = &admission.RecommendationMetadata{}
+	}
+	var scoreEvaluator admission.ScoreEvaluator = admission.NewAlgorithmicScoreEvaluator(startupMD)
+	if cfg.LLMAPIKey != "" {
+		scoreEvaluator = ai.NewLLMScoreEvaluator(llmProxy, cfg.LLMModel)
+	}
+	recommendationScoreRefresher := admission.NewRecommendationScoreRefresher(recommendationScoreStore, scoreEvaluator)
+	recommendationScoreHandler := admission.NewRecommendationScoreHandler(recommendationScoreRefresher)
 
 	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, recommendationService, volunteerDraftStore)
 	toolExecutor.SetCardLinkWhitelist(cfg.CardLinkWhitelist)
@@ -271,6 +292,9 @@ func run() error {
 		authorized.POST("/payment/orders/:order_no/detect", paymentHandler.Detect)
 		authorized.POST("/payment/orders/:order_no/refund", paymentHandler.RefundOrder)
 		authorized.GET("/payment/orders/:order_no/refunds", paymentHandler.ListRefunds)
+		authorized.POST("/admission/recommendations",
+			middleware.RateLimitByUser(redisClient.RDB(), 6, 1*time.Minute),
+			recommendationHandler.Recommend)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireAdmin())
@@ -292,13 +316,17 @@ func run() error {
 		adminRoutes.GET("/payment/refunds/pending", paymentHandler.ListPendingRefunds)
 		adminRoutes.POST("/payment/refunds/:refund_no/approve", paymentHandler.ApproveRefund)
 		adminRoutes.POST("/payment/refunds/:refund_no/reject", paymentHandler.RejectRefund)
+
+		adminRoutes.POST("/recommendation/scores/refresh", recommendationScoreHandler.Refresh)
 	}
 
 	server := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:        ":" + cfg.Port,
+		Handler:     r,
+		ReadTimeout: 15 * time.Second,
+		// 10 分钟覆盖 /admin/recommendation/scores/refresh 的最坏批量 (20 行 × 25s)。
+		// 业务接口都远低于这个数（最重的推荐接口 ~400ms），所以全局放宽不影响正常路径。
+		WriteTimeout: 10 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 	}
 

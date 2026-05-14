@@ -25,6 +25,13 @@ vendor/
 # Environment files
 .env
 
+# Python venvs used by data-import scripts
+.venv*/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
 # IDE directories
 .idea/
 .vscode/
