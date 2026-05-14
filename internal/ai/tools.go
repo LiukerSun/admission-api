@@ -544,7 +544,7 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "apply_filter",
-				Description: "Apply a filter to the admission search. filter_type can be: add, remove, replace, reset. Use snake_case filter_data fields such as region_code, subject_category_code, exclude_provinces, is_985, min_score_from, min_score_to, tag_query.",
+				Description: "Apply a filter to the admission search. filter_type semantics: replace = 用 filter_data 整体替换当前筛选（用户切换关注点，最常用；放宽/降级层次时优先用此模式）；add = 在不冲突的维度上追加；remove = 单点移除一个条件；reset = 清空所有筛选。Use snake_case filter_data fields such as region_code, subject_category_code, exclude_provinces, is_985, min_score_from, min_score_to, tag_query.",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
