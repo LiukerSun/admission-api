@@ -46,8 +46,9 @@ func (c *AnthropicClient) ChatCompletion(ctx context.Context, messages []Message
 		}
 		role := m.Role
 		if role == "tool" {
-			// Tool results in Anthropic are user messages with tool_result content blocks
-			role = "user"
+			// Anthropic 要求：assistant 一条 message 里如果有 N 个 tool_use block，
+			// 紧跟着必须是一条 user message，里面带 N 个 tool_result content block。
+			// 把连续的 tool role messages 合并到上一条 user message 里。
 			toolResultBlock := map[string]any{
 				"type":    "tool_result",
 				"content": m.Content,
@@ -55,8 +56,16 @@ func (c *AnthropicClient) ChatCompletion(ctx context.Context, messages []Message
 			if m.ToolCallID != "" {
 				toolResultBlock["tool_use_id"] = m.ToolCallID
 			}
+			if n := len(anthropicMessages); n > 0 {
+				if prev := anthropicMessages[n-1]; prev["role"] == "user" {
+					if blocks, ok := prev["content"].([]map[string]any); ok {
+						prev["content"] = append(blocks, toolResultBlock)
+						continue
+					}
+				}
+			}
 			anthropicMessages = append(anthropicMessages, map[string]any{
-				"role":    role,
+				"role":    "user",
 				"content": []map[string]any{toolResultBlock},
 			})
 			continue
@@ -254,7 +263,7 @@ func (c *AnthropicClient) ChatCompletionStream(ctx context.Context, messages []M
 			}
 		}
 		select {
-		case out <- StreamChunk{Type: StreamChunkDone}:
+		case out <- StreamChunk{Type: StreamChunkDone, ContentBlocks: resp.ContentBlocks}:
 		case <-ctx.Done():
 		}
 	}()

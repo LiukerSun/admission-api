@@ -22,6 +22,17 @@ const defaultSystemPrompt = `你是一个智能高考志愿填报助手，任务
 6. 如果用户没有提供足够信息，礼貌询问缺失信息。
 7. 工具参数优先使用 snake_case 字段：region_code、subject_category_code、exclude_provinces、is_985、min_score_from、min_score_to、tag_query。
 8. 当用户明确要求“生成志愿方案/给我一张志愿表/开始填报”等，且你已拿到必填字段（region_code、subject_category_code、total_score、provincial_rank）时，必须调用 generate_volunteer_plan_draft。
+
+意图更新与筛选策略（避免反复纠结过时条件）：
+- 用户的最新一句话视为最新意图。若与之前的筛选冲突（"放宽到211"、"考虑双一流非211"、"不限层次"、"看普通本科"等），用 apply_filter 的 filter_type="replace" 或先 "reset" 再 "replace"，整体替换院校层次/分数等限定条件，不要在新查询里叠加旧条件。
+- apply_filter 模式选用：
+  * replace = 替换筛选（用户切换关注点，最常用）
+  * add = 在不冲突的维度上追加（如已选好物理类后追加城市偏好）
+  * remove = 单点移除一个条件（如"不看 985 了"但其他保留）
+  * reset = 完全清空，从头来过
+- 一旦用户放弃某个层次（985→211→双一流非211），不要再回头扫描已放弃的层次，也不要在结论里反复对比该层次的"没匹配"结果，结论聚焦当前最新筛选。
+- 单次回复内最多调用 2 次 search_universities / aggregate_data。若首次结果为空，不要反复在同一档位重试，而是用一句话告知该档位无匹配，并主动建议下一档（如"550 分 12500 名进 985/211 难度大，建议看双一流非 211 或省内重点，我帮你查"），等用户确认后再继续。
+- 工具结果非空时，直接给出"X 所院校 + 分数段 + 推荐理由"的列表，避免"经过多轮筛选..."这种过程化叙述。
 9. 用户消息中若包含“recommendation_request”代码块内的私有 JSON，请仅用于调用工具，不要原样复述。
 10. 生成成功后，你必须在回复中输出一个名为 volunteer_plan_draft 的代码块，代码块内容为 JSON，例如 {"draft_id":123}，供前端解析 draft_id。
 11. 你必须在每次回复的末尾输出一个名为 recommendation_snapshot 的 Markdown 代码块（用三个反引号围起来），内容为 JSON，包含你已收集到的志愿推荐入参快照。该 JSON 属于私有信息，不要在自然语言中逐字复述。
@@ -173,7 +184,7 @@ func (a *Agent) RunStreamWithOptions(ctx context.Context, messages []Message, cb
 
 		slog.Info("agent iteration", "iteration", iteration, "messageCount", len(fullMessages))
 
-		iterText, iterToolCalls, err := a.runOneIteration(ctx, fullMessages, tools, cb)
+		iterText, iterToolCalls, iterBlocks, err := a.runOneIteration(ctx, fullMessages, tools, cb)
 		if err != nil {
 			// A cancelled context shows up as either an LLM error or
 			// just as an early-closed stream; in both cases the cause
@@ -222,9 +233,10 @@ func (a *Agent) RunStreamWithOptions(ctx context.Context, messages []Message, cb
 		}
 
 		fullMessages = append(fullMessages, Message{
-			Role:      "assistant",
-			Content:   iterText,
-			ToolCalls: iterToolCalls,
+			Role:          "assistant",
+			Content:       iterText,
+			ToolCalls:     iterToolCalls,
+			ContentBlocks: iterBlocks,
 		})
 
 		for _, call := range iterToolCalls {
@@ -271,14 +283,15 @@ func (a *Agent) RunStreamWithOptions(ctx context.Context, messages []Message, cb
 // text deltas to cb and accumulating any tool calls to return. It does
 // not execute tools — that happens in RunStream so we can interleave
 // tool callbacks (start/end/widget) cleanly.
-func (a *Agent) runOneIteration(ctx context.Context, msgs []Message, tools []ToolDefinition, cb AgentCallbacks) (string, []ToolCall, error) {
+func (a *Agent) runOneIteration(ctx context.Context, msgs []Message, tools []ToolDefinition, cb AgentCallbacks) (string, []ToolCall, []ContentBlock, error) {
 	stream, err := a.llm.ChatCompletionStream(ctx, msgs, tools)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	var textBuilder strings.Builder
 	var toolCalls []ToolCall
+	var contentBlocks []ContentBlock
 
 	for chunk := range stream {
 		switch chunk.Type {
@@ -293,15 +306,17 @@ func (a *Agent) runOneIteration(ctx context.Context, msgs []Message, tools []Too
 			for range stream {
 			}
 			if chunk.Err != nil {
-				return "", nil, chunk.Err
+				return "", nil, nil, chunk.Err
 			}
-			return "", nil, fmt.Errorf("stream error")
+			return "", nil, nil, fmt.Errorf("stream error")
 		case StreamChunkDone:
-			// fall through; channel will close next
+			// providers that surface structured content (Anthropic 系，
+			// 含 thinking blocks) 在 done chunk 上携带完整 ContentBlocks。
+			contentBlocks = chunk.ContentBlocks
 		}
 	}
 
-	return textBuilder.String(), toolCalls, nil
+	return textBuilder.String(), toolCalls, contentBlocks, nil
 }
 
 // ExtractFilter tries to extract the current AdmissionLineFilter from tool call history.

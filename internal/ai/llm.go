@@ -87,6 +87,11 @@ type StreamChunk struct {
 	// ToolCall is set for StreamChunkToolCallDone chunks and contains
 	// the fully-accumulated ID, function name, and arguments JSON.
 	ToolCall ToolCall
+	// ContentBlocks is set on StreamChunkDone chunks for providers that
+	// surface structured assistant content (Anthropic 风格的 thinking +
+	// text + tool_use)。Agent 必须把这些原样塞回下一轮请求的 history，
+	// 否则像 DeepSeek-v4 这种 thinking 强制回填的模型会 400。
+	ContentBlocks []ContentBlock
 	// Err is set for StreamChunkError chunks. The channel will be closed
 	// after an error chunk; receivers must not expect further data.
 	Err error
