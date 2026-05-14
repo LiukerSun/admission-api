@@ -32,6 +32,7 @@ import (
 	"admission-api/internal/admin"
 	"admission-api/internal/admission"
 	"admission-api/internal/ai"
+	"admission-api/internal/analysis"
 	"admission-api/internal/conversation"
 	"admission-api/internal/health"
 	"admission-api/internal/membership"
@@ -159,6 +160,9 @@ func run() error {
 	admissionLineStore := admission.NewAdmissionLineStore(database.Pool())
 	admissionLineService := admission.NewAdmissionLineService(admissionLineStore)
 	admissionLineHandler := admission.NewAdmissionLineHandler(admissionLineService)
+	analysisStore := analysis.NewStore(database.Pool())
+	analysisService := analysis.NewService(analysisStore)
+	analysisHandler := analysis.NewHandler(analysisService)
 	aggregateStore := admission.NewAggregateStore(database.Pool())
 	aggregateService := admission.NewAggregateService(aggregateStore)
 	aggregateHandler := admission.NewAggregateHandler(aggregateService)
@@ -291,6 +295,11 @@ func run() error {
 		authorized.POST("/admission/recommendations",
 			middleware.RateLimitByUser(redisClient.RDB(), 6, 1*time.Minute),
 			recommendationHandler.Recommend)
+
+		authorized.GET("/analysis/universities/:id/trend", analysisHandler.GetTrend)
+		authorized.GET("/analysis/universities/:id/groups", analysisHandler.GetGroupComparison)
+		authorized.GET("/analysis/universities/:id/majors/distribution", analysisHandler.GetMajorDistribution)
+		authorized.GET("/analysis/majors/comparison", analysisHandler.GetMajorComparison)
 
 		// premium routes inherit JWT + AuthStatus from authorized and add a
 		// membership gate. Moving a route between authorized and premium is
