@@ -85,7 +85,7 @@ func NewHandler(service Service, phoneVerificationService PhoneVerificationServi
 // @Accept       json
 // @Produce      json
 // @Param        body  body      RegisterRequest  true  "注册信息"
-// @Success      200   {object}  web.Response
+// @Success      200   {object}  web.Response{data=Response}
 // @Failure      400   {object}  web.Response
 // @Failure      409   {object}  web.Response
 // @Router       /api/v1/auth/register [post]
@@ -131,7 +131,7 @@ func (h *Handler) Register(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        body  body      LoginRequest  true  "登录信息"
-// @Success      200   {object}  web.Response
+// @Success      200   {object}  web.Response{data=TokenResponse}
 // @Failure      400   {object}  web.Response
 // @Failure      401   {object}  web.Response
 // @Router       /api/v1/auth/login [post]
@@ -183,7 +183,7 @@ func (h *Handler) Login(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        body  body      RefreshRequest  true  "Refresh Token"
-// @Success      200   {object}  web.Response
+// @Success      200   {object}  web.Response{data=TokenResponse}
 // @Failure      401   {object}  web.Response
 // @Router       /api/v1/auth/refresh [post]
 func (h *Handler) Refresh(c *gin.Context) {
@@ -218,7 +218,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  web.Response
+// @Success      200  {object}  web.Response{data=Response}
 // @Failure      401  {object}  web.Response
 // @Router       /api/v1/me [get]
 func (h *Handler) Me(c *gin.Context) {
