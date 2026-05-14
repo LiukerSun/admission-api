@@ -44,6 +44,14 @@ type Config struct {
 	AlipaySandbox                bool
 	AlipayEncryptKey             string
 	AlipayDecryptKey             string
+	OpenBankDevEnv               bool
+	OpenBankKeyID                string
+	OpenBankPriKey               string
+	OpenBankRespPubKey           string
+	OpenBankDecryptKey           string
+	OpenBankNotifyURL            string
+	OpenBankReturnURL            string
+	OpenBankMchID                string
 }
 
 // Load reads configuration from environment variables.
@@ -86,6 +94,14 @@ func Load() (*Config, error) {
 		AlipaySandbox:                getBoolEnv("ALIPAY_SANDBOX", true),
 		AlipayEncryptKey:             getEnv("ALIPAY_ENCRYPT_KEY", ""),
 		AlipayDecryptKey:             getEnv("ALIPAY_DECRYPT_KEY", ""),
+		OpenBankDevEnv:               getBoolEnv("OPENBANK_DEV_ENV", true),
+		OpenBankKeyID:                getEnv("OPENBANK_KEY_ID", ""),
+		OpenBankPriKey:               getEnv("OPENBANK_PRI_KEY", ""),
+		OpenBankRespPubKey:           getEnv("OPENBANK_RESP_PUB_KEY", ""),
+		OpenBankDecryptKey:           getEnv("OPENBANK_DECRYPT_KEY", ""),
+		OpenBankNotifyURL:            getEnv("OPENBANK_NOTIFY_URL", ""),
+		OpenBankReturnURL:            getEnv("OPENBANK_RETURN_URL", ""),
+		OpenBankMchID:                getEnv("OPENBANK_MCH_ID", ""),
 	}
 
 	if cfg.JWTSecret == "" {

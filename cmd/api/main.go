@@ -43,7 +43,49 @@ import (
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
 	"admission-api/internal/user"
+
+	openbankpayment "dfp-open-sdk-go/payment"
 )
+
+// openbankMembershipAdapter adapts membership.Service to openbankpayment.MembershipOps.
+type openbankMembershipAdapter struct {
+	svc membership.Service
+}
+
+func (a *openbankMembershipAdapter) GetPurchasablePlan(ctx context.Context, planCode string) (*openbankpayment.PlanInfo, error) {
+	plan, err := a.svc.GetPurchasablePlan(ctx, planCode)
+	if err != nil {
+		return nil, err
+	}
+	return &openbankpayment.PlanInfo{
+		ID:           plan.ID,
+		PlanCode:     plan.PlanCode,
+		PlanName:     plan.PlanName,
+		DurationDays: plan.DurationDays,
+		PriceAmount:  plan.PriceAmount,
+	}, nil
+}
+
+func (a *openbankMembershipAdapter) GrantFromPaidOrder(ctx context.Context, userID, paymentOrderID int64, durationDays int, idempotencyKey string) error {
+	_, _, _, err := a.svc.GrantFromPaidOrder(ctx, membership.GrantRequest{
+		UserID:         userID,
+		PaymentOrderID: paymentOrderID,
+		DurationDays:   durationDays,
+		IdempotencyKey: idempotencyKey,
+		Now:            time.Now(),
+	})
+	return err
+}
+
+func (a *openbankMembershipAdapter) RevokeFromOrder(ctx context.Context, userID, paymentOrderID int64, idempotencyKey string) error {
+	_, _, err := a.svc.RevokeFromOrder(ctx, membership.RevokeRequest{
+		UserID:         userID,
+		PaymentOrderID: paymentOrderID,
+		IdempotencyKey: idempotencyKey,
+		Now:            time.Now(),
+	})
+	return err
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -267,6 +309,45 @@ func run() error {
 		adminRoutes.GET("/payment/refunds/pending", paymentHandler.ListPendingRefunds)
 		adminRoutes.POST("/payment/refunds/:refund_no/approve", paymentHandler.ApproveRefund)
 		adminRoutes.POST("/payment/refunds/:refund_no/reject", paymentHandler.RejectRefund)
+
+		if cfg.OpenBankKeyID != "" && cfg.OpenBankPriKey != "" {
+			openBankClient, err := openbankpayment.NewClient(&openbankpayment.ClientConfig{
+				DevEnv:     cfg.OpenBankDevEnv,
+				KeyID:      cfg.OpenBankKeyID,
+				PriKey:     cfg.OpenBankPriKey,
+				RespPubKey: cfg.OpenBankRespPubKey,
+				DecryptKey: cfg.OpenBankDecryptKey,
+				MchID:      cfg.OpenBankMchID,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to initialize openbank client: %w", err)
+			}
+			openBankStore := openbankpayment.NewStore(database.Pool())
+			membershipAdapter := &openbankMembershipAdapter{svc: membershipService}
+			openBankService := openbankpayment.NewService(openBankStore, openBankClient, membershipAdapter, cfg.OpenBankNotifyURL, cfg.OpenBankReturnURL)
+			openBankHandler := openbankpayment.NewHandler(openBankService)
+
+			// Public callback (no auth)
+			api.POST("/payment/openbank/callbacks", openBankHandler.Callback)
+
+			// Authenticated user routes
+			openbankOrders := authorized.Group("/payment/openbank/orders")
+			{
+				openbankOrders.POST("", openBankHandler.CreateOrder)
+				openbankOrders.POST("/:order_no/pay", openBankHandler.Pay)
+				openbankOrders.GET("/:order_no", openBankHandler.GetOrder)
+				openbankOrders.POST("/:order_no/detect", openBankHandler.Detect)
+				openbankOrders.POST("/:order_no/refund", openBankHandler.RefundOrder)
+				openbankOrders.GET("/:order_no/refunds", openBankHandler.ListRefunds)
+			}
+
+			// Admin routes
+			adminRoutes.POST("/payment/openbank/orders/:order_no/close", openBankHandler.CloseOrder)
+			adminRoutes.POST("/payment/openbank/orders/:order_no/redetect", openBankHandler.Redetect)
+			adminRoutes.GET("/payment/openbank/refunds/pending", openBankHandler.ListPendingRefunds)
+			adminRoutes.POST("/payment/openbank/refunds/:refund_no/approve", openBankHandler.ApproveRefund)
+			adminRoutes.POST("/payment/openbank/refunds/:refund_no/reject", openBankHandler.RejectRefund)
+		}
 	}
 
 	server := &http.Server{
