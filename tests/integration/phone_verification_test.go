@@ -145,14 +145,14 @@ func newIntegrationRouter(t *testing.T, database *db.DB, redisClient *platformre
 	}
 
 	userStore := user.NewStore(database.Pool())
-	userService := user.NewAuthService(userStore, nil, jwtConfig)
-	phoneVerificationService := user.NewPhoneVerificationService(userStore, redisClient, sms.NewMockClient(), user.PhoneVerificationConfig{
+	phoneService := user.NewPhoneService(userStore, redisClient, sms.NewMockClient(), user.PhoneVerificationConfig{
 		CodeTTL:      time.Duration(cfg.SMSCodeTTLMinutes) * time.Minute,
 		SendCooldown: time.Duration(cfg.SMSSendCooldownSeconds) * time.Second,
 		DailyLimit:   cfg.SMSDailyLimit,
 		MaxAttempts:  cfg.SMSMaxVerifyAttempts,
 	})
-	userHandler := user.NewHandler(userService, phoneVerificationService, jwtConfig)
+	userService := user.NewAuthService(userStore, phoneService, nil, jwtConfig)
+	userHandler := user.NewHandler(userService, phoneService, jwtConfig)
 
 	r := gin.New()
 	r.Use(gin.Recovery())

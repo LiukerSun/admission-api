@@ -46,7 +46,7 @@ func NewService(adminStore Store, userStore user.Store, tokenManager *redis.Refr
 func toUserResponse(u *user.User) *UserResponse {
 	return &UserResponse{
 		ID:            u.ID,
-		Email:         u.Email,
+		Email:         user.StringValue(u.Email),
 		Username:      user.StringValue(u.Username),
 		Phone:         user.StringValue(u.Phone),
 		PhoneVerified: u.PhoneVerifiedAt != nil,
@@ -68,7 +68,7 @@ func (s *service) ListUsers(ctx context.Context, filter ListUsersFilter, page, p
 	for _, u := range users {
 		items = append(items, &UserListItem{
 			ID:            u.ID,
-			Email:         u.Email,
+			Email:         user.StringValue(u.Email),
 			Username:      user.StringValue(u.Username),
 			Phone:         user.StringValue(u.Phone),
 			PhoneVerified: u.PhoneVerifiedAt != nil,

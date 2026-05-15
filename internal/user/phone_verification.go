@@ -21,9 +21,39 @@ const (
 	verificationCodeLength = 6
 )
 
+// Scene identifies the SMS-code use case for the unauthenticated auth flow.
+// register codes are valid only for registration, login codes only for login —
+// they live under separate Redis keys so cross-scene replay is impossible.
+type Scene string
+
+const (
+	SceneRegister Scene = "register"
+	SceneLogin    Scene = "login"
+)
+
+func (s Scene) Valid() bool {
+	return s == SceneRegister || s == SceneLogin
+}
+
+// PhoneAuthCodeService sends and verifies SMS codes for the unauthenticated
+// register / login flow.
+type PhoneAuthCodeService interface {
+	SendAuthCode(ctx context.Context, phone string, scene Scene) error
+	VerifyAuthCode(ctx context.Context, phone, code string, scene Scene) error
+}
+
+// PhoneVerificationService sends and verifies SMS codes used by an
+// already-authenticated user to bind a phone number to their account.
 type PhoneVerificationService interface {
 	SendPhoneVerificationCode(ctx context.Context, userID int64, phone string) error
 	VerifyPhoneCode(ctx context.Context, userID int64, phone, code string) error
+}
+
+// PhoneService combines both flavors. The same underlying implementation
+// satisfies both interfaces, sharing per-phone cooldown / daily-limit state.
+type PhoneService interface {
+	PhoneAuthCodeService
+	PhoneVerificationService
 }
 
 type PhoneVerificationConfig struct {
@@ -53,7 +83,7 @@ type phoneVerificationService struct {
 	now    func() time.Time
 }
 
-func NewPhoneVerificationService(store Store, redisClient *redis.Client, smsClient sms.Client, cfg PhoneVerificationConfig) PhoneVerificationService {
+func NewPhoneService(store Store, redisClient *redis.Client, smsClient sms.Client, cfg PhoneVerificationConfig) PhoneService {
 	nowFn := cfg.Now
 	if nowFn == nil {
 		nowFn = time.Now
@@ -67,6 +97,9 @@ func NewPhoneVerificationService(store Store, redisClient *redis.Client, smsClie
 	}
 }
 
+// --- Redis key helpers --------------------------------------------------------
+
+// Keys for the legacy "binding" flow (single shared namespace).
 func verificationCodeKey(phone string) string {
 	return fmt.Sprintf("sms:code:%s", phone)
 }
@@ -83,6 +116,18 @@ func verificationDailyLimitKey(phone string, now time.Time) string {
 	return fmt.Sprintf("sms:daily:%s:%s", phone, now.Format("20060102"))
 }
 
+// Keys for the auth (register/login) flow — scene-scoped so a register code
+// cannot be replayed against the login endpoint or vice versa.
+func authCodeKey(phone string, scene Scene) string {
+	return fmt.Sprintf("sms:auth:%s:code:%s", scene, phone)
+}
+
+func authAttemptsKey(phone string, scene Scene) string {
+	return fmt.Sprintf("sms:auth:%s:attempts:%s", scene, phone)
+}
+
+// normalizePhone strips formatting (spaces, dashes, parens, +86/86 country
+// prefix) so downstream code and the DB unique index see one canonical form.
 func normalizePhone(phone string) string {
 	phone = strings.TrimSpace(phone)
 	replacer := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "")
@@ -100,6 +145,8 @@ func validatePhone(phone string) error {
 	}
 	return nil
 }
+
+// --- Binding flow (authenticated user) ---------------------------------------
 
 func (s *phoneVerificationService) SendPhoneVerificationCode(ctx context.Context, userID int64, phone string) error {
 	phone = normalizePhone(phone)
@@ -197,6 +244,130 @@ func (s *phoneVerificationService) VerifyPhoneCode(ctx context.Context, userID i
 		return fmt.Errorf("clear verification code: %w", err)
 	}
 
+	return nil
+}
+
+// --- Auth flow (anonymous register/login) -----------------------------------
+
+// SendAuthCode generates a code and SMSes it. scene=register requires the
+// phone to be unregistered; scene=login requires it to be registered.
+func (s *phoneVerificationService) SendAuthCode(ctx context.Context, phone string, scene Scene) error {
+	if !scene.Valid() {
+		return fmt.Errorf("invalid scene")
+	}
+
+	phone = normalizePhone(phone)
+	if err := validatePhone(phone); err != nil {
+		return err
+	}
+
+	if err := s.checkSceneEligibility(ctx, phone, scene); err != nil {
+		return err
+	}
+
+	cooldownExists, err := s.redis.Exists(ctx, verificationCooldownKey(phone))
+	if err != nil {
+		return fmt.Errorf("check send cooldown: %w", err)
+	}
+	if cooldownExists > 0 {
+		return ErrPhoneCodeTooFrequent
+	}
+
+	code, err := generateNumericCode(verificationCodeLength)
+	if err != nil {
+		return fmt.Errorf("generate verification code: %w", err)
+	}
+
+	releaseDailySlot, err := s.reserveDailySendSlot(ctx, phone)
+	if err != nil {
+		return err
+	}
+
+	if err := s.redis.Set(ctx, authCodeKey(phone, scene), code, s.config.CodeTTL); err != nil {
+		releaseDailySlot()
+		return fmt.Errorf("save verification code: %w", err)
+	}
+	if err := s.redis.Set(ctx, verificationCooldownKey(phone), "1", s.config.SendCooldown); err != nil {
+		_ = s.redis.Del(ctx, authCodeKey(phone, scene))
+		releaseDailySlot()
+		return fmt.Errorf("save verification cooldown: %w", err)
+	}
+	if err := s.redis.Del(ctx, authAttemptsKey(phone, scene)); err != nil {
+		_ = s.redis.Del(ctx, authCodeKey(phone, scene), verificationCooldownKey(phone))
+		releaseDailySlot()
+		return fmt.Errorf("reset verification attempts: %w", err)
+	}
+
+	if err := s.sms.SendVerificationCode(ctx, phone, code); err != nil {
+		_ = s.redis.Del(ctx, authCodeKey(phone, scene), verificationCooldownKey(phone), authAttemptsKey(phone, scene))
+		releaseDailySlot()
+		return fmt.Errorf("send verification code: %w", err)
+	}
+
+	slog.Info("auth verification code sent", "scene", string(scene), "phone", maskPhone(phone))
+	return nil
+}
+
+// VerifyAuthCode consumes the scene-scoped code on success (and on
+// attempts-exceeded, to lock further tries). On any other failure the code
+// stays valid so the user can retry within MaxAttempts.
+func (s *phoneVerificationService) VerifyAuthCode(ctx context.Context, phone, code string, scene Scene) error {
+	if !scene.Valid() {
+		return fmt.Errorf("invalid scene")
+	}
+
+	phone = normalizePhone(phone)
+	if err := validatePhone(phone); err != nil {
+		return err
+	}
+
+	savedCode, err := s.redis.Get(ctx, authCodeKey(phone, scene))
+	if err != nil {
+		return ErrVerificationCodeExpired
+	}
+
+	if savedCode != code {
+		attempts, incrErr := s.redis.Incr(ctx, authAttemptsKey(phone, scene))
+		if incrErr != nil {
+			return fmt.Errorf("record verification attempt: %w", incrErr)
+		}
+		if attempts == 1 {
+			if ttl, ttlErr := s.redis.TTL(ctx, authCodeKey(phone, scene)); ttlErr == nil && ttl > 0 {
+				_ = s.redis.Expire(ctx, authAttemptsKey(phone, scene), ttl)
+			}
+		}
+		if attempts >= int64(s.config.MaxAttempts) {
+			_ = s.redis.Del(ctx, authCodeKey(phone, scene), authAttemptsKey(phone, scene))
+			return ErrVerificationCodeExceeded
+		}
+		return ErrVerificationCodeInvalid
+	}
+
+	if err := s.redis.Del(ctx, authCodeKey(phone, scene), authAttemptsKey(phone, scene)); err != nil {
+		return fmt.Errorf("clear verification code: %w", err)
+	}
+
+	return nil
+}
+
+func (s *phoneVerificationService) checkSceneEligibility(ctx context.Context, phone string, scene Scene) error {
+	_, err := s.store.GetByPhone(ctx, phone)
+	switch scene {
+	case SceneRegister:
+		if err == nil {
+			return ErrPhoneAlreadyExists
+		}
+		if !errors.Is(err, ErrUserNotFound) {
+			return fmt.Errorf("check phone: %w", err)
+		}
+	case SceneLogin:
+		if errors.Is(err, ErrUserNotFound) {
+			return ErrUserNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("check phone: %w", err)
+		}
+	}
 	return nil
 }
 

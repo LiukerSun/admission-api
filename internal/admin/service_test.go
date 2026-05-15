@@ -36,8 +36,8 @@ func (m *mockAdminStore) GetStats(ctx context.Context) (*StatsResponse, error) {
 	return args.Get(0).(*StatsResponse), args.Error(1)
 }
 
-func (m *mockUserStore) Create(ctx context.Context, email, passwordHash, role string) (*user.User, error) {
-	args := m.Called(ctx, email, passwordHash, role)
+func (m *mockUserStore) CreateWithPhone(ctx context.Context, phone, passwordHash, role string) (*user.User, error) {
+	args := m.Called(ctx, phone, passwordHash, role)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -157,9 +157,10 @@ func TestServiceResetPasswordRevokesRefreshSessions(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tokenManager.Save(ctx, "hash-web", 12, "web"))
 
+	email := "admin@example.com"
 	userStore.On("GetByID", mock.Anything, int64(12)).Return(&user.User{
 		ID:           12,
-		Email:        "admin@example.com",
+		Email:        &email,
 		PasswordHash: string(passwordHash),
 		Status:       "active",
 	}, nil)

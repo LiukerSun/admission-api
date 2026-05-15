@@ -28,16 +28,34 @@ type mockService struct {
 	mock.Mock
 }
 
-func (m *mockService) Register(ctx context.Context, email, password string) (*User, error) {
-	args := m.Called(ctx, email, password)
+func (m *mockService) SendAuthCode(ctx context.Context, phone string, scene Scene) error {
+	args := m.Called(ctx, phone, scene)
+	return args.Error(0)
+}
+
+func (m *mockService) RegisterByPhone(ctx context.Context, phone, code, password, platform string) (*User, *middleware.TokenPair, error) {
+	args := m.Called(ctx, phone, code, password, platform)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	u := args.Get(0).(*User)
+	var tokens *middleware.TokenPair
+	if args.Get(1) != nil {
+		tokens = args.Get(1).(*middleware.TokenPair)
+	}
+	return u, tokens, args.Error(2)
+}
+
+func (m *mockService) LoginByPassword(ctx context.Context, phone, password, platform string) (*middleware.TokenPair, error) {
+	args := m.Called(ctx, phone, password, platform)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*User), args.Error(1)
+	return args.Get(0).(*middleware.TokenPair), args.Error(1)
 }
 
-func (m *mockService) Login(ctx context.Context, email, password, platform string) (*middleware.TokenPair, error) {
-	args := m.Called(ctx, email, password, platform)
+func (m *mockService) LoginByCode(ctx context.Context, phone, code, platform string) (*middleware.TokenPair, error) {
+	args := m.Called(ctx, phone, code, platform)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -79,14 +97,63 @@ func (m *mockPhoneVerificationService) VerifyPhoneCode(ctx context.Context, user
 	return args.Error(0)
 }
 
-func TestHandler_Register(t *testing.T) {
+func TestHandler_SendAuthCode_Register(t *testing.T) {
 	svc := new(mockService)
 	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
 
-	svc.On("Register", mock.Anything, "new@example.com", "password123").
-		Return(&User{ID: 1, Email: "new@example.com", Role: "user"}, nil)
+	svc.On("SendAuthCode", mock.Anything, "13800138000", SceneRegister).Return(nil)
 
-	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
+	body, _ := json.Marshal(SendAuthCodeRequest{Phone: "13800138000", Scene: "register"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/sms/send", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.SendAuthCode(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	svc.AssertExpectations(t)
+}
+
+func TestHandler_SendAuthCode_InvalidScene(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	body, _ := json.Marshal(map[string]string{"phone": "13800138000", "scene": "unknown"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/sms/send", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.SendAuthCode(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandler_SendAuthCode_PhoneAlreadyExists(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("SendAuthCode", mock.Anything, "13800138000", SceneRegister).Return(ErrPhoneAlreadyExists)
+
+	body, _ := json.Marshal(SendAuthCodeRequest{Phone: "13800138000", Scene: "register"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/sms/send", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.SendAuthCode(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestHandler_Register(t *testing.T) {
+	phone := "13800138000"
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("RegisterByPhone", mock.Anything, phone, "123456", "password123", "web").
+		Return(&User{ID: 1, Phone: &phone, Role: "user"},
+			&middleware.TokenPair{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 900}, nil)
+
+	body, _ := json.Marshal(RegisterRequest{Phone: phone, Code: "123456", Password: "password123"})
 	c, w := setupTest()
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
@@ -111,6 +178,108 @@ func TestHandler_Register_InvalidBody(t *testing.T) {
 	h.Register(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandler_Register_PhoneTaken(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("RegisterByPhone", mock.Anything, "13800138000", "123456", "password123", "web").
+		Return(nil, nil, ErrPhoneAlreadyExists)
+
+	body, _ := json.Marshal(RegisterRequest{Phone: "13800138000", Code: "123456", Password: "password123"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestHandler_Register_InternalError(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("RegisterByPhone", mock.Anything, "13800138000", "123456", "password123", "web").
+		Return(nil, nil, errors.New("db down"))
+
+	body, _ := json.Marshal(RegisterRequest{Phone: "13800138000", Code: "123456", Password: "password123"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Register(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestHandler_LoginPassword_Success(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("LoginByPassword", mock.Anything, "13800138000", "password123", "web").
+		Return(&middleware.TokenPair{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 900}, nil)
+
+	body, _ := json.Marshal(LoginRequest{Phone: "13800138000", Password: "password123"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Login(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_LoginPassword_InvalidCredentials(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("LoginByPassword", mock.Anything, "13800138000", "password123", "web").
+		Return(nil, ErrInvalidCredentials)
+
+	body, _ := json.Marshal(LoginRequest{Phone: "13800138000", Password: "password123"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Login(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestHandler_LoginByCode_Success(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("LoginByCode", mock.Anything, "13800138000", "123456", "web").
+		Return(&middleware.TokenPair{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 900}, nil)
+
+	body, _ := json.Marshal(LoginByCodeRequest{Phone: "13800138000", Code: "123456"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login/code", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.LoginByCode(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandler_LoginByCode_PhoneNotFound(t *testing.T) {
+	svc := new(mockService)
+	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
+
+	svc.On("LoginByCode", mock.Anything, "13800138000", "123456", "web").
+		Return(nil, ErrUserNotFound)
+
+	body, _ := json.Marshal(LoginByCodeRequest{Phone: "13800138000", Code: "123456"})
+	c, w := setupTest()
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login/code", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.LoginByCode(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestHandler_Me_Unauthorized(t *testing.T) {
@@ -179,23 +348,6 @@ func TestHandler_VerifyPhone(t *testing.T) {
 	h.VerifyPhone(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestHandler_Register_Conflict(t *testing.T) {
-	svc := new(mockService)
-	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
-
-	svc.On("Register", mock.Anything, "new@example.com", "password123").
-		Return(nil, ErrEmailAlreadyExists)
-
-	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
-	c, w := setupTest()
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	h.Register(c)
-
-	assert.Equal(t, http.StatusConflict, w.Code)
 }
 
 func TestHandler_SendPhoneVerificationCode_Conflict(t *testing.T) {
@@ -268,21 +420,4 @@ func TestHandler_VerifyPhone_BadRequest(t *testing.T) {
 	h.VerifyPhone(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestHandler_Register_InternalError(t *testing.T) {
-	svc := new(mockService)
-	h := NewHandler(svc, new(mockPhoneVerificationService), nil)
-
-	svc.On("Register", mock.Anything, "new@example.com", "password123").
-		Return(nil, errors.New("db down"))
-
-	body, _ := json.Marshal(RegisterRequest{Email: "new@example.com", Password: "password123"})
-	c, w := setupTest()
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	h.Register(c)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

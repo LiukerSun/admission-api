@@ -293,3 +293,142 @@ func TestPhoneVerificationService_VerifyCode_PhoneAlreadyExists(t *testing.T) {
 	assert.ErrorIs(t, err, ErrPhoneAlreadyExists)
 	store.AssertExpectations(t)
 }
+
+// --- Auth flow (SendAuthCode / VerifyAuthCode) -------------------------------
+
+func TestPhoneVerificationService_SendAuthCode_Register_RejectsExistingPhone(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	phone := "13800138000"
+	store.On("GetByPhone", mock.Anything, phone).Return(&User{ID: 2, Phone: &phone}, nil).Once()
+
+	err := svc.SendAuthCode(context.Background(), phone, SceneRegister)
+
+	assert.ErrorIs(t, err, ErrPhoneAlreadyExists)
+	smsClient.AssertNotCalled(t, "SendVerificationCode", mock.Anything, mock.Anything, mock.Anything)
+	store.AssertExpectations(t)
+}
+
+func TestPhoneVerificationService_SendAuthCode_Login_RejectsUnregisteredPhone(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	phone := "13800138000"
+	store.On("GetByPhone", mock.Anything, phone).Return(nil, ErrUserNotFound).Once()
+
+	err := svc.SendAuthCode(context.Background(), phone, SceneLogin)
+
+	assert.ErrorIs(t, err, ErrUserNotFound)
+	smsClient.AssertNotCalled(t, "SendVerificationCode", mock.Anything, mock.Anything, mock.Anything)
+	store.AssertExpectations(t)
+}
+
+func TestPhoneVerificationService_SendAuthCode_Register_Success(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	phone := "13800138000"
+	store.On("GetByPhone", mock.Anything, phone).Return(nil, ErrUserNotFound).Once()
+	smsClient.On("SendVerificationCode", mock.Anything, phone, mock.MatchedBy(func(code string) bool {
+		return len(code) == verificationCodeLength
+	})).Return(nil).Once()
+
+	err := svc.SendAuthCode(context.Background(), phone, SceneRegister)
+
+	require.NoError(t, err)
+	code, getErr := redisClient.Get(context.Background(), authCodeKey(phone, SceneRegister))
+	require.NoError(t, getErr)
+	assert.Len(t, code, verificationCodeLength)
+	assert.Equal(t, time.Minute, redisClient.ttls[verificationCooldownKey(phone)])
+	store.AssertExpectations(t)
+	smsClient.AssertExpectations(t)
+}
+
+func TestPhoneVerificationService_SendAuthCode_InvalidScene(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	err := svc.SendAuthCode(context.Background(), "13800138000", Scene("bogus"))
+
+	assert.Error(t, err)
+}
+
+func TestPhoneVerificationService_VerifyAuthCode_Success(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	phone := "13800138000"
+	redisClient.values[authCodeKey(phone, SceneRegister)] = "123456"
+	redisClient.exists[authCodeKey(phone, SceneRegister)] = true
+
+	err := svc.VerifyAuthCode(context.Background(), phone, "123456", SceneRegister)
+
+	require.NoError(t, err)
+	// Code is consumed on success.
+	_, codeErr := redisClient.Get(context.Background(), authCodeKey(phone, SceneRegister))
+	assert.Error(t, codeErr)
+}
+
+func TestPhoneVerificationService_VerifyAuthCode_WrongCodeIncrementsAttempts(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	phone := "13800138000"
+	redisClient.values[authCodeKey(phone, SceneLogin)] = "123456"
+	redisClient.exists[authCodeKey(phone, SceneLogin)] = true
+	redisClient.ttls[authCodeKey(phone, SceneLogin)] = 5 * time.Minute
+
+	err := svc.VerifyAuthCode(context.Background(), phone, "000000", SceneLogin)
+
+	assert.ErrorIs(t, err, ErrVerificationCodeInvalid)
+	assert.Equal(t, int64(1), redisClient.counters[authAttemptsKey(phone, SceneLogin)])
+}
+
+func TestPhoneVerificationService_VerifyAuthCode_CrossSceneCodeIsRejected(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	phone := "13800138000"
+	// Code was stored under register scene.
+	redisClient.values[authCodeKey(phone, SceneRegister)] = "123456"
+	redisClient.exists[authCodeKey(phone, SceneRegister)] = true
+
+	// Replay against login scene should miss entirely (expired).
+	err := svc.VerifyAuthCode(context.Background(), phone, "123456", SceneLogin)
+
+	assert.ErrorIs(t, err, ErrVerificationCodeExpired)
+}
+
+func TestPhoneVerificationService_VerifyAuthCode_AttemptsExceeded(t *testing.T) {
+	store := new(mockStore)
+	redisClient := newMemoryVerificationRedis()
+	smsClient := new(stubSMSClient)
+	svc := newTestPhoneVerificationService(store, redisClient, smsClient)
+
+	phone := "13800138000"
+	redisClient.values[authCodeKey(phone, SceneRegister)] = "123456"
+	redisClient.exists[authCodeKey(phone, SceneRegister)] = true
+	redisClient.counters[authAttemptsKey(phone, SceneRegister)] = 2
+	redisClient.exists[authAttemptsKey(phone, SceneRegister)] = true
+
+	err := svc.VerifyAuthCode(context.Background(), phone, "000000", SceneRegister)
+
+	assert.ErrorIs(t, err, ErrVerificationCodeExceeded)
+	_, codeErr := redisClient.Get(context.Background(), authCodeKey(phone, SceneRegister))
+	assert.Error(t, codeErr)
+}

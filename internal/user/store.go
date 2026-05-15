@@ -22,9 +22,9 @@ type UpdateUserFields struct {
 
 // Store defines the data access interface for users.
 type Store interface {
-	Create(ctx context.Context, email, passwordHash, role string) (*User, error)
-	GetByEmail(ctx context.Context, email string) (*User, error)
+	CreateWithPhone(ctx context.Context, phone, passwordHash, role string) (*User, error)
 	GetByID(ctx context.Context, id int64) (*User, error)
+	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByPhone(ctx context.Context, phone string) (*User, error)
 	ListUsers(ctx context.Context, filter Filter, page, pageSize int) ([]*User, int64, error)
@@ -63,22 +63,26 @@ func (s *store) scanUser(row pgx.Row) (*User, error) {
 	return &u, nil
 }
 
-func (s *store) Create(ctx context.Context, email, passwordHash, role string) (*User, error) {
+// CreateWithPhone inserts a new user identified by phone number. phone_verified_at
+// is set to NOW() because the caller is expected to have verified an SMS code
+// before invoking this method. Unique-violation on phone returns
+// ErrPhoneAlreadyExists.
+func (s *store) CreateWithPhone(ctx context.Context, phone, passwordHash, role string) (*User, error) {
 	if role == "" {
 		role = "user"
 	}
 
 	query := `
-		INSERT INTO users (email, password_hash, role, status)
-		VALUES ($1, $2, $3, 'active')
+		INSERT INTO users (phone, phone_verified_at, password_hash, role, status)
+		VALUES ($1, NOW(), $2, $3, 'active')
 		RETURNING id, email, username, phone, phone_verified_at, password_hash, role, is_admin, status, created_at, updated_at
 	`
 
-	u, err := s.scanUser(s.pool.QueryRow(ctx, query, email, passwordHash, role))
+	u, err := s.scanUser(s.pool.QueryRow(ctx, query, phone, passwordHash, role))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, ErrEmailAlreadyExists
+			return nil, ErrPhoneAlreadyExists
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}

@@ -3,6 +3,7 @@ package sms
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	openapiutil "github.com/alibabacloud-go/darabonba-openapi/v2/utils"
 	dysmsapi "github.com/alibabacloud-go/dysmsapi-20170525/v5/client"
@@ -70,12 +71,43 @@ func (c *AliyunClient) SendVerificationCode(ctx context.Context, phone, code str
 		return fmt.Errorf("send sms: %w", err)
 	}
 
-	if resp.Body == nil || resp.Body.Code == nil || *resp.Body.Code != "OK" {
-		if resp.Body != nil && resp.Body.Message != nil {
-			return fmt.Errorf("send sms failed: %s", *resp.Body.Message)
+	// Log Aliyun tracking IDs even on success — operators search the console by
+	// BizId / RequestId to debug delivery failures (Aliyun's "OK" just means
+	// the request was queued, not that the carrier accepted it).
+	var (
+		respCode    string
+		respMessage string
+		bizID       string
+		requestID   string
+	)
+	if resp.Body != nil {
+		if resp.Body.Code != nil {
+			respCode = *resp.Body.Code
 		}
-		return fmt.Errorf("send sms failed")
+		if resp.Body.Message != nil {
+			respMessage = *resp.Body.Message
+		}
+		if resp.Body.BizId != nil {
+			bizID = *resp.Body.BizId
+		}
+		if resp.Body.RequestId != nil {
+			requestID = *resp.Body.RequestId
+		}
 	}
+
+	if respCode != "OK" {
+		slog.Error("aliyun sms send rejected",
+			"phone", phone, "code", respCode, "message", respMessage,
+			"biz_id", bizID, "request_id", requestID)
+		if respMessage != "" {
+			return fmt.Errorf("send sms failed: %s (code=%s)", respMessage, respCode)
+		}
+		return fmt.Errorf("send sms failed (code=%s)", respCode)
+	}
+
+	slog.Info("aliyun sms accepted",
+		"phone", phone, "biz_id", bizID, "request_id", requestID,
+		"template", c.templateCode, "sign_name", c.signName)
 
 	return nil
 }

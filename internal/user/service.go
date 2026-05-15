@@ -16,10 +16,13 @@ var (
 	ErrAccountBanned      = errors.New("account has been banned")
 )
 
-// Service defines the authentication business logic interface.
+// Service defines the authentication business logic interface. All identifiers
+// are phone numbers; email-based auth is no longer supported.
 type Service interface {
-	Register(ctx context.Context, email, password string) (*User, error)
-	Login(ctx context.Context, email, password, platform string) (*middleware.TokenPair, error)
+	SendAuthCode(ctx context.Context, phone string, scene Scene) error
+	RegisterByPhone(ctx context.Context, phone, code, password, platform string) (*User, *middleware.TokenPair, error)
+	LoginByPassword(ctx context.Context, phone, password, platform string) (*middleware.TokenPair, error)
+	LoginByCode(ctx context.Context, phone, code, platform string) (*middleware.TokenPair, error)
 	Refresh(ctx context.Context, refreshToken string) (*middleware.TokenPair, error)
 	Me(ctx context.Context, userID int64) (*User, error)
 	ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error
@@ -28,35 +31,68 @@ type Service interface {
 // AuthService implements Service.
 type AuthService struct {
 	store        Store
+	phoneAuth    PhoneAuthCodeService
 	tokenManager *redis.RefreshTokenManager
 	jwtConfig    *middleware.JWTConfig
 }
 
-func NewAuthService(store Store, tokenManager *redis.RefreshTokenManager, jwtConfig *middleware.JWTConfig) *AuthService {
+func NewAuthService(store Store, phoneAuth PhoneAuthCodeService, tokenManager *redis.RefreshTokenManager, jwtConfig *middleware.JWTConfig) *AuthService {
 	return &AuthService{
 		store:        store,
+		phoneAuth:    phoneAuth,
 		tokenManager: tokenManager,
 		jwtConfig:    jwtConfig,
 	}
 }
 
-func (s *AuthService) Register(ctx context.Context, email, password string) (*User, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, fmt.Errorf("hash password: %w", err)
+func (s *AuthService) SendAuthCode(ctx context.Context, phone string, scene Scene) error {
+	if s.phoneAuth == nil {
+		return errors.New("phone auth service not configured")
 	}
-
-	u, err := s.store.Create(ctx, email, string(hash), "user")
-	if err != nil {
-		return nil, err
-	}
-
-	return u, nil
+	return s.phoneAuth.SendAuthCode(ctx, phone, scene)
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password, platform string) (*middleware.TokenPair, error) {
-	u, err := s.store.GetByEmail(ctx, email)
+func (s *AuthService) RegisterByPhone(ctx context.Context, phone, code, password, platform string) (*User, *middleware.TokenPair, error) {
+	if s.phoneAuth == nil {
+		return nil, nil, errors.New("phone auth service not configured")
+	}
+
+	phone = normalizePhone(phone)
+	if err := validatePhone(phone); err != nil {
+		return nil, nil, err
+	}
+
+	if err := s.phoneAuth.VerifyAuthCode(ctx, phone, code, SceneRegister); err != nil {
+		return nil, nil, err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		return nil, nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	u, err := s.store.CreateWithPhone(ctx, phone, string(hash), "user")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tokens, err := s.issueTokens(ctx, u, platform)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return u, tokens, nil
+}
+
+func (s *AuthService) LoginByPassword(ctx context.Context, phone, password, platform string) (*middleware.TokenPair, error) {
+	phone = normalizePhone(phone)
+	if err := validatePhone(phone); err != nil {
+		return nil, ErrInvalidCredentials
+	}
+
+	u, err := s.store.GetByPhone(ctx, phone)
+	if err != nil {
+		// Do not leak whether the phone is registered.
 		return nil, ErrInvalidCredentials
 	}
 
@@ -68,6 +104,38 @@ func (s *AuthService) Login(ctx context.Context, email, password, platform strin
 		return nil, ErrAccountBanned
 	}
 
+	return s.issueTokens(ctx, u, platform)
+}
+
+func (s *AuthService) LoginByCode(ctx context.Context, phone, code, platform string) (*middleware.TokenPair, error) {
+	if s.phoneAuth == nil {
+		return nil, errors.New("phone auth service not configured")
+	}
+
+	phone = normalizePhone(phone)
+	if err := validatePhone(phone); err != nil {
+		return nil, err
+	}
+
+	if err := s.phoneAuth.VerifyAuthCode(ctx, phone, code, SceneLogin); err != nil {
+		return nil, err
+	}
+
+	u, err := s.store.GetByPhone(ctx, phone)
+	if err != nil {
+		// Race: account was deleted between send-code and verify. Surface as
+		// "not found" so the UI can prompt the user to register.
+		return nil, ErrUserNotFound
+	}
+
+	if u.Status == "banned" {
+		return nil, ErrAccountBanned
+	}
+
+	return s.issueTokens(ctx, u, platform)
+}
+
+func (s *AuthService) issueTokens(ctx context.Context, u *User, platform string) (*middleware.TokenPair, error) {
 	tokens, _, err := middleware.GenerateTokenPair(s.jwtConfig, u.ID, u.Role, u.IsAdmin, platform)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)

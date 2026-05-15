@@ -13,7 +13,7 @@ func StringValue(s *string) string {
 // User is the domain model for a user account.
 type User struct {
 	ID              int64      `json:"id"`
-	Email           string     `json:"email"`
+	Email           *string    `json:"email"`
 	Username        *string    `json:"username"`
 	Phone           *string    `json:"phone"`
 	PhoneVerifiedAt *time.Time `json:"phone_verified_at"`
