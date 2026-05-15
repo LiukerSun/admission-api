@@ -13,7 +13,6 @@ type AdmissionImportRow struct { //nolint:revive // Names the imported admission
 	SubjectRequirementCode string
 	LocalMajorCode         string
 	LocalMajorName         string
-	PlanCount              string
 	AdmittedCount          string
 	MinScore               string
 	MinRank                string

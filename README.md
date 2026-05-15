@@ -74,7 +74,18 @@ make run     # 生产模式：Docker Compose 全量构建并启动
 make down    # 停止所有容器（开发 + 生产）
 make logs    # 查看生产环境应用日志
 make build   # 构建 Docker 镜像
+make import  # 把 sourcedata.xlsx 灌入数据库（universities / admissions / 字典）
 ```
+
+### 导入源数据
+
+`scripts/import_source_excel.py` 解析 `sourcedata.xlsx` 的单 sheet（黑龙江版），区分四个年度的字段差异（2025=计划、2024=实际录取、2023/2022=追溯）并填充：
+
+- 字典表：`regions / subject_categories / subject_requirements / batches / education_levels / school_ownership_types / school_categories`
+- 院校：`universities / university_profiles / university_postgraduate_profiles`（profile_year=2025）
+- 招生录取：`admission_groups / admission_group_extensions / university_major_admissions / university_major_profiles`（admission_year ∈ {2025, 2024, 2023, 2022}）
+
+中间通过 docker cp + `\copy` 进 PostgreSQL 临时表，再 UPSERT 到正式表。脚本和 SQL 都是幂等的，重跑会更新已存在的行。
 
 ---
 

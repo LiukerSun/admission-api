@@ -251,7 +251,7 @@ def psql(sql: str) -> None:
 
 
 def copy_and_import(tmp: Path, sql_path: Path) -> None:
-    container_dir = "/tmp/gaokao_import"
+    container_dir = "/tmp/source_import"
     run(["docker", "exec", "admission-db", "rm", "-rf", container_dir])
     run(["docker", "exec", "admission-db", "mkdir", "-p", container_dir])
     for file in tmp.glob("*.csv"):
@@ -269,7 +269,7 @@ def main() -> None:
 
     excel_path = Path(args.excel)
     sql_path = Path(args.sql)
-    tmp = Path(tempfile.mkdtemp(prefix="gaokao_import_"))
+    tmp = Path(tempfile.mkdtemp(prefix="source_import_"))
     print(f"Using temp dir: {tmp}")
 
     wb = load_workbook(excel_path, read_only=True, data_only=True)
@@ -314,12 +314,13 @@ def main() -> None:
     admissions_region_code = "230000"
     profile_year = 2025
 
+    # 招生人数列：2024 xlsx 用 "录取人数1"（实际录取数据），其他年份用 "计划人数X"
+    # 或 "25年计划人数"。schema 统一成 admitted_count 一个字段。
     year_specs = [
         {
             "year": 2025,
             "name_field": "25年招生计划专业名称",
-            "plan_field": "25年计划人数",
-            "admitted_field": "",
+            "admitted_field": "25年计划人数",
             "min_score_field": "",
             "min_rank_field": "",
             "max_score_field": "",
@@ -330,7 +331,6 @@ def main() -> None:
         {
             "year": 2024,
             "name_field": "24年分数线专业名称",
-            "plan_field": "",
             "admitted_field": "录取人数1",
             "min_score_field": "最低分1",
             "min_rank_field": "最低位次1",
@@ -342,8 +342,7 @@ def main() -> None:
         {
             "year": 2023,
             "name_field": "23年分数线专业名称",
-            "plan_field": "计划人数2",
-            "admitted_field": "",
+            "admitted_field": "计划人数2",
             "min_score_field": "最低分2",
             "min_rank_field": "最低位次2",
             "max_score_field": "最高分2",
@@ -354,8 +353,7 @@ def main() -> None:
         {
             "year": 2022,
             "name_field": "22年分数线专业名称",
-            "plan_field": "计划人数3",
-            "admitted_field": "",
+            "admitted_field": "计划人数3",
             "min_score_field": "最低分3",
             "min_rank_field": "最低位次3",
             "max_score_field": "最高分3",
@@ -458,7 +456,6 @@ def main() -> None:
             has_numbers = any(
                 int_or_empty(cell(raw_row, field))
                 for field in (
-                    spec["plan_field"],
                     spec["admitted_field"],
                     spec["min_score_field"],
                     spec["min_rank_field"],
@@ -525,7 +522,6 @@ def main() -> None:
                 "group_code": group_code,
                 "local_major_code": local_major_code,
                 "local_major_name": local_major_name,
-                "plan_count": int_or_empty(cell(raw_row, spec["plan_field"])),
                 "admitted_count": int_or_empty(cell(raw_row, spec["admitted_field"])),
                 "min_score": int_or_empty(cell(raw_row, spec["min_score_field"])),
                 "min_rank": int_or_empty(cell(raw_row, spec["min_rank_field"])),
@@ -595,7 +591,7 @@ def main() -> None:
         ("university_major_admissions.csv", [
             "university_code", "university_name", "admission_year", "region_code",
             "subject_category_code", "batch_code", "group_code", "local_major_code",
-            "local_major_name", "plan_count", "admitted_count", "min_score", "min_rank",
+            "local_major_name", "admitted_count", "min_score", "min_rank",
             "max_score", "max_rank", "equivalent_min_score", "tuition", "duration",
             "admission_remark", "major_intro", "training_goal", "subject_study_requirement",
             "main_courses", "postgraduate_direction", "employment_direction",

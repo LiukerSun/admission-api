@@ -111,7 +111,6 @@ CREATE TEMP TABLE tmp_university_major_admissions (
     group_code text,
     local_major_code text,
     local_major_name text,
-    plan_count integer,
     admitted_count integer,
     min_score integer,
     min_rank integer,
@@ -160,20 +159,20 @@ CREATE TEMP TABLE tmp_university_postgraduate_profiles (
     doctoral_major_names text
 ) ON COMMIT DROP;
 
-\copy tmp_regions FROM '/tmp/gaokao_import/regions.csv' CSV HEADER
-\copy tmp_subject_categories FROM '/tmp/gaokao_import/subject_categories.csv' CSV HEADER
-\copy tmp_subject_requirements FROM '/tmp/gaokao_import/subject_requirements.csv' CSV HEADER
-\copy tmp_batches FROM '/tmp/gaokao_import/batches.csv' CSV HEADER
-\copy tmp_education_levels FROM '/tmp/gaokao_import/education_levels.csv' CSV HEADER
-\copy tmp_school_ownership_types FROM '/tmp/gaokao_import/school_ownership_types.csv' CSV HEADER
-\copy tmp_school_categories FROM '/tmp/gaokao_import/school_categories.csv' CSV HEADER
-\copy tmp_universities FROM '/tmp/gaokao_import/universities.csv' CSV HEADER
-\copy tmp_university_profiles FROM '/tmp/gaokao_import/university_profiles.csv' CSV HEADER
-\copy tmp_admission_groups FROM '/tmp/gaokao_import/admission_groups.csv' CSV HEADER
-\copy tmp_admission_group_extensions FROM '/tmp/gaokao_import/admission_group_extensions.csv' CSV HEADER
-\copy tmp_university_major_admissions FROM '/tmp/gaokao_import/university_major_admissions.csv' CSV HEADER
-\copy tmp_university_major_profiles FROM '/tmp/gaokao_import/university_major_profiles.csv' CSV HEADER
-\copy tmp_university_postgraduate_profiles FROM '/tmp/gaokao_import/university_postgraduate_profiles.csv' CSV HEADER
+\copy tmp_regions FROM '/tmp/source_import/regions.csv' CSV HEADER
+\copy tmp_subject_categories FROM '/tmp/source_import/subject_categories.csv' CSV HEADER
+\copy tmp_subject_requirements FROM '/tmp/source_import/subject_requirements.csv' CSV HEADER
+\copy tmp_batches FROM '/tmp/source_import/batches.csv' CSV HEADER
+\copy tmp_education_levels FROM '/tmp/source_import/education_levels.csv' CSV HEADER
+\copy tmp_school_ownership_types FROM '/tmp/source_import/school_ownership_types.csv' CSV HEADER
+\copy tmp_school_categories FROM '/tmp/source_import/school_categories.csv' CSV HEADER
+\copy tmp_universities FROM '/tmp/source_import/universities.csv' CSV HEADER
+\copy tmp_university_profiles FROM '/tmp/source_import/university_profiles.csv' CSV HEADER
+\copy tmp_admission_groups FROM '/tmp/source_import/admission_groups.csv' CSV HEADER
+\copy tmp_admission_group_extensions FROM '/tmp/source_import/admission_group_extensions.csv' CSV HEADER
+\copy tmp_university_major_admissions FROM '/tmp/source_import/university_major_admissions.csv' CSV HEADER
+\copy tmp_university_major_profiles FROM '/tmp/source_import/university_major_profiles.csv' CSV HEADER
+\copy tmp_university_postgraduate_profiles FROM '/tmp/source_import/university_postgraduate_profiles.csv' CSV HEADER
 
 INSERT INTO regions (code, name)
 SELECT code, name FROM tmp_regions
@@ -400,7 +399,6 @@ INSERT INTO university_major_admissions (
     admission_group_id,
     local_major_code,
     local_major_name,
-    plan_count,
     admitted_count,
     min_score,
     min_rank,
@@ -421,7 +419,6 @@ SELECT
     ag.id,
     a.local_major_code,
     a.local_major_name,
-    a.plan_count,
     a.admitted_count,
     a.min_score,
     a.min_rank,
@@ -452,7 +449,6 @@ WHERE a.local_major_code <> ''
   AND a.local_major_name <> ''
 ON CONFLICT (admission_group_id, local_major_code) DO UPDATE
 SET local_major_name = EXCLUDED.local_major_name,
-    plan_count = EXCLUDED.plan_count,
     admitted_count = EXCLUDED.admitted_count,
     min_score = EXCLUDED.min_score,
     min_rank = EXCLUDED.min_rank,

@@ -123,7 +123,7 @@ func validImportRow() AdmissionImportRow {
 		SubjectRequirementCode: "chemistry",
 		LocalMajorCode:         "25",
 		LocalMajorName:         "计算机类",
-		PlanCount:              "1",
+		AdmittedCount:          "1",
 		MinScore:               "721",
 		MinRank:                "45",
 	}

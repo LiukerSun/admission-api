@@ -204,7 +204,7 @@ func insertAdmissionLine(t *testing.T, pool *pgxpool.Pool, universityID int64, y
 			admission_group_id,
 			local_major_code,
 			local_major_name,
-			plan_count,
+			admitted_count,
 			min_score,
 			min_rank,
 			tuition,

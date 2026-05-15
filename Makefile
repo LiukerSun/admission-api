@@ -1,4 +1,4 @@
-.PHONY: dev run down logs build db setup
+.PHONY: dev run down logs build db setup import
 
 ifeq ($(OS),Windows_NT)
     SHELL := powershell.exe
@@ -89,5 +89,11 @@ else
     setup:
 	git config core.hooksPath .githooks
 	@echo "Git hooks configured. All commits will be validated."
+
+    import:
+	@command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
+	@python3 -c "import openpyxl" 2>/dev/null || python3 -m pip install --quiet openpyxl
+	@echo "Importing sourcedata.xlsx into Postgres..."
+	@python3 scripts/import_source_excel.py --excel sourcedata.xlsx --sql scripts/import_source_excel.sql
 
 endif

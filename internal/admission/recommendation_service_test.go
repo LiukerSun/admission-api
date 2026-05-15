@@ -289,8 +289,8 @@ func TestScoreBreakdownCityGroupBoost(t *testing.T) {
 
 func TestEnsureSafeQualityFiltersTinyPlans(t *testing.T) {
 	items := []RecommendationItem{
-		{UniversityName: "A", PlanCount: intPtr(1)},
-		{UniversityName: "B", PlanCount: intPtr(20)},
+		{UniversityName: "A", AdmittedCount: intPtr(1)},
+		{UniversityName: "B", AdmittedCount: intPtr(20)},
 		{UniversityName: "C"}, // 无数据，放过
 	}
 	out := ensureSafeQuality(items, &RecommendationRequest{})
@@ -349,19 +349,19 @@ func TestRecommendMergesTiersIntoSingleList(t *testing.T) {
 			{UniversityMajorAdmissionID: 1001,
 				UniversityID: 1, UniversityCode: "U1", UniversityName: "A大学", City: "上海",
 				GroupCode: "001", LocalMajorCode: "01", LocalMajorName: "计算机科学",
-				MinRank: intPtr(5000), MinScore: intPtr(640), PlanCount: intPtr(10),
+				MinRank: intPtr(5000), MinScore: intPtr(640), AdmittedCount: intPtr(10),
 				Is985: true, UniversityTier: "985_other", TagCategoryCodes: testCatCS},
 			// 仅 match 窗口
 			{UniversityMajorAdmissionID: 1002,
 				UniversityID: 2, UniversityCode: "U2", UniversityName: "B大学", City: "南京",
 				GroupCode: "002", LocalMajorCode: "02", LocalMajorName: "电子信息",
-				MinRank: intPtr(10000), MinScore: intPtr(600), PlanCount: intPtr(15),
+				MinRank: intPtr(10000), MinScore: intPtr(600), AdmittedCount: intPtr(15),
 				Is211: true, UniversityTier: "211_double", TagCategoryCodes: testCatElectronic},
 			// 仅 safe 窗口
 			{UniversityMajorAdmissionID: 1003,
 				UniversityID: 3, UniversityCode: "U3", UniversityName: "C大学", City: "西安",
 				GroupCode: "003", LocalMajorCode: "03", LocalMajorName: "汉语言文学",
-				MinRank: intPtr(20000), MinScore: intPtr(560), PlanCount: intPtr(20),
+				MinRank: intPtr(20000), MinScore: intPtr(560), AdmittedCount: intPtr(20),
 				TagCategoryCodes: testCatChinese},
 			// 全部窗口外
 			{UniversityMajorAdmissionID: 1004,
@@ -419,12 +419,12 @@ func TestRecommendAbilityGateExcludesElectronic(t *testing.T) {
 			{UniversityMajorAdmissionID: 2001,
 				UniversityID: 1, UniversityCode: "U1", UniversityName: "A", City: "北京",
 				GroupCode: "001", LocalMajorName: "电子信息工程",
-				MinRank: intPtr(9500), PlanCount: intPtr(10),
+				MinRank: intPtr(9500), AdmittedCount: intPtr(10),
 				TagCategoryCodes: testCatElectronic},
 			{UniversityMajorAdmissionID: 2002,
 				UniversityID: 2, UniversityCode: "U2", UniversityName: "B", City: "上海",
 				GroupCode: "002", LocalMajorName: "汉语言文学",
-				MinRank: intPtr(9700), PlanCount: intPtr(10),
+				MinRank: intPtr(9700), AdmittedCount: intPtr(10),
 				TagCategoryCodes: testCatChinese},
 		},
 	}
@@ -455,13 +455,13 @@ func TestRecommendRushUnderflowSpillsToLowerBuckets(t *testing.T) {
 		candidates: []RecommendationCandidate{
 			{UniversityMajorAdmissionID: 3001,
 				UniversityID: 1, UniversityCode: "U1", UniversityName: "A", City: "上海",
-				GroupCode: "001", LocalMajorName: "M1", MinRank: intPtr(2000), PlanCount: intPtr(20)},
+				GroupCode: "001", LocalMajorName: "M1", MinRank: intPtr(2000), AdmittedCount: intPtr(20)},
 			{UniversityMajorAdmissionID: 3002,
 				UniversityID: 2, UniversityCode: "U2", UniversityName: "B", City: "南京",
-				GroupCode: "002", LocalMajorName: "M2", MinRank: intPtr(2500), PlanCount: intPtr(20)},
+				GroupCode: "002", LocalMajorName: "M2", MinRank: intPtr(2500), AdmittedCount: intPtr(20)},
 			{UniversityMajorAdmissionID: 3003,
 				UniversityID: 3, UniversityCode: "U3", UniversityName: "C", City: "西安",
-				GroupCode: "003", LocalMajorName: "M3", MinRank: intPtr(2800), PlanCount: intPtr(20)},
+				GroupCode: "003", LocalMajorName: "M3", MinRank: intPtr(2800), AdmittedCount: intPtr(20)},
 		},
 	}
 	svc := NewRecommendationService(stub, newStubMetadataStore(), nil)
@@ -488,22 +488,22 @@ func TestRecommendHighRankStudentDoesNotPullTopSchools(t *testing.T) {
 			{UniversityMajorAdmissionID: 9001,
 				UniversityID: 90, UniversityCode: "PKU", UniversityName: "北京大学",
 				GroupCode: "001", LocalMajorCode: "01", LocalMajorName: "计算机",
-				MinRank: intPtr(45), PlanCount: intPtr(10), UniversityTier: "top_2"},
+				MinRank: intPtr(45), AdmittedCount: intPtr(10), UniversityTier: "top_2"},
 			// 偏鼓励：rank 1500，落在 rush 窗口
 			{UniversityMajorAdmissionID: 9002,
 				UniversityID: 91, UniversityCode: "BIT", UniversityName: "B 大学",
 				GroupCode: "002", LocalMajorCode: "02", LocalMajorName: "通信",
-				MinRank: intPtr(1500), PlanCount: intPtr(10), UniversityTier: "211_double"},
+				MinRank: intPtr(1500), AdmittedCount: intPtr(10), UniversityTier: "211_double"},
 			// 稳：rank 2500，靠近学生位次
 			{UniversityMajorAdmissionID: 9003,
 				UniversityID: 92, UniversityCode: "USTC", UniversityName: "C 大学",
 				GroupCode: "003", LocalMajorCode: "03", LocalMajorName: "电子",
-				MinRank: intPtr(2500), PlanCount: intPtr(10), UniversityTier: "985_other"},
+				MinRank: intPtr(2500), AdmittedCount: intPtr(10), UniversityTier: "985_other"},
 			// 保：rank 3500，下沉一档
 			{UniversityMajorAdmissionID: 9004,
 				UniversityID: 93, UniversityCode: "TJU", UniversityName: "D 大学",
 				GroupCode: "004", LocalMajorCode: "04", LocalMajorName: "材料",
-				MinRank: intPtr(3500), PlanCount: intPtr(10), UniversityTier: "985_other"},
+				MinRank: intPtr(3500), AdmittedCount: intPtr(10), UniversityTier: "985_other"},
 		},
 	}
 	svc := NewRecommendationService(stub, newStubMetadataStore(), nil)
@@ -560,7 +560,7 @@ func TestRecommendKeepsSafeBucketWhenCandidatesExceedLimit(t *testing.T) {
 			LocalMajorCode:             fmt.Sprintf("M%05d", i),
 			LocalMajorName:             "占位",
 			MinRank:                    intPtr(1 + i),
-			PlanCount:                  intPtr(10),
+			AdmittedCount:              intPtr(10),
 		})
 	}
 	for i := 0; i < 100; i++ {
@@ -572,7 +572,7 @@ func TestRecommendKeepsSafeBucketWhenCandidatesExceedLimit(t *testing.T) {
 			LocalMajorCode:             fmt.Sprintf("MM%05d", i),
 			LocalMajorName:             "match-占位",
 			MinRank:                    intPtr(9000 + i*10),
-			PlanCount:                  intPtr(10),
+			AdmittedCount:              intPtr(10),
 		})
 	}
 	for i := 0; i < 100; i++ {
@@ -584,7 +584,7 @@ func TestRecommendKeepsSafeBucketWhenCandidatesExceedLimit(t *testing.T) {
 			LocalMajorCode:             fmt.Sprintf("SS%05d", i),
 			LocalMajorName:             "safe-占位",
 			MinRank:                    intPtr(13000 + i*100),
-			PlanCount:                  intPtr(10),
+			AdmittedCount:              intPtr(10),
 		})
 	}
 	stub := &stubRecommendationStore{year: 2024, candidates: cands}
@@ -640,7 +640,7 @@ func TestFilterByPreferenceFiveChinesePreservesTraditionalAvoid(t *testing.T) {
 }
 
 func TestDecideStrategyFallbackWhenMetadataEmpty(t *testing.T) {
-	// N2 回归：metadata 没装载策略关键字时（migration 010 未跑），不应静默退化到永远 "major"。
+	// N2 回归：metadata 没装载策略关键字时（baseline 未跑或 seed 被清），不应静默退化到永远 "major"。
 	// 应该回退到代码内 hardcoded 列表，仍能识别 STEM / humanities 偏好。
 	emptyMD := &RecommendationMetadata{
 		CityToGroupCode:  map[string]string{},

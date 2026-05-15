@@ -52,7 +52,6 @@ type AdmissionLineResponse struct { //nolint:revive // Keeps Swagger and API nam
 	SubjectChange2024           string   `json:"subject_change_2024,omitempty"`
 	LocalMajorCode              string   `json:"local_major_code"`
 	LocalMajorName              string   `json:"local_major_name"`
-	PlanCount                   *int     `json:"plan_count,omitempty"`
 	AdmittedCount               *int     `json:"admitted_count,omitempty"`
 	MinScore                    *int     `json:"min_score,omitempty"`
 	MinRank                     *int     `json:"min_rank,omitempty"`

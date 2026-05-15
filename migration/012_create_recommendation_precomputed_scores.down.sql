@@ -1,4 +1,0 @@
-DROP INDEX IF EXISTS idx_recommendation_precomputed_scores_evaluated_by;
-DROP INDEX IF EXISTS idx_recommendation_precomputed_scores_evaluated_at;
-DROP INDEX IF EXISTS idx_recommendation_precomputed_scores_lookup;
-DROP TABLE IF EXISTS recommendation_precomputed_scores;

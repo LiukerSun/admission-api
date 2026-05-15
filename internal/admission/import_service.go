@@ -103,7 +103,6 @@ func validateOptionalInts(row *AdmissionImportRow) error {
 		name  string
 		value string
 	}{
-		{"plan_count", row.PlanCount},
 		{"admitted_count", row.AdmittedCount},
 		{"min_score", row.MinScore},
 		{"min_rank", row.MinRank},

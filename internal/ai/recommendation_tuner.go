@@ -70,19 +70,19 @@ func buildTunerUserMessage(req *admission.RecommendationRequest, resp *admission
 	for i := range resp.Items {
 		it := &resp.Items[i]
 		rows = append(rows, map[string]any{
-			"order":       it.Order,
-			"tier":        it.Tier,
-			"probability": it.Probability,
-			"composite":   it.CompositeScore,
-			"university":  it.UniversityName,
-			"city":        it.City,
-			"is_985":      it.Is985,
-			"is_211":      it.Is211,
-			"major":       it.LocalMajorName,
-			"discipline":  it.DisciplineCategory,
-			"min_rank":    it.HistoricalMinRank,
-			"plan_count":  it.PlanCount,
-			"reason":      it.Reason,
+			"order":          it.Order,
+			"tier":           it.Tier,
+			"probability":    it.Probability,
+			"composite":      it.CompositeScore,
+			"university":     it.UniversityName,
+			"city":           it.City,
+			"is_985":         it.Is985,
+			"is_211":         it.Is211,
+			"major":          it.LocalMajorName,
+			"discipline":     it.DisciplineCategory,
+			"min_rank":       it.HistoricalMinRank,
+			"admitted_count": it.AdmittedCount,
+			"reason":         it.Reason,
 		})
 	}
 	plan, _ := json.MarshalIndent(rows, "", "  ")

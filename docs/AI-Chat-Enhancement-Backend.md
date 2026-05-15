@@ -97,11 +97,10 @@ anthropic provider falls back to non-streaming completion in this version
 
 ### 数据库迁移
 
-新增 [`migration/008_add_widgets_to_messages.up.sql`](../migration/008_add_widgets_to_messages.up.sql) / down：
+`conversation_messages.widgets` 列已并入 [`migration/001_init_schema.up.sql`](../migration/001_init_schema.up.sql)：
 
 ```sql
-ALTER TABLE conversation_messages
-    ADD COLUMN widgets JSONB NOT NULL DEFAULT '[]'::jsonb;
+widgets JSONB NOT NULL DEFAULT '[]'::jsonb
 ```
 
 - 旧消息默认 `'[]'`，前端兼容；**不做数据回填** — 旧 `tool_results` 不能自动转 widget，前端依赖 `widgets` 字段判断是否渲染。
@@ -330,8 +329,7 @@ go test -cover ./internal/ai/...               # 整包 39.9%，新增纯函数 
 - `internal/ai/suggestions_test.go` — `parseSuggestions` 11 cases
 - `internal/ai/tools_widget_test.go` — `isAllowedCardLink` / `render_chart` / `render_card` 共 24 cases
 - `internal/ai/openai_stream_test.go` — `streamOpenAIBody` 6 cases
-- `migration/008_add_widgets_to_messages.up.sql`
-- `migration/008_add_widgets_to_messages.down.sql`
+- `migration/001_init_schema.up.sql`（`widgets` 列已并入 baseline）
 - `docs/AI-Chat-Enhancement-Backend.md`（本文件）
 
 **修改**（15 个）：
