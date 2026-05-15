@@ -90,7 +90,6 @@ func run() error {
 	tokenManager := redis.NewRefreshTokenManager(redisClient, jwtConfig.RefreshTTL)
 
 	userStore := user.NewStore(database.Pool())
-	userService := user.NewAuthService(userStore, tokenManager, jwtConfig)
 	smsClient := sms.NewMockClient()
 	if cfg.AliyunSMSAccessKeyID != "" && cfg.AliyunSMSAccessKeySecret != "" && cfg.AliyunSMSSignName != "" && cfg.AliyunSMSTemplateCode != "" {
 		aliyunClient, err := sms.NewAliyunClient(&sms.AliyunConfig{
@@ -106,13 +105,14 @@ func run() error {
 		}
 		smsClient = aliyunClient
 	}
-	phoneVerificationService := user.NewPhoneVerificationService(userStore, redisClient, smsClient, user.PhoneVerificationConfig{
+	phoneService := user.NewPhoneService(userStore, redisClient, smsClient, user.PhoneVerificationConfig{
 		CodeTTL:      time.Duration(cfg.SMSCodeTTLMinutes) * time.Minute,
 		SendCooldown: time.Duration(cfg.SMSSendCooldownSeconds) * time.Second,
 		DailyLimit:   cfg.SMSDailyLimit,
 		MaxAttempts:  cfg.SMSMaxVerifyAttempts,
 	})
-	userHandler := user.NewHandler(userService, phoneVerificationService, jwtConfig)
+	userService := user.NewAuthService(userStore, phoneService, tokenManager, jwtConfig)
+	userHandler := user.NewHandler(userService, phoneService, jwtConfig)
 
 	membershipStore := membership.NewStore(database.Pool())
 	membershipService := membership.NewService(membershipStore)
@@ -251,8 +251,10 @@ func run() error {
 
 	api := r.Group("/api/v1")
 	{
+		api.POST("/auth/sms/send", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.SendAuthCode)
 		api.POST("/auth/register", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Register)
 		api.POST("/auth/login", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.Login)
+		api.POST("/auth/login/code", middleware.RateLimitMiddleware(redisClient.RDB(), 20, 1*time.Minute), userHandler.LoginByCode)
 		api.POST("/auth/refresh", userHandler.Refresh)
 
 		api.POST("/payment/callbacks/mock", paymentHandler.MockCallback)

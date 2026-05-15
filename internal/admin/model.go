@@ -5,7 +5,7 @@ import "time"
 // UserResponse represents a single user detail payload for admin operations.
 type UserResponse struct {
 	ID            int64     `json:"id" example:"1"`
-	Email         string    `json:"email" example:"user@example.com"`
+	Email         string    `json:"email,omitempty" example:"user@example.com"`
 	Username      string    `json:"username" example:"johndoe"`
 	Phone         string    `json:"phone" example:"13800138000"`
 	PhoneVerified bool      `json:"phone_verified" example:"true"`
@@ -19,7 +19,7 @@ type UserResponse struct {
 // UserListItem represents a user in the admin list response.
 type UserListItem struct {
 	ID            int64     `json:"id" example:"1"`
-	Email         string    `json:"email" example:"user@example.com"`
+	Email         string    `json:"email,omitempty" example:"user@example.com"`
 	Username      string    `json:"username" example:"johndoe"`
 	Phone         string    `json:"phone" example:"13800138000"`
 	PhoneVerified bool      `json:"phone_verified" example:"true"`
