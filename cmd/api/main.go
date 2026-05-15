@@ -119,17 +119,24 @@ func run() error {
 	membershipHandler := membership.NewHandler(membershipService)
 	membershipAdminHandler := membership.NewAdminHandler(membershipService)
 
+	// alipay 客户端：app_id 必填，私钥 / 三套证书可用「内容」或「文件路径」
+	// 任一方式提供——见 internal/platform/alipay/config.go 注释。
 	var alipayClient alipay.Client
 	if cfg.AlipayAppID != "" &&
 		(cfg.AlipayAppPrivateKey != "" || cfg.AlipayAppPrivateKeyPath != "") &&
-		cfg.AlipayAppPublicCertPath != "" && cfg.AlipayAlipayPublicCertPath != "" && cfg.AlipayAlipayRootCertPath != "" {
+		(cfg.AlipayAppPublicCert != "" || cfg.AlipayAppPublicCertPath != "") &&
+		(cfg.AlipayAlipayPublicCert != "" || cfg.AlipayAlipayPublicCertPath != "") &&
+		(cfg.AlipayAlipayRootCert != "" || cfg.AlipayAlipayRootCertPath != "") {
 		var err error
 		alipayClient, err = alipay.NewClient(&alipay.Config{
 			AppID:                cfg.AlipayAppID,
 			AppPrivateKey:        cfg.AlipayAppPrivateKey,
 			AppPrivateKeyPath:    cfg.AlipayAppPrivateKeyPath,
+			AppPublicCert:        cfg.AlipayAppPublicCert,
 			AppPublicCertPath:    cfg.AlipayAppPublicCertPath,
+			AlipayPublicCert:     cfg.AlipayAlipayPublicCert,
 			AlipayPublicCertPath: cfg.AlipayAlipayPublicCertPath,
+			AlipayRootCert:       cfg.AlipayAlipayRootCert,
 			AlipayRootCertPath:   cfg.AlipayAlipayRootCertPath,
 			NotifyURL:            cfg.AlipayNotifyURL,
 			ReturnURL:            cfg.AlipayReturnURL,

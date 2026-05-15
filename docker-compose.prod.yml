@@ -47,6 +47,17 @@ services:
       JWT_ACCESS_TTL_MINUTES: ${JWT_ACCESS_TTL_MINUTES:-15}
       JWT_REFRESH_TTL_HOURS: ${JWT_REFRESH_TTL_HOURS:-168}
       ENV: ${ENV:-production}
+      # 证书在容器里固定挂在 /run/secrets/，env_file 里也是写这个路径。
+      # 这两行把"路径"硬编码在 compose 里，避免 .env 改错导致后端找不到证书。
+      ALIPAY_APP_PRIVATE_KEY_PATH: /run/secrets/alipay_app_private_key
+      ALIPAY_APP_PUBLIC_CERT_PATH: /run/secrets/alipay_app_public_cert
+      ALIPAY_ALIPAY_PUBLIC_CERT_PATH: /run/secrets/alipay_alipay_public_cert
+      ALIPAY_ALIPAY_ROOT_CERT_PATH: /run/secrets/alipay_alipay_root_cert
+    secrets:
+      - alipay_app_private_key
+      - alipay_app_public_cert
+      - alipay_alipay_public_cert
+      - alipay_alipay_root_cert
     depends_on:
       db:
         condition: service_healthy
@@ -69,3 +80,18 @@ services:
 volumes:
   pgdata:
   redisdata:
+
+# 证书走 Docker Compose secrets：
+#   - 文件本身在宿主机 /etc/admission-api/certs/ 下（由 Jenkins SCP 部署）
+#   - 容器内自动挂载为 /run/secrets/<secret_name>，权限 0444 只读
+#   - 不会写进 image layer，不会出现在 docker inspect 的 env 里
+# 私钥使用 .pem，证书使用 .crt——名字无关，路径写对即可。
+secrets:
+  alipay_app_private_key:
+    file: /etc/admission-api/certs/app_private.pem
+  alipay_app_public_cert:
+    file: /etc/admission-api/certs/app_public.crt
+  alipay_alipay_public_cert:
+    file: /etc/admission-api/certs/alipay_public.crt
+  alipay_alipay_root_cert:
+    file: /etc/admission-api/certs/alipay_root.crt

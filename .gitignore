@@ -25,6 +25,9 @@ vendor/
 
 # Environment files
 .env
+.env.*
+!.env.example
+.demo
 
 # Python venvs used by data-import scripts
 .venv*/

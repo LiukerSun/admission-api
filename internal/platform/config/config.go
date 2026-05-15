@@ -59,8 +59,11 @@ type Config struct {
 	AlipayAppID                string
 	AlipayAppPrivateKey        string
 	AlipayAppPrivateKeyPath    string
+	AlipayAppPublicCert        string
 	AlipayAppPublicCertPath    string
+	AlipayAlipayPublicCert     string
 	AlipayAlipayPublicCertPath string
+	AlipayAlipayRootCert       string
 	AlipayAlipayRootCertPath   string
 	AlipayNotifyURL            string
 	AlipayReturnURL            string
@@ -102,8 +105,11 @@ func Load() (*Config, error) {
 		AlipayAppID:                  getEnv("ALIPAY_APP_ID", ""),
 		AlipayAppPrivateKey:          getEnv("ALIPAY_APP_PRIVATE_KEY", ""),
 		AlipayAppPrivateKeyPath:      getEnv("ALIPAY_APP_PRIVATE_KEY_PATH", ""),
+		AlipayAppPublicCert:          getEnv("ALIPAY_APP_PUBLIC_CERT", ""),
 		AlipayAppPublicCertPath:      getEnv("ALIPAY_APP_PUBLIC_CERT_PATH", ""),
+		AlipayAlipayPublicCert:       getEnv("ALIPAY_ALIPAY_PUBLIC_CERT", ""),
 		AlipayAlipayPublicCertPath:   getEnv("ALIPAY_ALIPAY_PUBLIC_CERT_PATH", ""),
+		AlipayAlipayRootCert:         getEnv("ALIPAY_ALIPAY_ROOT_CERT", ""),
 		AlipayAlipayRootCertPath:     getEnv("ALIPAY_ALIPAY_ROOT_CERT_PATH", ""),
 		AlipayNotifyURL:              getEnv("ALIPAY_NOTIFY_URL", ""),
 		AlipayReturnURL:              getEnv("ALIPAY_RETURN_URL", ""),
