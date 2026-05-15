@@ -117,6 +117,7 @@ func run() error {
 	membershipStore := membership.NewStore(database.Pool())
 	membershipService := membership.NewService(membershipStore)
 	membershipHandler := membership.NewHandler(membershipService)
+	membershipAdminHandler := membership.NewAdminHandler(membershipService)
 
 	var alipayClient alipay.Client
 	if cfg.AlipayAppID != "" &&
@@ -340,6 +341,12 @@ func run() error {
 
 		adminRoutes.GET("/db/backup", adminBackupHandler.Export)
 		adminRoutes.POST("/db/restore", adminBackupHandler.Restore)
+
+		adminRoutes.GET("/membership/plans", membershipAdminHandler.AdminListPlans)
+		adminRoutes.POST("/membership/plans", membershipAdminHandler.AdminCreatePlan)
+		adminRoutes.GET("/membership/plans/:id", membershipAdminHandler.AdminGetPlan)
+		adminRoutes.PUT("/membership/plans/:id", membershipAdminHandler.AdminUpdatePlan)
+		adminRoutes.DELETE("/membership/plans/:id", membershipAdminHandler.AdminDeletePlan)
 	}
 
 	server := &http.Server{

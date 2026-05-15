@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,7 +26,18 @@ type Store interface {
 	HasActiveMembership(ctx context.Context, userID int64, now time.Time) (bool, error)
 	GrantMembership(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error)
 	RevokeMembershipForOrder(ctx context.Context, req RevokeRequest) (*UserMembership, *Grant, error)
+
+	// Admin operations — return / mutate plans regardless of status.
+	ListAllPlans(ctx context.Context) ([]*Plan, error)
+	GetPlanByID(ctx context.Context, id int64) (*Plan, error)
+	CreatePlan(ctx context.Context, req PlanCreateRequest) (*Plan, error)
+	UpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*Plan, error)
+	DeletePlan(ctx context.Context, id int64) (PlanDeleteResult, error)
 }
+
+var (
+	ErrPlanCodeExists = errors.New("plan_code already exists")
+)
 
 type store struct {
 	pool *pgxpool.Pool
@@ -34,6 +46,10 @@ type store struct {
 func NewStore(pool *pgxpool.Pool) Store {
 	return &store{pool: pool}
 }
+
+// planColumns is the canonical column list for SELECTs/RETURNING that produce
+// a Plan. Kept as a single constant so every query stays in sync with scanPlan.
+const planColumns = `id, plan_code, plan_name, membership_level, duration_days, price_amount, currency, status, sort_order, description, created_at, updated_at`
 
 func scanPlan(row pgx.Row) (*Plan, error) {
 	var p Plan
@@ -46,6 +62,8 @@ func scanPlan(row pgx.Row) (*Plan, error) {
 		&p.PriceAmount,
 		&p.Currency,
 		&p.Status,
+		&p.SortOrder,
+		&p.Description,
 		&p.CreatedAt,
 		&p.UpdatedAt,
 	); err != nil {
@@ -74,10 +92,10 @@ func scanMembership(row pgx.Row) (*UserMembership, error) {
 
 func (s *store) ListActivePlans(ctx context.Context) ([]*Plan, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, plan_code, plan_name, membership_level, duration_days, price_amount, currency, status, created_at, updated_at
+		SELECT `+planColumns+`
 		FROM membership_plans
 		WHERE status = 'active'
-		ORDER BY duration_days ASC
+		ORDER BY sort_order ASC, duration_days ASC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list active membership plans: %w", err)
@@ -100,7 +118,7 @@ func (s *store) ListActivePlans(ctx context.Context) ([]*Plan, error) {
 
 func (s *store) GetActivePlanByCode(ctx context.Context, planCode string) (*Plan, error) {
 	p, err := scanPlan(s.pool.QueryRow(ctx, `
-		SELECT id, plan_code, plan_name, membership_level, duration_days, price_amount, currency, status, created_at, updated_at
+		SELECT `+planColumns+`
 		FROM membership_plans
 		WHERE plan_code = $1
 	`, planCode))
@@ -114,6 +132,162 @@ func (s *store) GetActivePlanByCode(ctx context.Context, planCode string) (*Plan
 		return nil, ErrPlanNotPurchasable
 	}
 	return p, nil
+}
+
+func (s *store) ListAllPlans(ctx context.Context) ([]*Plan, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+planColumns+`
+		FROM membership_plans
+		ORDER BY sort_order ASC, duration_days ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list all membership plans: %w", err)
+	}
+	defer rows.Close()
+
+	plans := []*Plan{}
+	for rows.Next() {
+		p, err := scanPlan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan membership plan: %w", err)
+		}
+		plans = append(plans, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate membership plans: %w", err)
+	}
+	return plans, nil
+}
+
+func (s *store) GetPlanByID(ctx context.Context, id int64) (*Plan, error) {
+	p, err := scanPlan(s.pool.QueryRow(ctx, `
+		SELECT `+planColumns+`
+		FROM membership_plans
+		WHERE id = $1
+	`, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPlanNotFound
+		}
+		return nil, fmt.Errorf("get membership plan by id: %w", err)
+	}
+	return p, nil
+}
+
+func (s *store) CreatePlan(ctx context.Context, req PlanCreateRequest) (*Plan, error) {
+	currency := req.Currency
+	if currency == "" {
+		currency = "CNY"
+	}
+	status := req.Status
+	if status == "" {
+		status = PlanStatusActive
+	}
+
+	p, err := scanPlan(s.pool.QueryRow(ctx, `
+		INSERT INTO membership_plans (
+			plan_code, plan_name, membership_level, duration_days, price_amount,
+			currency, status, sort_order, description
+		)
+		VALUES ($1, $2, 'premium', $3, $4, $5, $6, $7, $8)
+		RETURNING `+planColumns+`
+	`, req.PlanCode, req.PlanName, req.DurationDays, req.PriceAmount,
+		currency, status, req.SortOrder, req.Description))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrPlanCodeExists
+		}
+		return nil, fmt.Errorf("insert membership plan: %w", err)
+	}
+	return p, nil
+}
+
+func (s *store) UpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*Plan, error) {
+	// Build a partial UPDATE — only fields the caller actually sent get touched.
+	// COALESCE-based "always update" would clobber explicit empty strings
+	// (e.g. clearing description), so we walk the request and assemble SET
+	// clauses dynamically.
+	sets := []string{}
+	args := []any{id}
+	addSet := func(col string, val any) {
+		args = append(args, val)
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+	if req.PlanName != nil {
+		addSet("plan_name", *req.PlanName)
+	}
+	if req.DurationDays != nil {
+		addSet("duration_days", *req.DurationDays)
+	}
+	if req.PriceAmount != nil {
+		addSet("price_amount", *req.PriceAmount)
+	}
+	if req.Currency != nil {
+		addSet("currency", *req.Currency)
+	}
+	if req.Status != nil {
+		addSet("status", *req.Status)
+	}
+	if req.SortOrder != nil {
+		addSet("sort_order", *req.SortOrder)
+	}
+	if req.Description != nil {
+		addSet("description", *req.Description)
+	}
+	if len(sets) == 0 {
+		// Nothing to change — just return the current row.
+		return s.GetPlanByID(ctx, id)
+	}
+	sets = append(sets, "updated_at = NOW()")
+
+	query := `UPDATE membership_plans SET ` + strings.Join(sets, ", ") +
+		` WHERE id = $1 RETURNING ` + planColumns
+	p, err := scanPlan(s.pool.QueryRow(ctx, query, args...))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPlanNotFound
+		}
+		return nil, fmt.Errorf("update membership plan: %w", err)
+	}
+	return p, nil
+}
+
+func (s *store) DeletePlan(ctx context.Context, id int64) (PlanDeleteResult, error) {
+	// payment_orders.product_ref_id REFERENCES membership_plans(id) — if any
+	// historical order points here, a DELETE would violate the FK. We can't
+	// silently delete a referenced plan because the order's plan info would
+	// disappear, so flip status to 'inactive' instead and report softDeleted.
+	var refCount int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM payment_orders WHERE product_ref_id = $1
+	`, id).Scan(&refCount); err != nil {
+		return PlanDeleteResult{}, fmt.Errorf("count plan references: %w", err)
+	}
+
+	if refCount > 0 {
+		tag, err := s.pool.Exec(ctx, `
+			UPDATE membership_plans
+			SET status = 'inactive', updated_at = NOW()
+			WHERE id = $1
+		`, id)
+		if err != nil {
+			return PlanDeleteResult{}, fmt.Errorf("soft-delete plan: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return PlanDeleteResult{}, ErrPlanNotFound
+		}
+		return PlanDeleteResult{SoftDeleted: true, ReferenceRows: refCount}, nil
+	}
+
+	tag, err := s.pool.Exec(ctx, `DELETE FROM membership_plans WHERE id = $1`, id)
+	if err != nil {
+		return PlanDeleteResult{}, fmt.Errorf("delete plan: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return PlanDeleteResult{}, ErrPlanNotFound
+	}
+	return PlanDeleteResult{Deleted: true}, nil
 }
 
 func (s *store) GetCurrentMembership(ctx context.Context, userID int64) (*UserMembership, error) {

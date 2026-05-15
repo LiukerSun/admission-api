@@ -59,6 +59,43 @@ func (m *mockStore) RevokeMembershipForOrder(ctx context.Context, req RevokeRequ
 	return args.Get(0).(*UserMembership), args.Get(1).(*Grant), args.Error(2)
 }
 
+func (m *mockStore) ListAllPlans(ctx context.Context) ([]*Plan, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*Plan), args.Error(1)
+}
+
+func (m *mockStore) GetPlanByID(ctx context.Context, id int64) (*Plan, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Plan), args.Error(1)
+}
+
+func (m *mockStore) CreatePlan(ctx context.Context, req PlanCreateRequest) (*Plan, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Plan), args.Error(1)
+}
+
+func (m *mockStore) UpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*Plan, error) {
+	args := m.Called(ctx, id, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Plan), args.Error(1)
+}
+
+func (m *mockStore) DeletePlan(ctx context.Context, id int64) (PlanDeleteResult, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(PlanDeleteResult), args.Error(1)
+}
+
 func TestListPlansReturnsActivePlans(t *testing.T) {
 	store := new(mockStore)
 	svc := NewService(store)

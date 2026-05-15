@@ -133,6 +133,372 @@
                 }
             }
         },
+        "/api/v1/admin/membership/plans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回全部 membership 套餐（含 inactive 与已禁用），按 sort_order 升序、duration_days 升序排序。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员列出所有套餐",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/membership.PlanResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "plan_code 是稳定业务键，创建后无法修改；建议使用如 monthly/quarterly/yearly/lifetime 这类语义化字符串。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员创建套餐",
+                "parameters": [
+                    {
+                        "description": "套餐",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/membership.PlanCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/membership.PlanResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "plan_code 已存在",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/membership/plans/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员获取套餐详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/membership.PlanResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅传入需要修改的字段（partial update）。plan_code 不可改。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员更新套餐",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "套餐字段，可部分提交",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/membership.PlanUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/membership.PlanResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "如果有 payment_orders 引用此套餐，则不会物理删除，而是把 status 置为 inactive\n并在响应里返回 soft_deleted=true、reference_rows=被引用次数。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员删除套餐",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/membership.PlanDeleteResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/recommendation/scores/refresh": {
             "post": {
                 "security": [
@@ -4814,6 +5180,150 @@
                 },
                 "message_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "membership.PlanCreateRequest": {
+            "type": "object",
+            "required": [
+                "duration_days",
+                "plan_code",
+                "plan_name"
+            ],
+            "properties": {
+                "currency": {
+                    "type": "string",
+                    "example": "CNY"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "覆盖整个学期，含全部 AI 工具"
+                },
+                "duration_days": {
+                    "type": "integer",
+                    "example": 180
+                },
+                "plan_code": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "example": "semester"
+                },
+                "plan_name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "example": "学期会员"
+                },
+                "price_amount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 4990
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ],
+                    "example": "active"
+                }
+            }
+        },
+        "membership.PlanDeleteResult": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "reference_rows": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "soft_deleted": {
+                    "description": "SoftDeleted is true when the plan was retained but status forced to\n'inactive' because of existing payment_orders references.",
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "membership.PlanResponse": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string",
+                    "example": "CNY"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "解锁全部志愿推荐与 AI 对话"
+                },
+                "duration_days": {
+                    "type": "integer",
+                    "example": 30
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "membership_level": {
+                    "type": "string",
+                    "example": "premium"
+                },
+                "plan_code": {
+                    "type": "string",
+                    "example": "monthly"
+                },
+                "plan_name": {
+                    "type": "string",
+                    "example": "月度会员"
+                },
+                "price_amount": {
+                    "type": "integer",
+                    "example": 990
+                },
+                "sort_order": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                }
+            }
+        },
+        "membership.PlanUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "duration_days": {
+                    "type": "integer"
+                },
+                "plan_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "price_amount": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ]
                 }
             }
         },
