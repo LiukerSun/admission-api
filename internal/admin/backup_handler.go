@@ -91,7 +91,7 @@ func (h *BackupHandler) Export(c *gin.Context) {
 	}()
 
 	c.Header("Content-Type", "application/octet-stream")
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	// Headers are written here; the response body below is the raw pg_dump output.
 	if _, copyErr := io.Copy(c.Writer, stdout); copyErr != nil {
 		// Body has already started — best we can do is log and let the client

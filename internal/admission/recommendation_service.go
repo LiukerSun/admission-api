@@ -674,7 +674,7 @@ func scoreCandidates(candidates []RecommendationCandidate, req *RecommendationRe
 			HistoricalMinScore: c.MinScore,
 			HistoricalMinRank:  c.MinRank,
 			EquivalentMinScore: c.EquivalentMinScore,
-			AdmittedCount:          c.AdmittedCount,
+			AdmittedCount:      c.AdmittedCount,
 			Tuition:            c.Tuition,
 			Warnings:           buildWarnings(c, req, md),
 		}

@@ -33,7 +33,7 @@ type RecommendationCandidate struct {
 
 	LocalMajorCode     string
 	LocalMajorName     string
-	AdmittedCount          *int
+	AdmittedCount      *int
 	MinScore           *int
 	MinRank            *int
 	MaxScore           *int
