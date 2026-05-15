@@ -102,17 +102,18 @@ type ConversationChatRequest struct {
 // only to avoid a breaking shape change on the wire; new code paths do
 // not emit them.
 type SSEEvent struct {
-	Type     string `json:"type"`
-	Step     string `json:"step,omitempty"`
-	Content  string `json:"content,omitempty"`
-	Data     any    `json:"data,omitempty"`
-	ID       string `json:"id,omitempty"`
-	Kind     string `json:"kind,omitempty"`
-	Payload  any    `json:"payload,omitempty"`
-	CallID   string `json:"call_id,omitempty"`
-	ToolName string `json:"tool_name,omitempty"`
-	Success  *bool  `json:"success,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Type          string `json:"type"`
+	Step          string `json:"step,omitempty"`
+	Content       string `json:"content,omitempty"`
+	Data          any    `json:"data,omitempty"`
+	ID            string `json:"id,omitempty"`
+	Kind          string `json:"kind,omitempty"`
+	Payload       any    `json:"payload,omitempty"`
+	CallID        string `json:"call_id,omitempty"`
+	ToolName      string `json:"tool_name,omitempty"`
+	Success       *bool  `json:"success,omitempty"`
+	Error         string `json:"error,omitempty"`
+	ResultContent string `json:"result_content,omitempty"`
 }
 
 // Handler handles AI chat endpoints.
@@ -188,13 +189,23 @@ func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, histo
 				Data:     map[string]any{"call_id": callID, "tool_name": toolName},
 			})
 		},
-		OnToolCallEnd: func(callID string, success bool, errMsg string) {
+		OnToolCallEnd: func(callID string, success bool, errMsg string, resultContent string) {
 			payload := map[string]any{"call_id": callID, "success": success}
 			if errMsg != "" {
 				payload["error"] = errMsg
 			}
+			if resultContent != "" {
+				payload["result_content"] = resultContent
+			}
 			ok := success
-			sw.write(&SSEEvent{Type: "tool_call_end", CallID: callID, Success: &ok, Error: errMsg, Data: payload})
+			sw.write(&SSEEvent{
+				Type:          "tool_call_end",
+				CallID:        callID,
+				Success:       &ok,
+				Error:         errMsg,
+				ResultContent: resultContent,
+				Data:          payload,
+			})
 		},
 		OnWidget: func(widget Widget) {
 			sw.write(&SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
@@ -299,13 +310,33 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 	// that's missing the latest question, fabricate a reply, and that
 	// reply will then be persisted as if it answered nothing — corrupting
 	// every future replay of this conversation.
-	if _, err := h.conversationService.AddMessage(c.Request.Context(), convID, "user", req.Message, nil, nil, nil); err != nil {
+	userMsg, err := h.conversationService.AddMessage(c.Request.Context(), convID, "user", req.Message, nil, nil, nil)
+	if err != nil {
 		slog.Error("failed to persist user message before AI run", "error", err, "conversationID", convID)
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to save message")
 		return
 	}
 
-	h.streamConversationTurn(c, convID, userID)
+	// Hold the freshly-inserted user message ID so streamConversationTurn
+	// can roll it back if the agent run fails. Otherwise a failed turn
+	// leaves a dangling user message that the next regenerate/chat call
+	// would replay, producing two consecutive user rows in history.
+	pendingUserMsgID := userMsg.ID
+
+	if turnErr := h.streamConversationTurn(c, convID, userID, &pendingUserMsgID); turnErr != nil {
+		slog.Warn("rolling back pending user message after failed agent run",
+			"conversationID", convID,
+			"messageID", pendingUserMsgID,
+			"error", turnErr,
+		)
+		if _, _, rbErr := h.conversationService.Rollback(c.Request.Context(), convID, pendingUserMsgID, true); rbErr != nil {
+			slog.Error("failed to rollback user message after agent failure",
+				"conversationID", convID,
+				"messageID", pendingUserMsgID,
+				"error", rbErr,
+			)
+		}
+	}
 }
 
 // Regenerate godoc
@@ -357,7 +388,11 @@ func (h *Handler) Regenerate(c *gin.Context) {
 		}
 	}
 
-	h.streamConversationTurn(c, convID, userID)
+	// Regenerate does NOT roll back on agent failure: there is no
+	// just-inserted user message to remove — the standing user turn at
+	// the tail of history is what we're retrying against, and removing
+	// it would silently delete the user's question.
+	_ = h.streamConversationTurn(c, convID, userID, nil)
 }
 
 // streamConversationTurn loads the current conversation history, runs
@@ -366,11 +401,20 @@ func (h *Handler) Regenerate(c *gin.Context) {
 // user message) and Regenerate (after optionally rolling back the last
 // assistant message). Keeps the persistence + SSE pattern in exactly
 // one place.
-func (h *Handler) streamConversationTurn(c *gin.Context, convID, userID int64) {
+//
+// Returns a non-nil error when the agent run fails so the caller (only
+// ChatWithConversation today) can roll back any just-inserted user
+// message. SSE headers have already been flushed by then; the client
+// will have seen the "error" event and the rollback is purely a
+// database-side cleanup. pendingUserMsgID is the just-inserted user
+// message's ID (or nil when there is none — e.g. Regenerate); it is
+// not used by this function directly but recorded in slog warnings
+// when an agent failure happens so ops can see what would be cleaned.
+func (h *Handler) streamConversationTurn(c *gin.Context, convID, userID int64, pendingUserMsgID *int64) error {
 	msgs, err := h.conversationService.ListMessages(c.Request.Context(), convID)
 	if err != nil {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to load messages")
-		return
+		return err
 	}
 	aiMessages := conversationMessagesToAIMessages(msgs)
 
@@ -385,7 +429,14 @@ func (h *Handler) streamConversationTurn(c *gin.Context, convID, userID int64) {
 		},
 	})
 	if err != nil {
-		return
+		if pendingUserMsgID != nil {
+			slog.Warn("agent run failed; caller will rollback pending user message",
+				"conversationID", convID,
+				"messageID", *pendingUserMsgID,
+				"error", err,
+			)
+		}
+		return err
 	}
 
 	// Save assistant message with tool calls + widgets. The SSE stream
@@ -412,6 +463,7 @@ func (h *Handler) streamConversationTurn(c *gin.Context, convID, userID int64) {
 
 	sw.write(&SSEEvent{Type: "done", Data: result})
 	slog.Info("sse stream complete")
+	return nil
 }
 
 // verifyConversationOwnership writes the appropriate error response and

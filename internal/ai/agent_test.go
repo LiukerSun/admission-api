@@ -127,18 +127,32 @@ func TestAgentContinuesAfterThreeToolCallsUntilFinalAnswer(t *testing.T) {
 		},
 	}
 	lineStore := &stubAdmissionLineStore{}
-	agent := NewAgent(llm, NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil))
+	agent := NewAgent(llm, NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil, nil))
 
 	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "650分，喜欢985，不想去北京，喜欢计算机"}})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
-	if strings.Contains(result.Text, "再放宽") {
-		t.Fatalf("agent returned intermediate tool-planning text: %q", result.Text)
+	// The agent now keeps every iteration's text and joins them with
+	// IterationBreak so the frontend can render the full timeline.
+	// All three turns' bodies should be present, separated by the
+	// protocol marker.
+	if !strings.Contains(result.Text, "再放宽") {
+		t.Fatalf("expected mid-run text to be preserved in joined output: %q", result.Text)
 	}
 	if !strings.Contains(result.Text, "哈尔滨工业大学") {
 		t.Fatalf("agent did not return final recommendation text: %q", result.Text)
+	}
+	chunks := strings.Split(result.Text, IterationBreak)
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 iteration text chunks separated by IterationBreak, got %d: %q", len(chunks), result.Text)
+	}
+	if !strings.Contains(chunks[0], "符合条件") {
+		t.Fatalf("first chunk should hold the opening turn, got %q", chunks[0])
+	}
+	if !strings.Contains(chunks[2], "哈尔滨工业大学") {
+		t.Fatalf("last chunk should hold the final answer, got %q", chunks[2])
 	}
 	if len(result.ToolCalls) != 4 {
 		t.Fatalf("expected 4 executed tool calls, got %d", len(result.ToolCalls))
@@ -151,35 +165,72 @@ func TestAgentContinuesAfterThreeToolCallsUntilFinalAnswer(t *testing.T) {
 	}
 }
 
-func TestAgentDoesNotStopAfterTenToolIterations(t *testing.T) {
-	responses := make([]*LLMResponse, 35, 36)
+// TestAgentSingleIterationTextHasNoBreakMarker verifies that a one-shot
+// answer (no tool calls) is persisted as-is without the IterationBreak
+// delimiter — single-turn replies must read as plain prose so the
+// stripPrivateBlocks logic and downstream renderers don't have to know
+// about the marker for the common case.
+func TestAgentSingleIterationTextHasNoBreakMarker(t *testing.T) {
+	llm := &queuedLLM{
+		responses: []*LLMResponse{
+			{Content: "你好！我可以帮你筛选院校。"},
+		},
+	}
+	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil))
+
+	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "你好"}})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.Contains(result.Text, IterationBreak) {
+		t.Fatalf("single-iteration text should not contain IterationBreak marker: %q", result.Text)
+	}
+	if result.Text != "你好！我可以帮你筛选院校。" {
+		t.Fatalf("unexpected text: %q", result.Text)
+	}
+}
+
+// TestAgentStopsAtMaxIterations verifies the agent terminates with a
+// stable error after maxAgentIterations rounds of tool calls and still
+// returns a partial AgentResult containing the most-recent text plus all
+// executed tool calls / results / widgets, so the frontend can show
+// progress instead of an empty failure.
+func TestAgentStopsAtMaxIterations(t *testing.T) {
+	// Always tool-calling responses; the agent never gets a clean exit.
+	responses := make([]*LLMResponse, maxAgentIterations+5)
 	for i := range responses {
 		responses[i] = &LLMResponse{
 			Content:   "我再查一下。",
 			ToolCalls: []ToolCall{newToolCall("call-loop", "search_universities", `{"filter":{"region_code":"230000"},"limit":5}`)},
 		}
 	}
-	responses = append(responses, &LLMResponse{
-		Content: "根据查询结果，可以优先看哈尔滨工业大学计算机类。",
-	})
 	llm := &queuedLLM{responses: responses}
-	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil))
+	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil))
 
 	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "继续推荐"}})
-	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+	if err == nil {
+		t.Fatalf("expected max-iterations error, got nil")
 	}
-	if !strings.Contains(result.Text, "哈尔滨工业大学") {
-		t.Fatalf("expected final answer after extended tool use, got %q", result.Text)
+	if !strings.Contains(err.Error(), "max iterations") {
+		t.Fatalf("expected max iterations error, got %v", err)
 	}
-	if len(result.ToolResults) != 35 {
-		t.Fatalf("expected 35 tool results, got %d", len(result.ToolResults))
+	if result == nil {
+		t.Fatalf("expected partial result to be returned alongside error")
+	}
+	if len(result.ToolResults) != maxAgentIterations {
+		t.Fatalf("expected %d tool results in partial, got %d", maxAgentIterations, len(result.ToolResults))
+	}
+	if len(result.ToolCalls) != maxAgentIterations {
+		t.Fatalf("expected %d tool calls in partial, got %d", maxAgentIterations, len(result.ToolCalls))
+	}
+	if result.Text == "" {
+		t.Fatalf("expected partial text to be carried over, got empty")
 	}
 }
 
 func TestAgentStopsWhenContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	agent := NewAgent(&cancelingLLM{cancel: cancel}, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil))
+	agent := NewAgent(&cancelingLLM{cancel: cancel}, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil))
 
 	result, err := agent.Run(ctx, []Message{{Role: "user", Content: "继续查询"}})
 	if err == nil {
@@ -195,7 +246,7 @@ func TestAgentStopsWhenContextIsCancelled(t *testing.T) {
 
 func TestToolExecutorParsesSnakeCaseFilterArguments(t *testing.T) {
 	lineStore := &stubAdmissionLineStore{}
-	executor := NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil)
+	executor := NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil, nil)
 
 	_, err := executor.Execute(context.Background(), newToolCall("call-1", "search_universities", `{
 		"filter": {

@@ -2,11 +2,103 @@ package admission
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// TestBuildVolunteerPlanFromItems 是 plan_json 落盘流程的 schema 契约测试。
+// 前端 VolunteerPlansPage 在导出 Excel / 渲染表格时读取
+// plan_json.groups[i].{universityCode, universityName, groupCode, groupName,
+// majors[j].{majorOrder, majorCode, majorName}} 等 camelCase 字段；
+// 后端任何 refactor 误改字段名都会让导出退化成空内容（历史教训：
+// 曾经把 items[] 直接当 plan_json 落库，前端只能拿到 undefined 的 groups）。
+// 这条测试通过实际 JSON marshal 后再 unmarshal 到一个紧贴前端契约的
+// 结构体，捕获字段名漂移、空 groups、空 majors 三类回归。
+func TestBuildVolunteerPlanFromItems(t *testing.T) {
+	items := []RecommendationItem{
+		{
+			Order:          1,
+			Tier:           "rush",
+			UniversityCode: "10001",
+			UniversityName: "北京大学",
+			GroupCode:      "01",
+			LocalMajorCode: "080901",
+			LocalMajorName: "计算机科学与技术",
+		},
+		{
+			Order:          2,
+			Tier:           "match",
+			UniversityCode: "10002",
+			UniversityName: "清华大学",
+			GroupCode:      "02",
+			LocalMajorCode: "080902",
+			LocalMajorName: "软件工程",
+		},
+	}
+
+	plan := buildVolunteerPlanFromItems(items)
+	raw, err := json.Marshal(plan)
+	require.NoError(t, err)
+
+	// 用 only-camelCase 字段的极简类型反序列化，验证 marshaller 真的产出
+	// 了前端期望的字段名；任何 snake_case 漂移（universityCode →
+	// university_code）都会让以下字段读到零值。
+	type majorView struct {
+		MajorOrder int    `json:"majorOrder"`
+		MajorCode  string `json:"majorCode"`
+		MajorName  string `json:"majorName"`
+	}
+	type groupView struct {
+		OrderNo          int         `json:"orderNo"`
+		UniversityCode   string      `json:"universityCode"`
+		UniversityName   string      `json:"universityName"`
+		GroupCode        string      `json:"groupCode"`
+		GroupName        string      `json:"groupName"`
+		IsObeyAdjustment bool        `json:"isObeyAdjustment"`
+		Remark           string      `json:"remark"`
+		Majors           []majorView `json:"majors"`
+	}
+	type statsView struct {
+		SchoolCount int `json:"schoolCount"`
+		GroupCount  int `json:"groupCount"`
+		RecordCount int `json:"recordCount"`
+	}
+	type planView struct {
+		Groups []groupView `json:"groups"`
+		Stats  statsView   `json:"stats"`
+	}
+
+	var got planView
+	require.NoError(t, json.Unmarshal(raw, &got))
+
+	require.Len(t, got.Groups, 2, "每个 item 应该折叠成一个 group")
+	require.Equal(t, "北京大学", got.Groups[0].UniversityName)
+	require.Equal(t, "10001", got.Groups[0].UniversityCode)
+	require.Equal(t, "01", got.Groups[0].GroupCode)
+	require.Equal(t, "冲", got.Groups[0].Remark)
+	require.Len(t, got.Groups[0].Majors, 1)
+	require.Equal(t, 1, got.Groups[0].Majors[0].MajorOrder)
+	require.Equal(t, "计算机科学与技术", got.Groups[0].Majors[0].MajorName)
+	require.Equal(t, "080901", got.Groups[0].Majors[0].MajorCode)
+
+	require.Equal(t, 2, got.Stats.SchoolCount)
+	require.Equal(t, 2, got.Stats.GroupCount)
+	require.Equal(t, 2, got.Stats.RecordCount)
+}
+
+// TestBuildVolunteerPlanFromItemsEmpty 守住"候选池真的空"这种极端情况——
+// 至少 groups 必须是 [] 而不是 nil，否则前端 (activePlan.plan_json?.groups ?? [])
+// 兜底虽然能 work，但 JSON 里出现 "groups": null 是个明显 schema 异常信号。
+func TestBuildVolunteerPlanFromItemsEmpty(t *testing.T) {
+	plan := buildVolunteerPlanFromItems(nil)
+	raw, err := json.Marshal(plan)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"groups":[]`)
+	require.Contains(t, string(raw), `"schoolCount":0`)
+}
 
 // CHSI category codes used by tests.
 const (

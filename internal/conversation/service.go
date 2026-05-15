@@ -30,7 +30,11 @@ func (s *service) GetConversation(ctx context.Context, id int64) (*Conversation,
 }
 
 func (s *service) ListConversations(ctx context.Context, userID *int64) ([]*Conversation, error) {
-	return s.store.ListConversations(ctx, userID, "active")
+	// Empty status returns active + archived (everything but deleted).
+	// Adopting a draft archives the conversation; if we filtered to
+	// "active" the sidebar would lose the conversation the user just
+	// finished, which feels like data loss.
+	return s.store.ListConversations(ctx, userID, "")
 }
 
 func (s *service) ArchiveConversation(ctx context.Context, id int64) error {

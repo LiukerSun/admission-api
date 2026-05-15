@@ -116,6 +116,11 @@ func (s *store) ListConversations(ctx context.Context, userID *int64, status str
 	if status != "" {
 		where = append(where, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, status)
+	} else {
+		// status="" means "all but soft-deleted". Otherwise archived
+		// conversations (adopt → archive) would vanish from the sidebar
+		// even though they are still browsable read-only.
+		where = append(where, "status <> 'deleted'")
 	}
 
 	whereClause := ""

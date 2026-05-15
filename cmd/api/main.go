@@ -220,7 +220,7 @@ func run() error {
 	recommendationScoreRefresher := admission.NewRecommendationScoreRefresher(recommendationScoreStore, scoreEvaluator)
 	recommendationScoreHandler := admission.NewRecommendationScoreHandler(recommendationScoreRefresher)
 
-	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, recommendationService, volunteerDraftStore)
+	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, recommendationService, volunteerDraftStore, conversationService)
 	toolExecutor.SetCardLinkWhitelist(cfg.CardLinkWhitelist)
 	agent := ai.NewAgent(llmProxy, toolExecutor)
 	aiHandler := ai.NewHandler(agent, conversationService)

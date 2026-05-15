@@ -78,7 +78,9 @@ func run() error {
 	aggregates := admission.NewAggregateStore(database.Pool())
 
 	draftStore := newMemDraftStore()
-	exec := ai.NewToolExecutor(admissionLines, aggregates, recService, draftStore)
+	// repl 跑在内存里，不接 conversations 模块；传 nil 让 toolExecutor
+	// 跳过 archived 状态校验（在 ToolExecutor 内部已经做了 nil-safe 判断）。
+	exec := ai.NewToolExecutor(admissionLines, aggregates, recService, draftStore, nil)
 	agent := ai.NewAgent(llmProxy, exec)
 
 	r := &repl{
@@ -158,7 +160,7 @@ func (r *repl) send(ctx context.Context, userMsg string) error {
 		OnToolCallStart: func(callID, toolName string) {
 			fmt.Printf("\n[tool→ %s id=%s]\n", toolName, shortID(callID))
 		},
-		OnToolCallEnd: func(callID string, ok bool, errMsg string) {
+		OnToolCallEnd: func(callID string, ok bool, errMsg string, _ string) {
 			if ok {
 				fmt.Printf("\n[tool✓ id=%s]\n", shortID(callID))
 			} else {

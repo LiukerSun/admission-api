@@ -3,11 +3,13 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
 	"admission-api/internal/admission"
+	"admission-api/internal/conversation"
 	"admission-api/internal/volunteerplan"
 )
 
@@ -41,25 +43,33 @@ type ToolExecContext struct {
 
 // ToolExecutor executes tool calls from the LLM.
 type ToolExecutor struct {
-	admissionLineStore admission.AdmissionLineStore
-	aggregateStore     admission.AggregateStore
-	recommendations    admission.RecommendationService
-	draftStore         volunteerplan.DraftStore
-	cardLinkWhitelist  []string
+	admissionLineStore  admission.AdmissionLineStore
+	aggregateStore      admission.AggregateStore
+	recommendations     admission.RecommendationService
+	draftStore          volunteerplan.DraftStore
+	conversationService conversation.Service
+	cardLinkWhitelist   []string
 }
 
 // NewToolExecutor creates a new tool executor.
+//
+// conversationService is used by generate_volunteer_plan_draft to refuse
+// writes against an archived conversation; it may be nil in
+// unit tests that do not exercise that path (the tool falls back to the
+// previous behaviour of skipping the status check when nil).
 func NewToolExecutor(
 	admissionLineStore admission.AdmissionLineStore,
 	aggregateStore admission.AggregateStore,
 	recommendations admission.RecommendationService,
 	draftStore volunteerplan.DraftStore,
+	conversationService conversation.Service,
 ) *ToolExecutor {
 	return &ToolExecutor{
-		admissionLineStore: admissionLineStore,
-		aggregateStore:     aggregateStore,
-		recommendations:    recommendations,
-		draftStore:         draftStore,
+		admissionLineStore:  admissionLineStore,
+		aggregateStore:      aggregateStore,
+		recommendations:     recommendations,
+		draftStore:          draftStore,
+		conversationService: conversationService,
 	}
 }
 
@@ -100,7 +110,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, call ToolCall, execCtx ToolE
 
 // previewItemCap 限制 dry_run 返回给模型的预览条目数量。
 // 太多会撑大 prompt context；模型只需要知道「冲/稳/保各一两条样例」即可叙述。
-const previewItemCap = 3
+const previewItemCap = 2
 
 func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, call ToolCall, execCtx ToolExecContext) (*ToolResult, error) {
 	if execCtx.UserID <= 0 || execCtx.ConversationID <= 0 {
@@ -154,6 +164,53 @@ func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, ca
 		}
 		content, _ := json.Marshal(out)
 		return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+	}
+
+	// 已归档对话拒绝落盘：用户已经采纳过这次会话产出的方案（adopt 会把
+	// conversation 翻成 archived）；继续生成新草稿会让聊天 UI 出现"已归档
+	// 状态下却又冒出新方案卡片"的撕裂态。dry_run 预览不受此约束 —— 让
+	// 模型可以在归档对话里继续做问答和预览，只是不能再写盘。
+	if e.conversationService != nil {
+		conv, err := e.conversationService.GetConversation(ctx, execCtx.ConversationID)
+		if err != nil {
+			if errors.Is(err, conversation.ErrConversationNotFound) {
+				return &ToolResult{ToolCallID: call.ID, Content: `{"status":"failed","error":"conversation not found"}`}, nil
+			}
+			return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf(`{"status":"failed","error":"load conversation failed: %v"}`, err)}, nil
+		}
+		if conv.Status != "active" {
+			return &ToolResult{ToolCallID: call.ID, Content: `{"status":"failed","error":"conversation is archived, cannot create draft"}`}, nil
+		}
+	}
+
+	// 查重：一次会话最多保留一个 ready 状态的草稿。若已经存在 ready 且未被采纳的草稿，
+	// 直接复用它的 draft_id —— 避免模型在临门一脚阶段重复触发昂贵的 Recommend 调用，
+	// 并防止前端出现多张"可保存"卡片导致用户困惑。
+	// 若存在 generating 状态的草稿（罕见：上一次落盘还在跑），返回错误信号告知模型先稍候。
+	if existing, listErr := e.draftStore.ListByConversation(ctx, execCtx.UserID, execCtx.ConversationID); listErr == nil {
+		for _, d := range existing {
+			if d == nil {
+				continue
+			}
+			switch d.Status {
+			case volunteerplan.DraftStatusGenerating:
+				payload := map[string]any{
+					"status": "generating",
+					"error":  "previous draft is still being generated; ask the user to wait a moment and retry",
+				}
+				content, _ := json.Marshal(payload)
+				return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+			case volunteerplan.DraftStatusReady:
+				out := map[string]any{
+					"draft_id": d.ID,
+					"status":   "ready",
+					"reused":   true,
+					"note":     "an existing ready draft for this conversation was reused; no new recommendation was generated",
+				}
+				content, _ := json.Marshal(out)
+				return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+			}
+		}
 	}
 
 	inputJSON, _ := json.Marshal(req)
@@ -230,6 +287,9 @@ func classifyRequestFields(req *admission.RecommendationRequest) (hard, soft, un
 	}
 	if len(req.ExcludedKeywords) > 0 {
 		hard = append(hard, "excluded_keywords")
+	}
+	if len(req.RequiredMajors) > 0 {
+		hard = append(hard, "required_majors")
 	}
 	if req.MathScore != nil {
 		hard = append(hard, "math_score")
@@ -753,7 +813,7 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "generate_volunteer_plan_draft",
-				Description: "运行志愿推荐算法，根据 dry_run 切换两种模式：\n• dry_run=true（预览模式）：跑算法但不写库，返回 rush_count / match_count / safe_count / total_count / plan_size / rank_window / preview_items。多轮对话中每收到一项新偏好就调一次，用于把当前候选规模和分布告诉用户，决定是否继续追问。每次都要传【累计的完整参数集合】，不传增量。\n• dry_run=false（落盘模式）：把推荐结果写入草稿表，返回 draft_id。一次会话只在临门一脚时调用一次——通常是 dry_run 显示候选数量已经够（total_count ≥ plan_size × 0.8 且冲/稳/保三档都非空），或用户主动要求保存方案。\n必填字段：region_code（仅 230000）、subject_category_code（physics 或 history）、total_score、provincial_rank。",
+				Description: "运行志愿推荐算法，根据 dry_run 切换两种模式：\n• dry_run=true（预览模式）：跑算法但不写库，返回 pool_size / pool_rush_count / pool_match_count / pool_safe_count / plan_size / rank_window / sample_items。多轮对话中每收到一项新偏好就调一次，用于把当前候选规模和分布告诉用户，决定是否继续追问。每次都要传【累计的完整参数集合】，不传增量。\n• dry_run=false（落盘模式）：把推荐结果写入草稿表，返回 draft_id。一次会话只在临门一脚时调用一次——当 plan_size ≤ pool_size ≤ plan_size × 1.5 且三档非空时，可以 dry_run=false 落盘；用户主动要求保存方案时也可落盘。\n必填字段：region_code（仅 230000）、subject_category_code（physics 或 history）、total_score、provincial_rank。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{
@@ -764,8 +824,9 @@ func DefaultTools() []ToolDefinition {
 						"selected_subjects":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						"total_score":              map[string]any{"type": "integer"},
 						"provincial_rank":          map[string]any{"type": "integer"},
-						"preferred_majors":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-						"excluded_majors":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"preferred_majors":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "软偏好——仅影响排序加权，候选不会被剔除。用户语气是\"喜欢/感兴趣/倾向\"时填这里"},
+						"required_majors":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬白名单——候选必须命中其中任一关键词，否则被剔除。仅当用户明确说\"我想学 X / 只想学 X / 必须是 X\"时才填；含糊时先放 preferred_majors 并追问"},
+						"excluded_majors":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬过滤——含有这些关键词的候选会被剔除。用户说\"不想学/不要 X\"时填这里"},
 						"excluded_keywords":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						"preferred_cities":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						"excluded_cities":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
@@ -773,7 +834,6 @@ func DefaultTools() []ToolDefinition {
 						"excluded_provinces":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						"priority_strategy":        map[string]any{"type": "string", "enum": []string{"auto", "school", "major"}},
 						"plan_size":                map[string]any{"type": "integer"},
-						"enable_llm_tuning":        map[string]any{"type": "boolean"},
 					},
 					Required: []string{"region_code", "subject_category_code", "total_score", "provincial_rank"},
 				},

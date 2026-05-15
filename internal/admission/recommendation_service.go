@@ -158,13 +158,89 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 		}
 	}
 
-	// 把 items 序列化进 VolunteerPlan，满足 ai/tools.go generate_volunteer_plan_draft
-	// 工具对 RecommendationResponse 的契约：草稿载体 VolunteerPlan 不能为空。
-	if planJSON, mErr := json.Marshal(map[string]any{"items": resp.Items}); mErr == nil {
+	// 把 items 折叠成前端期望的 VolunteerPlan(groups + stats) 结构再写进
+	// plan_json。前端 V2 列表/详情/导出都按 plan_json.groups 渲染，原先
+	// 直接把 RecommendationItem 列表存进去，导致采纳后导出全空——字段名
+	// 完全不匹配。这里在算法返回前做一次归一化转换；`items` 同时保留作为
+	// 调试/算法侧消费的原始数据。
+	if planJSON, mErr := json.Marshal(buildVolunteerPlanFromItems(resp.Items)); mErr == nil {
 		resp.VolunteerPlan = planJSON
 	}
 
 	return resp, nil
+}
+
+// tierToChinese 把算法用的英文档位 (rush/match/safe) 翻成给用户看的中文
+// (冲/稳/保)。落到 group.remark 后会出现在前端表格"备注"列与 Excel 导出
+// 里，必须是用户能看懂的中文；未知值原样保留以便排查异常。
+func tierToChinese(tier string) string {
+	switch tier {
+	case "rush":
+		return "冲"
+	case "match":
+		return "稳"
+	case "safe":
+		return "保"
+	default:
+		return tier
+	}
+}
+
+// buildVolunteerPlanFromItems 把推荐算法的 flat RecommendationItem 列表折叠
+// 成 VolunteerPlan 的层级结构（groups -> majors）。当前算法每个 item 是
+// (university, group, major) 三元组，每个 item 对应一个志愿"槽位"，因此
+// 一个志愿组（VolunteerPlanGroup）下默认放一个专业（VolunteerPlanMajor）。
+// 同一 (university_code, group_code) 出现多次的情况非常罕见（推荐算法做了
+// 同校多样性约束），但我们仍按 order 升序合并，避免重复创建组。
+//
+// 同时保留 items 数组在外层，方便后续做 schema 演化（前端可以慢慢迁移到
+// 直接读 items），但 V1/V2 前端目前都靠 groups + stats 渲染。
+func buildVolunteerPlanFromItems(items []RecommendationItem) map[string]any {
+	groups := make([]VolunteerPlanGroup, 0, len(items))
+	// key = university_code + "\x1F" + group_code; value = 索引
+	indexByKey := make(map[string]int, len(items))
+	uniqUniversities := make(map[string]struct{})
+
+	for _, it := range items {
+		key := it.UniversityCode + "\x1F" + it.GroupCode
+		idx, exists := indexByKey[key]
+		if !exists {
+			groups = append(groups, VolunteerPlanGroup{
+				OrderNo:          it.Order,
+				UniversityCode:   it.UniversityCode,
+				UniversityName:   it.UniversityName,
+				GroupCode:        it.GroupCode,
+				GroupName:        it.GroupCode,            // 推荐算法当前不返回 group_name，沿用 group_code 兜底
+				IsObeyAdjustment: true,                    // 默认服从调剂；用户后续可在编辑面板里改
+				Remark:           tierToChinese(it.Tier),  // 冲/稳/保 中文版，避免给用户看到 rush/match/safe
+				Majors:           []VolunteerPlanMajor{},
+			})
+			idx = len(groups) - 1
+			indexByKey[key] = idx
+		}
+		groups[idx].Majors = append(groups[idx].Majors, VolunteerPlanMajor{
+			MajorOrder: len(groups[idx].Majors) + 1,
+			MajorCode:  it.LocalMajorCode,
+			MajorName:  it.LocalMajorName,
+		})
+		uniqUniversities[it.UniversityCode] = struct{}{}
+	}
+
+	recordCount := 0
+	for _, g := range groups {
+		recordCount += len(g.Majors)
+	}
+
+	return map[string]any{
+		"groups": groups,
+		"stats": VolunteerPlanStats{
+			SchoolCount: len(uniqUniversities),
+			GroupCount:  len(groups),
+			RecordCount: recordCount,
+		},
+		// 保留原始 items 作为调试/算法侧消费的便利字段；前端可以无视。
+		"items": items,
+	}
 }
 
 // Preview 是 RecommendationService 接口里的"漏斗式探测"实现：跑硬过滤但不做
@@ -609,6 +685,13 @@ func filterByPreference(candidates []RecommendationCandidate, req *Recommendatio
 			continue
 		}
 		if hasExcludedKeyword(c, req.ExcludedKeywords) {
+			continue
+		}
+		// Hard whitelist: when the user has explicitly said "只想学 X / 必须是 X"
+		// we drop everything that doesn't hit at least one of those keywords.
+		// matchesPreferredMajors is reused — it already does substring match
+		// against the major name + discipline taxonomy + tags.
+		if len(req.RequiredMajors) > 0 && !matchesPreferredMajors(c, req.RequiredMajors) {
 			continue
 		}
 		out = append(out, *c)

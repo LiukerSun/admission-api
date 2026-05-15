@@ -29,8 +29,9 @@ type RecommendationRequest struct { //nolint:revive // Keeps Swagger and API nam
 
 	// 个人画像
 	HollandCode      string   `json:"holland_code,omitempty"`      // RIASEC，例如 "RIA"
-	PreferredMajors  []string `json:"preferred_majors,omitempty"`  // CHSI 标准专业 / 大类 / 关键词
-	ExcludedMajors   []string `json:"excluded_majors,omitempty"`   // 主观排除的专业关键词
+	PreferredMajors  []string `json:"preferred_majors,omitempty"`  // 软偏好：仅影响排序加权，候选不会被剔除（"喜欢/感兴趣"）
+	RequiredMajors   []string `json:"required_majors,omitempty"`   // 硬白名单：候选必须命中其中任一关键词，否则被剔除（"想学/只想学/必须是"）
+	ExcludedMajors   []string `json:"excluded_majors,omitempty"`   // 主观排除的专业关键词（硬过滤）
 	ExcludedKeywords []string `json:"excluded_keywords,omitempty"` // 张雪峰式避雷词
 
 	// 家庭资源
