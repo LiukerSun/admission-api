@@ -75,7 +75,7 @@ func (m *mockStore) GetPlanByID(ctx context.Context, id int64) (*Plan, error) {
 	return args.Get(0).(*Plan), args.Error(1)
 }
 
-func (m *mockStore) CreatePlan(ctx context.Context, req PlanCreateRequest) (*Plan, error) {
+func (m *mockStore) CreatePlan(ctx context.Context, req *PlanCreateRequest) (*Plan, error) {
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -83,7 +83,7 @@ func (m *mockStore) CreatePlan(ctx context.Context, req PlanCreateRequest) (*Pla
 	return args.Get(0).(*Plan), args.Error(1)
 }
 
-func (m *mockStore) UpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*Plan, error) {
+func (m *mockStore) UpdatePlan(ctx context.Context, id int64, req *PlanUpdateRequest) (*Plan, error) {
 	args := m.Called(ctx, id, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

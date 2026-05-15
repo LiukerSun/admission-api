@@ -95,7 +95,7 @@ func (h *AdminHandler) AdminCreatePlan(c *gin.Context) {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
 		return
 	}
-	plan, err := h.service.AdminCreatePlan(c.Request.Context(), req)
+	plan, err := h.service.AdminCreatePlan(c.Request.Context(), &req)
 	if err != nil {
 		if errors.Is(err, ErrPlanCodeExists) {
 			h.RespondError(c, http.StatusConflict, web.ErrCodeConflict, "plan_code already exists")
@@ -134,7 +134,7 @@ func (h *AdminHandler) AdminUpdatePlan(c *gin.Context) {
 		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, err.Error())
 		return
 	}
-	plan, err := h.service.AdminUpdatePlan(c.Request.Context(), id, req)
+	plan, err := h.service.AdminUpdatePlan(c.Request.Context(), id, &req)
 	if err != nil {
 		if errors.Is(err, ErrPlanNotFound) {
 			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "plan not found")

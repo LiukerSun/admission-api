@@ -19,8 +19,8 @@ type Service interface {
 	// Admin operations.
 	AdminListPlans(ctx context.Context) ([]PlanResponse, error)
 	AdminGetPlan(ctx context.Context, id int64) (*PlanResponse, error)
-	AdminCreatePlan(ctx context.Context, req PlanCreateRequest) (*PlanResponse, error)
-	AdminUpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*PlanResponse, error)
+	AdminCreatePlan(ctx context.Context, req *PlanCreateRequest) (*PlanResponse, error)
+	AdminUpdatePlan(ctx context.Context, id int64, req *PlanUpdateRequest) (*PlanResponse, error)
 	AdminDeletePlan(ctx context.Context, id int64) (PlanDeleteResult, error)
 }
 
@@ -118,7 +118,7 @@ func (s *service) AdminGetPlan(ctx context.Context, id int64) (*PlanResponse, er
 	return &r, nil
 }
 
-func (s *service) AdminCreatePlan(ctx context.Context, req PlanCreateRequest) (*PlanResponse, error) {
+func (s *service) AdminCreatePlan(ctx context.Context, req *PlanCreateRequest) (*PlanResponse, error) {
 	p, err := s.store.CreatePlan(ctx, req)
 	if err != nil {
 		return nil, err
@@ -127,7 +127,7 @@ func (s *service) AdminCreatePlan(ctx context.Context, req PlanCreateRequest) (*
 	return &r, nil
 }
 
-func (s *service) AdminUpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*PlanResponse, error) {
+func (s *service) AdminUpdatePlan(ctx context.Context, id int64, req *PlanUpdateRequest) (*PlanResponse, error) {
 	p, err := s.store.UpdatePlan(ctx, id, req)
 	if err != nil {
 		return nil, err

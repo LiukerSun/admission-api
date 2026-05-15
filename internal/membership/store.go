@@ -30,8 +30,8 @@ type Store interface {
 	// Admin operations — return / mutate plans regardless of status.
 	ListAllPlans(ctx context.Context) ([]*Plan, error)
 	GetPlanByID(ctx context.Context, id int64) (*Plan, error)
-	CreatePlan(ctx context.Context, req PlanCreateRequest) (*Plan, error)
-	UpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*Plan, error)
+	CreatePlan(ctx context.Context, req *PlanCreateRequest) (*Plan, error)
+	UpdatePlan(ctx context.Context, id int64, req *PlanUpdateRequest) (*Plan, error)
 	DeletePlan(ctx context.Context, id int64) (PlanDeleteResult, error)
 }
 
@@ -174,7 +174,7 @@ func (s *store) GetPlanByID(ctx context.Context, id int64) (*Plan, error) {
 	return p, nil
 }
 
-func (s *store) CreatePlan(ctx context.Context, req PlanCreateRequest) (*Plan, error) {
+func (s *store) CreatePlan(ctx context.Context, req *PlanCreateRequest) (*Plan, error) {
 	currency := req.Currency
 	if currency == "" {
 		currency = "CNY"
@@ -203,7 +203,7 @@ func (s *store) CreatePlan(ctx context.Context, req PlanCreateRequest) (*Plan, e
 	return p, nil
 }
 
-func (s *store) UpdatePlan(ctx context.Context, id int64, req PlanUpdateRequest) (*Plan, error) {
+func (s *store) UpdatePlan(ctx context.Context, id int64, req *PlanUpdateRequest) (*Plan, error) {
 	// Build a partial UPDATE — only fields the caller actually sent get touched.
 	// COALESCE-based "always update" would clobber explicit empty strings
 	// (e.g. clearing description), so we walk the request and assemble SET

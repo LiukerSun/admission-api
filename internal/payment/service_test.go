@@ -285,11 +285,11 @@ func (m *mockMembershipSvc) AdminGetPlan(ctx context.Context, id int64) (*member
 	return nil, nil
 }
 
-func (m *mockMembershipSvc) AdminCreatePlan(ctx context.Context, req membership.PlanCreateRequest) (*membership.PlanResponse, error) {
+func (m *mockMembershipSvc) AdminCreatePlan(ctx context.Context, req *membership.PlanCreateRequest) (*membership.PlanResponse, error) {
 	return nil, nil
 }
 
-func (m *mockMembershipSvc) AdminUpdatePlan(ctx context.Context, id int64, req membership.PlanUpdateRequest) (*membership.PlanResponse, error) {
+func (m *mockMembershipSvc) AdminUpdatePlan(ctx context.Context, id int64, req *membership.PlanUpdateRequest) (*membership.PlanResponse, error) {
 	return nil, nil
 }
 
