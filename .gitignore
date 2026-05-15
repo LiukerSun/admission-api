@@ -29,13 +29,6 @@ vendor/
 !.env.example
 .demo
 
-# Python venvs used by data-import scripts
-.venv*/
-
-# Python bytecode
-__pycache__/
-*.pyc
-
 # IDE directories
 .idea/
 .vscode/
@@ -70,5 +63,3 @@ docs/gaokao-import-results.md
 docs/prd-admission-database.md
 docs/tdd-results.md
 
-# Local data
-sourcedata.xlsx

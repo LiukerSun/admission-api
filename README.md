@@ -74,18 +74,17 @@ make run     # 生产模式：Docker Compose 全量构建并启动
 make down    # 停止所有容器（开发 + 生产）
 make logs    # 查看生产环境应用日志
 make build   # 构建 Docker 镜像
-make import  # 把 sourcedata.xlsx 灌入数据库（universities / admissions / 字典）
 ```
 
-### 导入源数据
+### 导入业务数据
 
-`scripts/import_source_excel.py` 解析 `sourcedata.xlsx` 的单 sheet（黑龙江版），区分四个年度的字段差异（2025=计划、2024=实际录取、2023/2022=追溯）并填充：
+`make db` 跑完 migration 后，库里只有管理员账号（`admin@admin.com` / `admin1234`）和字典/算法元数据等少量种子。院校、招生组、专业等业务数据通过管理后台上传 PostgreSQL 备份导入：
 
-- 字典表：`regions / subject_categories / subject_requirements / batches / education_levels / school_ownership_types / school_categories`
-- 院校：`universities / university_profiles / university_postgraduate_profiles`（profile_year=2025）
-- 招生录取：`admission_groups / admission_group_extensions / university_major_admissions / university_major_profiles`（admission_year ∈ {2025, 2024, 2023, 2022}）
+1. 准备一份 `pg_dump -Fc` 生成的 `.dump` 文件（custom 格式）。
+2. 用管理员账号登录后调用 `POST /api/v1/admin/db/restore`，以 `multipart/form-data` 形式上传 `backup` 字段。
+3. 服务端会通过容器内 `pg_restore --clean --if-exists` 还原整库。
 
-中间通过 docker cp + `\copy` 进 PostgreSQL 临时表，再 UPSERT 到正式表。脚本和 SQL 都是幂等的，重跑会更新已存在的行。
+对应的 `GET /api/v1/admin/db/backup` 可随时下载当前库的 `pg_dump -Fc` 快照用于备份。
 
 ---
 
