@@ -1098,6 +1098,113 @@ definitions:
       message_id:
         type: integer
     type: object
+  membership.PlanCreateRequest:
+    properties:
+      currency:
+        example: CNY
+        type: string
+      description:
+        example: 覆盖整个学期，含全部 AI 工具
+        type: string
+      duration_days:
+        example: 180
+        type: integer
+      plan_code:
+        example: semester
+        maxLength: 32
+        type: string
+      plan_name:
+        example: 学期会员
+        maxLength: 100
+        type: string
+      price_amount:
+        example: 4990
+        minimum: 0
+        type: integer
+      sort_order:
+        example: 15
+        type: integer
+      status:
+        enum:
+        - active
+        - inactive
+        example: active
+        type: string
+    required:
+    - duration_days
+    - plan_code
+    - plan_name
+    type: object
+  membership.PlanDeleteResult:
+    properties:
+      deleted:
+        example: true
+        type: boolean
+      reference_rows:
+        example: 0
+        type: integer
+      soft_deleted:
+        description: |-
+          SoftDeleted is true when the plan was retained but status forced to
+          'inactive' because of existing payment_orders references.
+        example: false
+        type: boolean
+    type: object
+  membership.PlanResponse:
+    properties:
+      currency:
+        example: CNY
+        type: string
+      description:
+        example: 解锁全部志愿推荐与 AI 对话
+        type: string
+      duration_days:
+        example: 30
+        type: integer
+      id:
+        example: 1
+        type: integer
+      membership_level:
+        example: premium
+        type: string
+      plan_code:
+        example: monthly
+        type: string
+      plan_name:
+        example: 月度会员
+        type: string
+      price_amount:
+        example: 990
+        type: integer
+      sort_order:
+        example: 10
+        type: integer
+      status:
+        example: active
+        type: string
+    type: object
+  membership.PlanUpdateRequest:
+    properties:
+      currency:
+        type: string
+      description:
+        type: string
+      duration_days:
+        type: integer
+      plan_name:
+        maxLength: 100
+        type: string
+      price_amount:
+        minimum: 0
+        type: integer
+      sort_order:
+        type: integer
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+    type: object
   payment.AlipayPayResponse:
     properties:
       expires_at:
@@ -1357,6 +1464,231 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员从备份恢复数据库
+      tags:
+      - admin
+  /api/v1/admin/membership/plans:
+    get:
+      description: 返回全部 membership 套餐（含 inactive 与已禁用），按 sort_order 升序、duration_days
+        升序排序。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/membership.PlanResponse'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员列出所有套餐
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: plan_code 是稳定业务键，创建后无法修改；建议使用如 monthly/quarterly/yearly/lifetime
+        这类语义化字符串。
+      parameters:
+      - description: 套餐
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/membership.PlanCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/membership.PlanResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "409":
+          description: plan_code 已存在
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员创建套餐
+      tags:
+      - admin
+  /api/v1/admin/membership/plans/{id}:
+    delete:
+      description: |-
+        如果有 payment_orders 引用此套餐，则不会物理删除，而是把 status 置为 inactive
+        并在响应里返回 soft_deleted=true、reference_rows=被引用次数。
+      parameters:
+      - description: Plan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/membership.PlanDeleteResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员删除套餐
+      tags:
+      - admin
+    get:
+      parameters:
+      - description: Plan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/membership.PlanResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员获取套餐详情
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: 仅传入需要修改的字段（partial update）。plan_code 不可改。
+      parameters:
+      - description: Plan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 套餐字段，可部分提交
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/membership.PlanUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/membership.PlanResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 管理员更新套餐
       tags:
       - admin
   /api/v1/admin/recommendation/scores/refresh:

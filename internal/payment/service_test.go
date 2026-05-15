@@ -275,6 +275,28 @@ func (m *mockMembershipSvc) RevokeFromOrder(ctx context.Context, req membership.
 	return args.Get(0).(*membership.UserMembership), args.Get(1).(*membership.Grant), args.Error(2)
 }
 
+// Admin methods on the membership.Service interface — payment tests don't
+// exercise them, so they're stubbed out to satisfy the interface only.
+func (m *mockMembershipSvc) AdminListPlans(ctx context.Context) ([]membership.PlanResponse, error) {
+	return nil, nil
+}
+
+func (m *mockMembershipSvc) AdminGetPlan(ctx context.Context, id int64) (*membership.PlanResponse, error) {
+	return nil, nil
+}
+
+func (m *mockMembershipSvc) AdminCreatePlan(ctx context.Context, req *membership.PlanCreateRequest) (*membership.PlanResponse, error) {
+	return nil, nil
+}
+
+func (m *mockMembershipSvc) AdminUpdatePlan(ctx context.Context, id int64, req *membership.PlanUpdateRequest) (*membership.PlanResponse, error) {
+	return nil, nil
+}
+
+func (m *mockMembershipSvc) AdminDeletePlan(ctx context.Context, id int64) (membership.PlanDeleteResult, error) {
+	return membership.PlanDeleteResult{}, nil
+}
+
 func TestCreateOrderUsesPlanSnapshot(t *testing.T) {
 	store := new(mockPaymentStore)
 	member := new(mockMembershipSvc)

@@ -39,12 +39,16 @@ CREATE TABLE membership_plans (
     currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
     status VARCHAR(20) NOT NULL DEFAULT 'active'
         CHECK (status IN ('active', 'inactive')),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_membership_plans_status
     ON membership_plans(status);
+CREATE INDEX idx_membership_plans_sort
+    ON membership_plans(sort_order, duration_days);
 
 CREATE TABLE payment_orders (
     id BIGSERIAL PRIMARY KEY,
@@ -573,6 +577,10 @@ CREATE TABLE user_volunteer_plans (
     title VARCHAR(255) NOT NULL DEFAULT '',
     source_draft_id BIGINT REFERENCES conversation_plan_drafts(id) ON DELETE SET NULL,
     plan_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- 008 schema fields used by internal/admission/volunteer_plan_*.go's
+    -- "志愿方案导出" feature, separate from the JSONB form above.
+    name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (user_id, source_draft_id)
@@ -580,6 +588,40 @@ CREATE TABLE user_volunteer_plans (
 
 CREATE INDEX idx_user_volunteer_plans_user_created
     ON user_volunteer_plans(user_id, created_at DESC);
+
+CREATE TABLE user_volunteer_groups (
+    id BIGSERIAL PRIMARY KEY,
+    plan_id BIGINT NOT NULL REFERENCES user_volunteer_plans(id) ON DELETE CASCADE,
+    order_no INTEGER NOT NULL,
+    university_id BIGINT REFERENCES universities(id) ON DELETE SET NULL,
+    university_code TEXT NOT NULL,
+    university_name TEXT NOT NULL,
+    group_id BIGINT REFERENCES admission_groups(id) ON DELETE SET NULL,
+    group_code TEXT NOT NULL,
+    group_name TEXT NOT NULL DEFAULT '',
+    is_obey_adjustment BOOLEAN DEFAULT TRUE,
+    remark TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_user_volunteer_groups_plan_id
+    ON user_volunteer_groups(plan_id);
+
+CREATE TABLE user_volunteer_majors (
+    id BIGSERIAL PRIMARY KEY,
+    group_id BIGINT NOT NULL REFERENCES user_volunteer_groups(id) ON DELETE CASCADE,
+    major_admission_id BIGINT REFERENCES university_major_admissions(id) ON DELETE SET NULL,
+    major_order INTEGER NOT NULL,
+    major_code TEXT NOT NULL DEFAULT '',
+    major_name TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (group_id, major_order)
+);
+
+CREATE INDEX idx_user_volunteer_majors_group_id
+    ON user_volunteer_majors(group_id);
 
 -- 7. Recommendation algorithm metadata
 

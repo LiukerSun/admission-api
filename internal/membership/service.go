@@ -15,6 +15,13 @@ type Service interface {
 	HasActiveMembership(ctx context.Context, userID int64) (bool, error)
 	GrantFromPaidOrder(ctx context.Context, req GrantRequest) (*UserMembership, *Grant, bool, error)
 	RevokeFromOrder(ctx context.Context, req RevokeRequest) (*UserMembership, *Grant, error)
+
+	// Admin operations.
+	AdminListPlans(ctx context.Context) ([]PlanResponse, error)
+	AdminGetPlan(ctx context.Context, id int64) (*PlanResponse, error)
+	AdminCreatePlan(ctx context.Context, req *PlanCreateRequest) (*PlanResponse, error)
+	AdminUpdatePlan(ctx context.Context, id int64, req *PlanUpdateRequest) (*PlanResponse, error)
+	AdminDeletePlan(ctx context.Context, id int64) (PlanDeleteResult, error)
 }
 
 type service struct {
@@ -88,4 +95,47 @@ func (s *service) RevokeFromOrder(ctx context.Context, req RevokeRequest) (*User
 		req.Now = time.Now()
 	}
 	return s.store.RevokeMembershipForOrder(ctx, req)
+}
+
+func (s *service) AdminListPlans(ctx context.Context) ([]PlanResponse, error) {
+	plans, err := s.store.ListAllPlans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resp := make([]PlanResponse, 0, len(plans))
+	for _, p := range plans {
+		resp = append(resp, ToPlanResponse(p))
+	}
+	return resp, nil
+}
+
+func (s *service) AdminGetPlan(ctx context.Context, id int64) (*PlanResponse, error) {
+	p, err := s.store.GetPlanByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	r := ToPlanResponse(p)
+	return &r, nil
+}
+
+func (s *service) AdminCreatePlan(ctx context.Context, req *PlanCreateRequest) (*PlanResponse, error) {
+	p, err := s.store.CreatePlan(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	r := ToPlanResponse(p)
+	return &r, nil
+}
+
+func (s *service) AdminUpdatePlan(ctx context.Context, id int64, req *PlanUpdateRequest) (*PlanResponse, error) {
+	p, err := s.store.UpdatePlan(ctx, id, req)
+	if err != nil {
+		return nil, err
+	}
+	r := ToPlanResponse(p)
+	return &r, nil
+}
+
+func (s *service) AdminDeletePlan(ctx context.Context, id int64) (PlanDeleteResult, error) {
+	return s.store.DeletePlan(ctx, id)
 }

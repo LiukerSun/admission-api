@@ -30,6 +30,8 @@ type Plan struct {
 	PriceAmount     int       `json:"price_amount"`
 	Currency        string    `json:"currency"`
 	Status          string    `json:"status"`
+	SortOrder       int       `json:"sort_order"`
+	Description     string    `json:"description"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -87,6 +89,8 @@ type PlanResponse struct {
 	PriceAmount     int    `json:"price_amount" example:"990"`
 	Currency        string `json:"currency" example:"CNY"`
 	Status          string `json:"status" example:"active"`
+	SortOrder       int    `json:"sort_order" example:"10"`
+	Description     string `json:"description" example:"解锁全部志愿推荐与 AI 对话"`
 }
 
 type CurrentMembershipResponse struct {
@@ -107,5 +111,47 @@ func ToPlanResponse(p *Plan) PlanResponse {
 		PriceAmount:     p.PriceAmount,
 		Currency:        p.Currency,
 		Status:          p.Status,
+		SortOrder:       p.SortOrder,
+		Description:     p.Description,
 	}
+}
+
+// PlanCreateRequest is the admin-side payload for creating a new plan.
+//
+// plan_code is the stable business key (e.g. "monthly", "lifetime") — it can
+// never be changed once created because payment_orders.product_ref_id links to
+// this plan's id, but plan_code is what humans use to query historic orders.
+type PlanCreateRequest struct {
+	PlanCode     string `json:"plan_code" binding:"required,max=32" example:"semester"`
+	PlanName     string `json:"plan_name" binding:"required,max=100" example:"学期会员"`
+	DurationDays int    `json:"duration_days" binding:"required,gt=0" example:"180"`
+	PriceAmount  int    `json:"price_amount" binding:"min=0" example:"4990"`
+	Currency     string `json:"currency" binding:"omitempty,len=3" example:"CNY"`
+	Status       string `json:"status" binding:"omitempty,oneof=active inactive" example:"active"`
+	SortOrder    int    `json:"sort_order" example:"15"`
+	Description  string `json:"description" example:"覆盖整个学期，含全部 AI 工具"`
+}
+
+// PlanUpdateRequest is the admin-side payload for editing an existing plan.
+//
+// plan_code intentionally absent — see PlanCreateRequest. Everything else is
+// nullable so partial updates work.
+type PlanUpdateRequest struct {
+	PlanName     *string `json:"plan_name" binding:"omitempty,max=100"`
+	DurationDays *int    `json:"duration_days" binding:"omitempty,gt=0"`
+	PriceAmount  *int    `json:"price_amount" binding:"omitempty,min=0"`
+	Currency     *string `json:"currency" binding:"omitempty,len=3"`
+	Status       *string `json:"status" binding:"omitempty,oneof=active inactive"`
+	SortOrder    *int    `json:"sort_order"`
+	Description  *string `json:"description"`
+}
+
+// PlanDeleteResult reports whether the plan was physically removed or only
+// flipped to inactive (because payment_orders still reference it).
+type PlanDeleteResult struct {
+	Deleted bool `json:"deleted" example:"true"`
+	// SoftDeleted is true when the plan was retained but status forced to
+	// 'inactive' because of existing payment_orders references.
+	SoftDeleted   bool  `json:"soft_deleted" example:"false"`
+	ReferenceRows int64 `json:"reference_rows" example:"0"`
 }
