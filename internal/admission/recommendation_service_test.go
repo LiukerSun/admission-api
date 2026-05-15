@@ -560,7 +560,7 @@ func TestRecommendKeepsSafeBucketWhenCandidatesExceedLimit(t *testing.T) {
 			LocalMajorCode:             fmt.Sprintf("M%05d", i),
 			LocalMajorName:             "占位",
 			MinRank:                    intPtr(1 + i),
-			AdmittedCount:                  intPtr(10),
+			AdmittedCount:              intPtr(10),
 		})
 	}
 	for i := 0; i < 100; i++ {
@@ -572,7 +572,7 @@ func TestRecommendKeepsSafeBucketWhenCandidatesExceedLimit(t *testing.T) {
 			LocalMajorCode:             fmt.Sprintf("MM%05d", i),
 			LocalMajorName:             "match-占位",
 			MinRank:                    intPtr(9000 + i*10),
-			AdmittedCount:                  intPtr(10),
+			AdmittedCount:              intPtr(10),
 		})
 	}
 	for i := 0; i < 100; i++ {
@@ -584,7 +584,7 @@ func TestRecommendKeepsSafeBucketWhenCandidatesExceedLimit(t *testing.T) {
 			LocalMajorCode:             fmt.Sprintf("SS%05d", i),
 			LocalMajorName:             "safe-占位",
 			MinRank:                    intPtr(13000 + i*100),
-			AdmittedCount:                  intPtr(10),
+			AdmittedCount:              intPtr(10),
 		})
 	}
 	stub := &stubRecommendationStore{year: 2024, candidates: cands}
