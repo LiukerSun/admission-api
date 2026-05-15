@@ -116,7 +116,7 @@ type RecommendationItem struct {
 	HistoricalMinScore *int `json:"historical_min_score,omitempty"`
 	HistoricalMinRank  *int `json:"historical_min_rank,omitempty"`
 	EquivalentMinScore *int `json:"equivalent_min_score,omitempty"`
-	PlanCount          *int `json:"plan_count,omitempty"`
+	AdmittedCount          *int `json:"admitted_count,omitempty"`
 	Tuition            *int `json:"tuition,omitempty"`
 
 	Warnings []string `json:"warnings,omitempty"`

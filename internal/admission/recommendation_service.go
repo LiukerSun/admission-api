@@ -464,11 +464,11 @@ func (s *recommendationService) resolveAdmissionYear(ctx context.Context, req *R
 	return year, nil
 }
 
-// fallbackStemKeywords / fallbackHumanitiesKeywords mirror the seeds in
-// migration 010. They kick in when recommendation_strategy_keywords is empty
-// (migration not yet run, or DB seed wiped), so decideStrategy doesn't silently
-// degrade to "always 默认 major" — which would lose the humanities → school
-// branch entirely.
+// fallbackStemKeywords / fallbackHumanitiesKeywords mirror the seeds in the
+// baseline migration. They kick in when recommendation_strategy_keywords is
+// empty (baseline not yet run, or DB seed wiped), so decideStrategy doesn't
+// silently degrade to "always 默认 major" — which would lose the humanities →
+// school branch entirely.
 var (
 	fallbackStemKeywords       = []string{"计算机", "电子", "电气", "自动化", "机械", "通信", "软件", "人工智能", "数学", "物理", "土木", "航空", "材料"}
 	fallbackHumanitiesKeywords = []string{"法学", "汉语言", "新闻", "金融", "会计", "经济", "管理", "外语", "教育", "心理"}
@@ -476,7 +476,7 @@ var (
 )
 
 // decideStrategy implements 逻辑二: STEM intent → major-first, humanities → school-first.
-// 关键字优先来自 recommendation_strategy_keywords 表（migration 010），便于业务运营调整无需发版。
+// 关键字优先来自 recommendation_strategy_keywords 表（baseline 中已 seed），便于业务运营调整无需发版。
 // 表为空时回退到 fallbackStemKeywords / fallbackHumanitiesKeywords 并打一次 warn 日志。
 // 用户显式指定 PriorityStrategy 时直接采用。
 func decideStrategy(req *RecommendationRequest, md *RecommendationMetadata) (strategy, reason string) {
@@ -505,7 +505,7 @@ func strategyKeywords(md *RecommendationMetadata) (stem, humanities []string) {
 	}
 	if len(stem) == 0 && len(humanities) == 0 {
 		strategyFallbackWarnOnce.Do(func() {
-			slog.Warn("recommendation_strategy_keywords is empty; using hardcoded fallback. Run migration 010 to populate.")
+			slog.Warn("recommendation_strategy_keywords is empty; using hardcoded fallback. Run the baseline migration to populate.")
 		})
 		return fallbackStemKeywords, fallbackHumanitiesKeywords
 	}
@@ -674,7 +674,7 @@ func scoreCandidates(candidates []RecommendationCandidate, req *RecommendationRe
 			HistoricalMinScore: c.MinScore,
 			HistoricalMinRank:  c.MinRank,
 			EquivalentMinScore: c.EquivalentMinScore,
-			PlanCount:          c.PlanCount,
+			AdmittedCount:          c.AdmittedCount,
 			Tuition:            c.Tuition,
 			Warnings:           buildWarnings(c, req, md),
 		}
@@ -957,7 +957,7 @@ func buildWarnings(c *RecommendationCandidate, req *RecommendationRequest, md *R
 	if isBioChemEnvMat(c) {
 		w = append(w, "生化环材类，本科直接就业难，需做好读研准备")
 	}
-	if c.PlanCount != nil && *c.PlanCount <= 2 {
+	if c.AdmittedCount != nil && *c.AdmittedCount <= 2 {
 		w = append(w, "本省招生计划很少，录取分数波动大")
 	}
 	return w
@@ -967,7 +967,7 @@ func ensureSafeQuality(items []RecommendationItem, _ *RecommendationRequest) []R
 	out := make([]RecommendationItem, 0, len(items))
 	for i := range items {
 		// 保底要求招生计划 ≥ 5（"招生人数多"），缺数据则放过
-		if items[i].PlanCount != nil && *items[i].PlanCount > 0 && *items[i].PlanCount < 5 {
+		if items[i].AdmittedCount != nil && *items[i].AdmittedCount > 0 && *items[i].AdmittedCount < 5 {
 			continue
 		}
 		out = append(out, items[i])

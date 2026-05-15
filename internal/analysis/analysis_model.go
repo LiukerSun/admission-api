@@ -21,7 +21,6 @@ type TrendResponse struct {
 // TrendYear holds admission metrics for a single year.
 type TrendYear struct {
 	Year             int               `json:"year"`
-	PlanCount        *int              `json:"plan_count,omitempty"`
 	AdmittedCount    *int              `json:"admitted_count,omitempty"`
 	MinScore         *int              `json:"min_score,omitempty"`
 	MinRank          *int              `json:"min_rank,omitempty"`
@@ -58,8 +57,7 @@ type GroupComparisonItem struct {
 	GroupMajorNames        string `json:"group_major_names,omitempty"`
 	SubjectRequirementName string `json:"subject_requirement_name,omitempty"`
 	BatchName              string `json:"batch_name,omitempty"`
-	PlanCount              int    `json:"plan_count"`
-	AdmittedCount          *int   `json:"admitted_count,omitempty"`
+	AdmittedCount          int    `json:"admitted_count"`
 	GroupMinScore          *int   `json:"group_min_score,omitempty"`
 	GroupMinRank           *int   `json:"group_min_rank,omitempty"`
 	MajorCount             int    `json:"major_count"`
@@ -86,7 +84,6 @@ type MajorDistributionResponse struct {
 type MajorDistributionItem struct {
 	LocalMajorCode string `json:"local_major_code"`
 	LocalMajorName string `json:"local_major_name"`
-	PlanCount      *int   `json:"plan_count,omitempty"`
 	AdmittedCount  *int   `json:"admitted_count,omitempty"`
 	MinScore       *int   `json:"min_score,omitempty"`
 	MinRank        *int   `json:"min_rank,omitempty"`
@@ -115,7 +112,6 @@ type MajorComparisonItem struct {
 	UniversityName     string `json:"university_name"`
 	GroupCode          string `json:"group_code"`
 	LocalMajorCode     string `json:"local_major_code"`
-	PlanCount          *int   `json:"plan_count,omitempty"`
 	AdmittedCount      *int   `json:"admitted_count,omitempty"`
 	MinScore           *int   `json:"min_score,omitempty"`
 	MinRank            *int   `json:"min_rank,omitempty"`

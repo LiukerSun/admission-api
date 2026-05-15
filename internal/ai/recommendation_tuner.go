@@ -81,7 +81,7 @@ func buildTunerUserMessage(req *admission.RecommendationRequest, resp *admission
 			"major":       it.LocalMajorName,
 			"discipline":  it.DisciplineCategory,
 			"min_rank":    it.HistoricalMinRank,
-			"plan_count":  it.PlanCount,
+			"admitted_count":  it.AdmittedCount,
 			"reason":      it.Reason,
 		})
 	}

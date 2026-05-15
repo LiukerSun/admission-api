@@ -33,7 +33,7 @@ type RecommendationCandidate struct {
 
 	LocalMajorCode     string
 	LocalMajorName     string
-	PlanCount          *int
+	AdmittedCount          *int
 	MinScore           *int
 	MinRank            *int
 	MaxScore           *int
@@ -214,7 +214,7 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 			up.soft_rank, up.postgraduate_recommendation_rate,
 			ag.batch_code, ag.group_code, COALESCE(ag.subject_requirement_code, ''),
 			uma.local_major_code, uma.local_major_name,
-			uma.plan_count, uma.min_score, uma.min_rank, uma.max_score, uma.max_rank,
+			uma.admitted_count, uma.min_score, uma.min_rank, uma.max_score, uma.max_rank,
 			uma.equivalent_min_score, uma.tuition, COALESCE(uma.duration, ''),
 			COALESCE(uma.major_intro, ''), COALESCE(uma.employment_direction, ''),
 			COALESCE(uma.postgraduate_direction, ''),
@@ -278,7 +278,7 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 			&c.SoftRank, &c.PostgraduateRecommendationRate,
 			&c.BatchCode, &c.GroupCode, &c.SubjectRequirementCode,
 			&c.LocalMajorCode, &c.LocalMajorName,
-			&c.PlanCount, &c.MinScore, &c.MinRank, &c.MaxScore, &c.MaxRank,
+			&c.AdmittedCount, &c.MinScore, &c.MinRank, &c.MaxScore, &c.MaxRank,
 			&c.EquivalentMinScore, &c.Tuition, &c.Duration,
 			&c.MajorIntro, &c.EmploymentDirection, &c.PostgraduateDirection,
 			&c.DisciplineCategory, &c.FirstLevelDiscipline,

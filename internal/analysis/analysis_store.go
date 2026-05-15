@@ -60,7 +60,6 @@ func (s *analysisStore) GetTrend(ctx context.Context, filter *TrendFilter) (*Tre
 		query = fmt.Sprintf(`
 			SELECT
 				ag.admission_year,
-				uma.plan_count,
 				uma.admitted_count,
 				uma.min_score,
 				uma.min_rank,
@@ -81,7 +80,6 @@ func (s *analysisStore) GetTrend(ctx context.Context, filter *TrendFilter) (*Tre
 		query = fmt.Sprintf(`
 			SELECT
 				ag.admission_year,
-				COALESCE(SUM(uma.plan_count), 0)::int,
 				SUM(uma.admitted_count),
 				AVG(uma.min_score)::int,
 				MIN(uma.min_rank)
@@ -109,16 +107,15 @@ func (s *analysisStore) GetTrend(ctx context.Context, filter *TrendFilter) (*Tre
 		var ty TrendYear
 
 		if filter.LocalMajorCode != "" {
-			var planCount, admittedCount, minScore, minRank, equivalentMinScore pgtype.Int4
+			var admittedCount, minScore, minRank, equivalentMinScore pgtype.Int4
 			var localMajorName string
 			if err := rows.Scan(
-				&year, &planCount, &admittedCount, &minScore, &minRank,
+				&year, &admittedCount, &minScore, &minRank,
 				&equivalentMinScore, &localMajorName,
 			); err != nil {
 				return nil, fmt.Errorf("scan trend row: %w", err)
 			}
 			ty.Year = year
-			ty.PlanCount = int4Ptr(planCount)
 			ty.AdmittedCount = int4Ptr(admittedCount)
 			ty.MinScore = int4Ptr(minScore)
 			ty.MinRank = int4Ptr(minRank)
@@ -130,14 +127,13 @@ func (s *analysisStore) GetTrend(ctx context.Context, filter *TrendFilter) (*Tre
 				})
 			}
 		} else {
-			var planCount, admittedCount, minScore, minRank pgtype.Int4
+			var admittedCount, minScore, minRank pgtype.Int4
 			if err := rows.Scan(
-				&year, &planCount, &admittedCount, &minScore, &minRank,
+				&year, &admittedCount, &minScore, &minRank,
 			); err != nil {
 				return nil, fmt.Errorf("scan trend row: %w", err)
 			}
 			ty.Year = year
-			ty.PlanCount = int4Ptr(planCount)
 			ty.AdmittedCount = int4Ptr(admittedCount)
 			ty.MinScore = int4Ptr(minScore)
 			ty.MinRank = int4Ptr(minRank)
@@ -199,8 +195,7 @@ func (s *analysisStore) GetGroupComparison(ctx context.Context, filter *GroupCom
 			COALESCE(ag.group_major_names, ''),
 			COALESCE(sr.name, ''),
 			COALESCE(b.name, ''),
-			COALESCE(SUM(uma.plan_count), 0)::int,
-			SUM(uma.admitted_count),
+			COALESCE(SUM(uma.admitted_count), 0)::int,
 			age.group_min_score,
 			age.group_min_rank,
 			COUNT(uma.id)::int
@@ -223,21 +218,18 @@ func (s *analysisStore) GetGroupComparison(ctx context.Context, filter *GroupCom
 
 	for rows.Next() {
 		var item GroupComparisonItem
-		var admittedCount pgtype.Int4
 		if err := rows.Scan(
 			&item.GroupCode,
 			&item.GroupMajorNames,
 			&item.SubjectRequirementName,
 			&item.BatchName,
-			&item.PlanCount,
-			&admittedCount,
+			&item.AdmittedCount,
 			&item.GroupMinScore,
 			&item.GroupMinRank,
 			&item.MajorCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan group comparison row: %w", err)
 		}
-		item.AdmittedCount = int4Ptr(admittedCount)
 		resp.Groups = append(resp.Groups, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -294,7 +286,6 @@ func (s *analysisStore) GetMajorDistribution(ctx context.Context, filter *MajorD
 		SELECT
 			uma.local_major_code,
 			uma.local_major_name,
-			uma.plan_count,
 			uma.admitted_count,
 			uma.min_score,
 			uma.min_rank,
@@ -313,11 +304,10 @@ func (s *analysisStore) GetMajorDistribution(ctx context.Context, filter *MajorD
 
 	for rows.Next() {
 		var item MajorDistributionItem
-		var planCount, admittedCount, minScore, minRank, tuition pgtype.Int4
+		var admittedCount, minScore, minRank, tuition pgtype.Int4
 		if err := rows.Scan(
 			&item.LocalMajorCode,
 			&item.LocalMajorName,
-			&planCount,
 			&admittedCount,
 			&minScore,
 			&minRank,
@@ -325,7 +315,6 @@ func (s *analysisStore) GetMajorDistribution(ctx context.Context, filter *MajorD
 		); err != nil {
 			return nil, fmt.Errorf("scan major distribution row: %w", err)
 		}
-		item.PlanCount = int4Ptr(planCount)
 		item.AdmittedCount = int4Ptr(admittedCount)
 		item.MinScore = int4Ptr(minScore)
 		item.MinRank = int4Ptr(minRank)
@@ -383,7 +372,6 @@ func (s *analysisStore) GetMajorComparison(ctx context.Context, filter *MajorCom
 			u.name,
 			ag.group_code,
 			uma.local_major_code,
-			uma.plan_count,
 			uma.admitted_count,
 			uma.min_score,
 			uma.min_rank,
@@ -404,13 +392,12 @@ func (s *analysisStore) GetMajorComparison(ctx context.Context, filter *MajorCom
 
 	for rows.Next() {
 		var item MajorComparisonItem
-		var planCount, admittedCount, minScore, minRank, equivalentMinScore pgtype.Int4
+		var admittedCount, minScore, minRank, equivalentMinScore pgtype.Int4
 		if err := rows.Scan(
 			&item.UniversityID,
 			&item.UniversityName,
 			&item.GroupCode,
 			&item.LocalMajorCode,
-			&planCount,
 			&admittedCount,
 			&minScore,
 			&minRank,
@@ -418,7 +405,6 @@ func (s *analysisStore) GetMajorComparison(ctx context.Context, filter *MajorCom
 		); err != nil {
 			return nil, fmt.Errorf("scan major comparison row: %w", err)
 		}
-		item.PlanCount = int4Ptr(planCount)
 		item.AdmittedCount = int4Ptr(admittedCount)
 		item.MinScore = int4Ptr(minScore)
 		item.MinRank = int4Ptr(minRank)

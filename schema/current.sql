@@ -1,5 +1,8 @@
--- Current application schema after removing the gaokao domain.
+-- Current application schema after consolidating all migrations into the
+-- single baseline (migration/001_init_schema.up.sql).
 -- This file is a readable snapshot, not a golang-migrate migration.
+
+-- 1. Accounts / membership / payments / refunds
 
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
@@ -53,11 +56,11 @@ CREATE TABLE payment_orders (
     amount INTEGER NOT NULL CHECK (amount >= 0),
     currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
     order_status VARCHAR(32) NOT NULL DEFAULT 'awaiting_payment'
-        CHECK (order_status IN ('created', 'awaiting_payment', 'paid', 'fulfilled', 'closed', 'failed')),
+        CHECK (order_status IN ('created', 'awaiting_payment', 'paid', 'fulfilled', 'closed', 'failed', 'refunded')),
     payment_status VARCHAR(32) NOT NULL DEFAULT 'unpaid'
         CHECK (payment_status IN ('unpaid', 'paying', 'paid', 'failed')),
     entitlement_status VARCHAR(32) NOT NULL DEFAULT 'pending'
-        CHECK (entitlement_status IN ('pending', 'granted', 'failed')),
+        CHECK (entitlement_status IN ('pending', 'granted', 'failed', 'revoked')),
     payment_channel VARCHAR(32) NOT NULL DEFAULT 'mock',
     idempotency_key VARCHAR(128),
     expires_at TIMESTAMPTZ NOT NULL,
@@ -127,7 +130,7 @@ CREATE TABLE user_memberships (
     membership_level VARCHAR(20) NOT NULL DEFAULT 'premium'
         CHECK (membership_level IN ('premium')),
     status VARCHAR(20) NOT NULL DEFAULT 'inactive'
-        CHECK (status IN ('inactive', 'active', 'expired')),
+        CHECK (status IN ('inactive', 'active', 'expired', 'refunded')),
     started_at TIMESTAMPTZ,
     ends_at TIMESTAMPTZ,
     last_order_id BIGINT REFERENCES payment_orders(id) ON DELETE SET NULL,
@@ -146,7 +149,7 @@ CREATE TABLE membership_grants (
     source_type VARCHAR(32) NOT NULL DEFAULT 'payment'
         CHECK (source_type IN ('payment')),
     action VARCHAR(32) NOT NULL
-        CHECK (action IN ('activate', 'renew', 'extend', 'restore')),
+        CHECK (action IN ('activate', 'renew', 'extend', 'restore', 'revoke')),
     duration_days INTEGER NOT NULL CHECK (duration_days > 0),
     starts_at TIMESTAMPTZ NOT NULL,
     ends_at TIMESTAMPTZ NOT NULL,
@@ -156,6 +159,37 @@ CREATE TABLE membership_grants (
 
 CREATE INDEX idx_membership_grants_user_created
     ON membership_grants(user_id, created_at DESC);
+
+CREATE TABLE payment_refunds (
+    id BIGSERIAL PRIMARY KEY,
+    payment_order_id BIGINT NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
+    refund_no VARCHAR(64) NOT NULL UNIQUE,
+    out_request_no VARCHAR(64) NOT NULL UNIQUE,
+    channel VARCHAR(32) NOT NULL DEFAULT 'alipay',
+    channel_refund_no VARCHAR(128),
+    refund_amount INTEGER NOT NULL CHECK (refund_amount > 0),
+    total_order_amount INTEGER NOT NULL,
+    refund_reason VARCHAR(256),
+    status VARCHAR(32) NOT NULL DEFAULT 'pending_review'
+        CHECK (status IN ('pending_review', 'rejected', 'approved', 'processing', 'success', 'failed')),
+    review_note VARCHAR(512),
+    reviewed_by BIGINT REFERENCES users(id),
+    reviewed_at TIMESTAMPTZ,
+    initiated_by BIGINT REFERENCES users(id),
+    refunded_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_payment_refunds_order
+    ON payment_refunds(payment_order_id, created_at DESC);
+CREATE INDEX idx_payment_refunds_status_created
+    ON payment_refunds(status, created_at DESC);
+CREATE UNIQUE INDEX uq_payment_refunds_pending_per_order
+    ON payment_refunds(payment_order_id)
+    WHERE status = 'pending_review';
+
+-- 2. Dictionaries
 
 CREATE TABLE regions (
     code VARCHAR(20) PRIMARY KEY,
@@ -207,6 +241,8 @@ CREATE TABLE school_categories (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 3. National major catalog
+
 CREATE TABLE major_categories (
     id BIGSERIAL PRIMARY KEY,
     catalog_year INTEGER NOT NULL,
@@ -255,6 +291,8 @@ CREATE INDEX idx_standard_majors_catalog_name
 CREATE INDEX idx_standard_majors_catalog_class
     ON standard_majors(catalog_year, class_code);
 
+-- 4. Universities + profiles
+
 CREATE TABLE universities (
     id BIGSERIAL PRIMARY KEY,
     university_code VARCHAR(50) NOT NULL,
@@ -293,6 +331,7 @@ CREATE TABLE university_profiles (
     affiliation VARCHAR(200),
     school_level_tags TEXT,
     excellence_tags TEXT,
+    university_tier VARCHAR(32),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (university_id, profile_year)
@@ -300,6 +339,11 @@ CREATE TABLE university_profiles (
 
 CREATE INDEX idx_university_profiles_year
     ON university_profiles(university_id, profile_year DESC);
+
+CREATE INDEX idx_university_profiles_tier
+    ON university_profiles(university_tier);
+
+-- 5. Admission groups and major-level admission rows
 
 CREATE TABLE admission_groups (
     id BIGSERIAL PRIMARY KEY,
@@ -354,7 +398,6 @@ CREATE TABLE university_major_admissions (
     admission_group_id BIGINT NOT NULL REFERENCES admission_groups(id) ON DELETE CASCADE,
     local_major_code VARCHAR(50) NOT NULL,
     local_major_name TEXT NOT NULL,
-    plan_count INTEGER,
     admitted_count INTEGER,
     min_score INTEGER,
     min_rank INTEGER,
@@ -463,6 +506,8 @@ CREATE INDEX idx_admission_major_tags_standard_major
     ON admission_major_tags(standard_major_id)
     WHERE standard_major_id IS NOT NULL;
 
+-- 6. Conversations, plan drafts, saved volunteer plans
+
 CREATE TABLE conversations (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT,
@@ -535,3 +580,97 @@ CREATE TABLE user_volunteer_plans (
 
 CREATE INDEX idx_user_volunteer_plans_user_created
     ON user_volunteer_plans(user_id, created_at DESC);
+
+-- 7. Recommendation algorithm metadata
+
+CREATE TABLE city_groups (
+    code VARCHAR(32) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE city_group_members (
+    id BIGSERIAL PRIMARY KEY,
+    city_group_code VARCHAR(32) NOT NULL REFERENCES city_groups(code) ON DELETE CASCADE,
+    city VARCHAR(100) NOT NULL,
+    UNIQUE (city_group_code, city)
+);
+
+CREATE INDEX idx_city_group_members_city
+    ON city_group_members(city);
+
+CREATE TABLE recommendation_family_resource_keywords (
+    id BIGSERIAL PRIMARY KEY,
+    resource_code VARCHAR(50) NOT NULL,
+    keyword VARCHAR(100) NOT NULL,
+    weight NUMERIC(4,2) NOT NULL DEFAULT 1.00,
+    UNIQUE (resource_code, keyword)
+);
+
+CREATE INDEX idx_family_resource_keywords_resource
+    ON recommendation_family_resource_keywords(resource_code);
+
+CREATE TABLE recommendation_holland_keywords (
+    id BIGSERIAL PRIMARY KEY,
+    riasec_code CHAR(1) NOT NULL,
+    keyword VARCHAR(100) NOT NULL,
+    weight NUMERIC(4,2) NOT NULL DEFAULT 1.00,
+    UNIQUE (riasec_code, keyword)
+);
+
+CREATE INDEX idx_holland_keywords_code
+    ON recommendation_holland_keywords(riasec_code);
+
+CREATE TABLE recommendation_major_ability_rules (
+    id BIGSERIAL PRIMARY KEY,
+    chsi_category_code VARCHAR(10) NOT NULL,
+    subject VARCHAR(20) NOT NULL,
+    exclude_below_score INTEGER NOT NULL,
+    warn_below_score INTEGER NOT NULL,
+    note VARCHAR(255),
+    UNIQUE (chsi_category_code, subject)
+);
+
+CREATE INDEX idx_major_ability_rules_category
+    ON recommendation_major_ability_rules(chsi_category_code);
+
+CREATE TABLE recommendation_precomputed_scores (
+    id BIGSERIAL PRIMARY KEY,
+    university_id    BIGINT       NOT NULL REFERENCES universities(id) ON DELETE CASCADE,
+    local_major_code VARCHAR(50)  NOT NULL,
+    city_score                   NUMERIC(5,3) NOT NULL DEFAULT 1.000,
+    school_score                 NUMERIC(5,3) NOT NULL DEFAULT 1.000,
+    major_score                  NUMERIC(5,3) NOT NULL DEFAULT 1.000,
+    ability_improvement_score    NUMERIC(5,3) NOT NULL DEFAULT 1.000,
+    future_competitiveness_score NUMERIC(5,3) NOT NULL DEFAULT 1.000,
+    city_reason                   TEXT NOT NULL DEFAULT '',
+    school_reason                 TEXT NOT NULL DEFAULT '',
+    major_reason                  TEXT NOT NULL DEFAULT '',
+    ability_improvement_reason    TEXT NOT NULL DEFAULT '',
+    future_competitiveness_reason TEXT NOT NULL DEFAULT '',
+    evaluated_by    VARCHAR(32)  NOT NULL DEFAULT 'algorithm',
+    evaluator_model VARCHAR(120),
+    evaluated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (university_id, local_major_code)
+);
+
+CREATE INDEX idx_recommendation_precomputed_scores_lookup
+    ON recommendation_precomputed_scores(university_id, local_major_code);
+
+CREATE INDEX idx_recommendation_precomputed_scores_evaluated_at
+    ON recommendation_precomputed_scores(evaluated_at);
+
+CREATE INDEX idx_recommendation_precomputed_scores_evaluated_by
+    ON recommendation_precomputed_scores(evaluated_by);
+
+CREATE TABLE recommendation_strategy_keywords (
+    id BIGSERIAL PRIMARY KEY,
+    intent_code VARCHAR(32) NOT NULL,
+    keyword     VARCHAR(100) NOT NULL,
+    UNIQUE (intent_code, keyword)
+);
+
+CREATE INDEX idx_strategy_keywords_intent
+    ON recommendation_strategy_keywords(intent_code);
