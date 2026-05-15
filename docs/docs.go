@@ -16,6 +16,128 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/admin/db/backup": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "通过 docker exec 调用容器内的 pg_dump（custom 压缩格式 -Fc），\n把整个数据库的 schema + data 流式返回。文件名形如\nadmission-YYYYMMDD-HHMMSS.dump。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员导出数据库备份",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/db/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "接收 multipart/form-data 的 backup 字段（pg_dump custom 格式 .dump\n文件），通过 docker exec 流式喂给容器内的 pg_restore --clean\n--if-exists。恢复完成后返回 stderr 摘要供操作员核对。\n\n注意：恢复会先 DROP 现有对象再写入。建议在窗口期执行。",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员从备份恢复数据库",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "pg_dump custom-format .dump 文件",
+                        "name": "backup",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admin.BackupRestoreResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/recommendation/scores/refresh": {
             "post": {
                 "security": [
@@ -3067,6 +3189,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "admin.BackupRestoreResult": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "stderr_tail": {
+                    "type": "string"
+                }
+            }
+        },
         "admin.ResetPasswordRequest": {
             "type": "object",
             "required": [
@@ -3383,9 +3519,6 @@ const docTemplate = `{
                 "min_score": {
                     "type": "integer"
                 },
-                "plan_count": {
-                    "type": "integer"
-                },
                 "postgraduate_direction": {
                     "type": "string"
                 },
@@ -3658,6 +3791,9 @@ const docTemplate = `{
                 "admission_group_id": {
                     "type": "integer"
                 },
+                "admitted_count": {
+                    "type": "integer"
+                },
                 "batch_code": {
                     "type": "string"
                 },
@@ -3708,9 +3844,6 @@ const docTemplate = `{
                 },
                 "order": {
                     "description": "在志愿表里的顺序（1 起，跨冲/稳/保连续编号）",
-                    "type": "integer"
-                },
-                "plan_count": {
                     "type": "integer"
                 },
                 "probability": {
@@ -4490,9 +4623,6 @@ const docTemplate = `{
                 "major_count": {
                     "type": "integer"
                 },
-                "plan_count": {
-                    "type": "integer"
-                },
                 "subject_requirement_name": {
                     "type": "string"
                 }
@@ -4539,9 +4669,6 @@ const docTemplate = `{
                 "min_score": {
                     "type": "integer"
                 },
-                "plan_count": {
-                    "type": "integer"
-                },
                 "university_id": {
                     "type": "integer"
                 },
@@ -4583,9 +4710,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "min_score": {
-                    "type": "integer"
-                },
-                "plan_count": {
                     "type": "integer"
                 },
                 "tuition": {
@@ -4661,9 +4785,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "min_score": {
-                    "type": "integer"
-                },
-                "plan_count": {
                     "type": "integer"
                 },
                 "year": {
