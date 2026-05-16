@@ -23,7 +23,10 @@ RUN swag init -g cmd/api/main.go
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o api ./cmd/api
 
 # Runtime stage
-FROM alpine:latest
+# Use postgres:15-alpine so pg_dump / pg_restore are bundled at exactly the
+# same major version as the admission-db container — the /admin/db/backup
+# and /admin/db/restore endpoints shell out to those binaries.
+FROM postgres:15-alpine
 
 WORKDIR /app
 

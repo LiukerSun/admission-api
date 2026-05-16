@@ -6,7 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"admission-api/internal/platform/web"
@@ -16,18 +19,17 @@ import (
 
 // BackupHandler exposes PostgreSQL backup / restore operations to administrators.
 //
-// Both endpoints shell out to the postgres client tools (pg_dump / pg_restore)
-// inside the admission-db container via `docker exec`. This keeps the host
-// machine free of postgresql-client and works for any user who can already run
-// the dev compose stack. Production deployments that move the API into a
-// container should either install postgresql-client in the API image and call
-// the binaries directly, or mount the host's docker socket.
+// Both endpoints invoke pg_dump / pg_restore directly inside the API container,
+// connecting to the database over the compose network. The runtime image must
+// therefore bundle the postgres client tools (see Dockerfile).
 type BackupHandler struct {
 	web.BaseHandler
 
-	containerName string
-	pgUser        string
-	pgDatabase    string
+	pgHost     string
+	pgPort     string
+	pgUser     string
+	pgPassword string
+	pgDatabase string
 
 	// maxRestoreUploadBytes guards against operators uploading multi-GB files
 	// by accident. PostgreSQL custom-format dumps compress aggressively, so
@@ -35,23 +37,45 @@ type BackupHandler struct {
 	maxRestoreUploadBytes int64
 }
 
-// NewBackupHandler creates a backup handler bound to the given Postgres
-// container / role / database. For the dev compose stack these come from
-// docker-compose.yml: container_name=admission-db, user/db=app/admission.
-func NewBackupHandler(containerName, pgUser, pgDatabase string) *BackupHandler {
-	return &BackupHandler{
-		containerName:         containerName,
-		pgUser:                pgUser,
-		pgDatabase:            pgDatabase,
-		maxRestoreUploadBytes: 1 << 30, // 1 GiB
+// NewBackupHandler parses a postgres DSN (the same one the API uses to connect)
+// and returns a handler that will shell out to pg_dump / pg_restore against it.
+func NewBackupHandler(databaseURL string) (*BackupHandler, error) {
+	u, err := url.Parse(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse database url: %w", err)
 	}
+	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+		return nil, fmt.Errorf("database url must use postgres scheme, got %q", u.Scheme)
+	}
+	password, _ := u.User.Password()
+	port := u.Port()
+	if port == "" {
+		port = "5432"
+	}
+	database := strings.TrimPrefix(u.Path, "/")
+	if database == "" {
+		return nil, fmt.Errorf("database url missing database name")
+	}
+	return &BackupHandler{
+		pgHost:                u.Hostname(),
+		pgPort:                port,
+		pgUser:                u.User.Username(),
+		pgPassword:            password,
+		pgDatabase:            database,
+		maxRestoreUploadBytes: 1 << 30, // 1 GiB
+	}, nil
+}
+
+// pgEnv returns the process environment augmented with PGPASSWORD so the
+// pg_* clients can authenticate without prompting.
+func (h *BackupHandler) pgEnv() []string {
+	return append(os.Environ(), "PGPASSWORD="+h.pgPassword)
 }
 
 // Export godoc
 // @Summary      管理员导出数据库备份
-// @Description  通过 docker exec 调用容器内的 pg_dump（custom 压缩格式 -Fc），
-// @Description  把整个数据库的 schema + data 流式返回。文件名形如
-// @Description  admission-YYYYMMDD-HHMMSS.dump。
+// @Description  调用 pg_dump（custom 压缩格式 -Fc），把整个数据库的 schema + data
+// @Description  流式返回。文件名形如 admission-YYYYMMDD-HHMMSS.dump。
 // @Tags         admin
 // @Produce      application/octet-stream
 // @Security     BearerAuth
@@ -64,10 +88,11 @@ func (h *BackupHandler) Export(c *gin.Context) {
 	filename := fmt.Sprintf("admission-%s.dump", time.Now().Format("20060102-150405"))
 
 	cmd := exec.CommandContext(c.Request.Context(),
-		"docker", "exec", "-i", h.containerName,
 		"pg_dump", "-Fc", "--no-owner", "--no-privileges",
+		"-h", h.pgHost, "-p", h.pgPort,
 		"-U", h.pgUser, "-d", h.pgDatabase,
 	)
+	cmd.Env = h.pgEnv()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -113,8 +138,8 @@ func (h *BackupHandler) Export(c *gin.Context) {
 // Restore godoc
 // @Summary      管理员从备份恢复数据库
 // @Description  接收 multipart/form-data 的 backup 字段（pg_dump custom 格式 .dump
-// @Description  文件），通过 docker exec 流式喂给容器内的 pg_restore --clean
-// @Description  --if-exists。恢复完成后返回 stderr 摘要供操作员核对。
+// @Description  文件），流式喂给 pg_restore --clean --if-exists。恢复完成后
+// @Description  返回 stderr 摘要供操作员核对。
 // @Description
 // @Description  注意：恢复会先 DROP 现有对象再写入。建议在窗口期执行。
 // @Tags         admin
@@ -156,10 +181,11 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx,
-		"docker", "exec", "-i", h.containerName,
 		"pg_restore", "--clean", "--if-exists", "--no-owner", "--no-privileges",
+		"-h", h.pgHost, "-p", h.pgPort,
 		"-U", h.pgUser, "-d", h.pgDatabase,
 	)
+	cmd.Env = h.pgEnv()
 	cmd.Stdin = src
 
 	stderrPipe, _ := cmd.StderrPipe()

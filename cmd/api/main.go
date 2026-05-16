@@ -231,10 +231,13 @@ func run() error {
 	adminStore := admin.NewStore(database.Pool())
 	adminService := admin.NewService(adminStore, userStore, tokenManager, redisClient)
 	adminHandler := admin.NewHandler(adminService)
-	// adminBackupHandler shells out to pg_dump / pg_restore inside the
-	// admission-db container. Container name / role / database mirror
-	// docker-compose.yml; they don't change between environments today.
-	adminBackupHandler := admin.NewBackupHandler("admission-db", "app", "admission")
+	// adminBackupHandler shells out to pg_dump / pg_restore against the
+	// same DSN the application uses. The runtime image must bundle the
+	// postgres client tools (see Dockerfile).
+	adminBackupHandler, err := admin.NewBackupHandler(cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("failed to init backup handler: %w", err)
+	}
 
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
