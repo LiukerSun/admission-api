@@ -23,10 +23,13 @@ RUN swag init -g cmd/api/main.go
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o api ./cmd/api
 
 # Runtime stage
-# Use postgres:15-alpine so pg_dump / pg_restore are bundled at exactly the
-# same major version as the admission-db container — the /admin/db/backup
-# and /admin/db/restore endpoints shell out to those binaries.
-FROM postgres:15-alpine
+# Use postgres:18-alpine so pg_dump / pg_restore are at the newest stable
+# major. The db server stays on pg 15 — newer clients are officially
+# supported against older servers, AND pg_restore 18 can read dumps produced
+# by any pg 15..18 client (custom-format archive v1.14..v1.16). This lets
+# operators upload dumps exported from a local Mac (where libpq is often
+# the newest version brew ships) without hitting "unsupported version" errors.
+FROM postgres:18-alpine
 
 WORKDIR /app
 
