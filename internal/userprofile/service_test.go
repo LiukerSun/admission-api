@@ -187,7 +187,7 @@ func TestUpsertMyProfile_PreferenceArrayLimits(t *testing.T) {
 		{
 			"too many entries",
 			func() *Preferences {
-				return &Preferences{RequiredMajors: makeStringSlice(MaxArrayEntries + 1, "x")}
+				return &Preferences{RequiredMajors: makeStringSlice(MaxArrayEntries+1, "x")}
 			},
 		},
 		{

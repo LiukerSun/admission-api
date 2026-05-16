@@ -13,24 +13,24 @@ import (
 // into the LLM prompt context, and a runaway profile could blow past the
 // agent's iteration budget.
 const (
-	MaxArrayEntries       = 16
-	MaxArrayEntryLength   = 32
-	MaxFreeTextLength     = 500
-	MaxHollandCodeLength  = 6
-	ScoreMin              = 0
-	ScoreMax              = 750
-	SubjectScoreMax       = 150
-	RankMin               = 0
-	RankMax               = 500000
-	PlanSizeMin           = 1
-	PlanSizeMax           = 96
-	BudgetMin             = 0
-	BudgetMax             = 1000000 // 100w/yr — generous upper bound
+	MaxArrayEntries      = 16
+	MaxArrayEntryLength  = 32
+	MaxFreeTextLength    = 500
+	MaxHollandCodeLength = 6
+	ScoreMin             = 0
+	ScoreMax             = 750
+	SubjectScoreMax      = 150
+	RankMin              = 0
+	RankMax              = 500000
+	PlanSizeMin          = 1
+	PlanSizeMax          = 96
+	BudgetMin            = 0
+	BudgetMax            = 1000000 // 100w/yr — generous upper bound
 )
 
 var (
 	// region_code is a 6-digit GB/T 2260 administrative division code.
-	regionCodeRe = regexp.MustCompile(`^[0-9]{6}$`)
+	regionCodeRe = regexp.MustCompile(`^\d{6}$`)
 	// holland_code is a 1-6 char subset of RIASEC, e.g. "RIA".
 	hollandCodeRe = regexp.MustCompile(`^[RIASECriasec]{1,6}$`)
 )
