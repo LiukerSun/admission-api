@@ -502,7 +502,7 @@ definitions:
           type: string
         type: array
       excluded_majors:
-        description: 主观排除的专业关键词
+        description: 主观排除的专业关键词（硬过滤）
         items:
           type: string
         type: array
@@ -547,7 +547,7 @@ definitions:
           type: string
         type: array
       preferred_majors:
-        description: CHSI 标准专业 / 大类 / 关键词
+        description: 软偏好：仅影响排序加权，候选不会被剔除（"喜欢/感兴趣"）
         items:
           type: string
         type: array
@@ -565,6 +565,11 @@ definitions:
       region_code:
         description: 基础（必填）
         type: string
+      required_majors:
+        description: 硬白名单：候选必须命中其中任一关键词，否则被剔除（"想学/只想学/必须是"）
+        items:
+          type: string
+        type: array
       selected_subjects:
         description: 选科列表，例如 ["物理","化学","生物"]
         items:
@@ -1273,18 +1278,30 @@ definitions:
     - current_password
     - new_password
     type: object
+  user.LoginByCodeRequest:
+    properties:
+      code:
+        example: "123456"
+        type: string
+      phone:
+        example: "13800138000"
+        type: string
+    required:
+    - code
+    - phone
+    type: object
   user.LoginRequest:
     properties:
-      email:
-        example: user@example.com
-        type: string
       password:
         example: pass1234
         minLength: 8
         type: string
+      phone:
+        example: "13800138000"
+        type: string
     required:
-    - email
     - password
+    - phone
     type: object
   user.RefreshRequest:
     properties:
@@ -1296,16 +1313,27 @@ definitions:
     type: object
   user.RegisterRequest:
     properties:
-      email:
-        example: user@example.com
+      code:
+        example: "123456"
         type: string
       password:
         example: pass1234
         minLength: 8
         type: string
+      phone:
+        example: "13800138000"
+        type: string
     required:
-    - email
+    - code
     - password
+    - phone
+    type: object
+  user.RegisterResponse:
+    properties:
+      token:
+        $ref: '#/definitions/user.TokenResponse'
+      user:
+        $ref: '#/definitions/user.Response'
     type: object
   user.Response:
     properties:
@@ -1336,6 +1364,21 @@ definitions:
       username:
         example: johndoe
         type: string
+    type: object
+  user.SendAuthCodeRequest:
+    properties:
+      phone:
+        example: "13800138000"
+        type: string
+      scene:
+        enum:
+        - register
+        - login
+        example: register
+        type: string
+    required:
+    - phone
+    - scene
     type: object
   user.SendPhoneCodeRequest:
     properties:
@@ -1368,6 +1411,86 @@ definitions:
     required:
     - code
     - phone
+    type: object
+  userprofile.Preferences:
+    properties:
+      budget_tuition_max:
+        type: integer
+      career_plans:
+        type: string
+      excluded_cities:
+        items:
+          type: string
+        type: array
+      excluded_keywords:
+        items:
+          type: string
+        type: array
+      excluded_majors:
+        items:
+          type: string
+        type: array
+      excluded_provinces:
+        items:
+          type: string
+        type: array
+      family_economy:
+        type: string
+      family_resources:
+        type: string
+      holland_code:
+        type: string
+      preferred_cities:
+        items:
+          type: string
+        type: array
+      preferred_majors:
+        items:
+          type: string
+        type: array
+      preferred_provinces:
+        items:
+          type: string
+        type: array
+      required_majors:
+        items:
+          type: string
+        type: array
+    type: object
+  userprofile.UpsertRequest:
+    properties:
+      chinese_score:
+        example: 120
+        type: integer
+      english_score:
+        example: 130
+        type: integer
+      math_score:
+        example: 135
+        type: integer
+      physics_score:
+        example: 92
+        type: integer
+      plan_size:
+        example: 40
+        type: integer
+      preferences:
+        $ref: '#/definitions/userprofile.Preferences'
+      priority_strategy:
+        example: auto
+        type: string
+      provincial_rank:
+        example: 4500
+        type: integer
+      region_code:
+        example: "230000"
+        type: string
+      subject_category_code:
+        example: physics
+        type: string
+      total_score:
+        example: 620
+        type: integer
     type: object
   web.Response:
     properties:
@@ -2775,7 +2898,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 使用邮箱和密码登录，获取 Access Token 和 Refresh Token
+      description: 使用已绑定手机号和密码登录，获取 Access Token 和 Refresh Token。
       parameters:
       - description: 登录信息
         in: body
@@ -2803,7 +2926,50 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/web.Response'
-      summary: 用户登录
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 手机号 + 密码登录
+      tags:
+      - auth
+  /api/v1/auth/login/code:
+    post:
+      consumes:
+      - application/json
+      description: 使用手机号和短信验证码登录，无需密码。验证码需先通过 /auth/sms/send (scene=login) 获取。
+      parameters:
+      - description: 登录信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.LoginByCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/web.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/user.TokenResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 手机号 + 验证码登录
       tags:
       - auth
   /api/v1/auth/refresh:
@@ -2834,8 +3000,6 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/web.Response'
-      security:
-      - BearerAuth: []
       summary: 刷新 Access Token
       tags:
       - auth
@@ -2843,7 +3007,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 使用邮箱和密码注册新账户
+      description: 使用手机号 + 验证码 + 密码完成注册，成功后直接返回登录 Token。
       parameters:
       - description: 注册信息
         in: body
@@ -2861,7 +3025,7 @@ paths:
             - $ref: '#/definitions/web.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/user.Response'
+                  $ref: '#/definitions/user.RegisterResponse'
               type: object
         "400":
           description: Bad Request
@@ -2871,7 +3035,41 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/web.Response'
-      summary: 用户注册
+      summary: 手机号注册
+      tags:
+      - auth
+  /api/v1/auth/sms/send:
+    post:
+      consumes:
+      - application/json
+      description: 匿名接口，向指定手机号发送短信验证码。scene=register 时手机号必须未注册；scene=login 时手机号必须已注册。
+      parameters:
+      - description: 手机号与场景
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.SendAuthCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/web.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/web.Response'
+      summary: 发送注册/登录验证码
       tags:
       - auth
   /api/v1/conversations:
@@ -3248,7 +3446,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 当前登录用户向指定手机号发送验证码，用于绑定手机号
+      description: 当前登录用户向指定手机号发送验证码，用于绑定或更换手机号
       parameters:
       - description: 手机号
         in: body
@@ -3277,7 +3475,7 @@ paths:
             $ref: '#/definitions/web.Response'
       security:
       - BearerAuth: []
-      summary: 发送手机号验证码
+      summary: 发送手机号验证码（绑定流程）
       tags:
       - user
   /api/v1/me/phone/verify:
@@ -3313,9 +3511,68 @@ paths:
             $ref: '#/definitions/web.Response'
       security:
       - BearerAuth: []
-      summary: 校验手机号验证码
+      summary: 校验手机号验证码（绑定流程）
       tags:
       - user
+  /api/v1/me/profile:
+    get:
+      description: 返回当前用户保存的 region/subject/score/rank 等基础信息与偏好；从未填写时返回空档案 + completed=false（不会
+        404）。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 获取当前用户的志愿调查问卷档案
+      tags:
+      - user-profile
+    put:
+      consumes:
+      - application/json
+      description: PUT 语义：传入的字段会整体覆盖既有档案；未传字段视为 NULL/缺省。4 项必填齐时自动写入 completed_at。
+      parameters:
+      - description: Profile payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/userprofile.UpsertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/web.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/web.Response'
+      security:
+      - BearerAuth: []
+      summary: 创建或更新当前用户的志愿调查问卷档案
+      tags:
+      - user-profile
   /api/v1/membership:
     get:
       description: 返回当前用户的 premium 会员状态和有效期

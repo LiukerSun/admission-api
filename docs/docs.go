@@ -2212,7 +2212,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/login": {
             "post": {
-                "description": "使用邮箱和密码登录，获取 Access Token 和 Refresh Token",
+                "description": "使用已绑定手机号和密码登录，获取 Access Token 和 Refresh Token。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2222,7 +2222,7 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "用户登录",
+                "summary": "手机号 + 密码登录",
                 "parameters": [
                     {
                         "description": "登录信息",
@@ -2264,17 +2264,82 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/login/code": {
+            "post": {
+                "description": "使用手机号和短信验证码登录，无需密码。验证码需先通过 /auth/sms/send (scene=login) 获取。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "手机号 + 验证码登录",
+                "parameters": [
+                    {
+                        "description": "登录信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/user.LoginByCodeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/web.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/user.TokenResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
                     }
                 }
             }
         },
         "/api/v1/auth/refresh": {
             "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "用 Refresh Token 换取新的双 Token",
                 "consumes": [
                     "application/json"
@@ -2327,7 +2392,7 @@ const docTemplate = `{
         },
         "/api/v1/auth/register": {
             "post": {
-                "description": "使用邮箱和密码注册新账户",
+                "description": "使用手机号 + 验证码 + 密码完成注册，成功后直接返回登录 Token。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2337,7 +2402,7 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "用户注册",
+                "summary": "手机号注册",
                 "parameters": [
                     {
                         "description": "注册信息",
@@ -2361,7 +2426,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/user.Response"
+                                            "$ref": "#/definitions/user.RegisterResponse"
                                         }
                                     }
                                 }
@@ -2370,6 +2435,58 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/sms/send": {
+            "post": {
+                "description": "匿名接口，向指定手机号发送短信验证码。scene=register 时手机号必须未注册；scene=login 时手机号必须已注册。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "发送注册/登录验证码",
+                "parameters": [
+                    {
+                        "description": "手机号与场景",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/user.SendAuthCodeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
@@ -2951,7 +3068,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前登录用户向指定手机号发送验证码，用于绑定手机号",
+                "description": "当前登录用户向指定手机号发送验证码，用于绑定或更换手机号",
                 "consumes": [
                     "application/json"
                 ],
@@ -2961,7 +3078,7 @@ const docTemplate = `{
                 "tags": [
                     "user"
                 ],
-                "summary": "发送手机号验证码",
+                "summary": "发送手机号验证码（绑定流程）",
                 "parameters": [
                     {
                         "description": "手机号",
@@ -3018,7 +3135,7 @@ const docTemplate = `{
                 "tags": [
                     "user"
                 ],
-                "summary": "校验手机号验证码",
+                "summary": "校验手机号验证码（绑定流程）",
                 "parameters": [
                     {
                         "description": "手机号与验证码",
@@ -3051,6 +3168,98 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/me/profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前用户保存的 region/subject/score/rank 等基础信息与偏好；从未填写时返回空档案 + completed=false（不会 404）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user-profile"
+                ],
+                "summary": "获取当前用户的志愿调查问卷档案",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "PUT 语义：传入的字段会整体覆盖既有档案；未传字段视为 NULL/缺省。4 项必填齐时自动写入 completed_at。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user-profile"
+                ],
+                "summary": "创建或更新当前用户的志愿调查问卷档案",
+                "parameters": [
+                    {
+                        "description": "Profile payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/userprofile.UpsertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/web.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/web.Response"
                         }
@@ -4300,7 +4509,7 @@ const docTemplate = `{
                     }
                 },
                 "excluded_majors": {
-                    "description": "主观排除的专业关键词",
+                    "description": "主观排除的专业关键词（硬过滤）",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4360,7 +4569,7 @@ const docTemplate = `{
                     }
                 },
                 "preferred_majors": {
-                    "description": "CHSI 标准专业 / 大类 / 关键词",
+                    "description": "软偏好：仅影响排序加权，候选不会被剔除（\"喜欢/感兴趣\"）",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4384,6 +4593,13 @@ const docTemplate = `{
                 "region_code": {
                     "description": "基础（必填）",
                     "type": "string"
+                },
+                "required_majors": {
+                    "description": "硬白名单：候选必须命中其中任一关键词，否则被剔除（\"想学/只想学/必须是\"）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "selected_subjects": {
                     "description": "选科列表，例如 [\"物理\",\"化学\",\"生物\"]",
@@ -5425,21 +5641,38 @@ const docTemplate = `{
                 }
             }
         },
+        "user.LoginByCodeRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "phone"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "123456"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "13800138000"
+                }
+            }
+        },
         "user.LoginRequest": {
             "type": "object",
             "required": [
-                "email",
-                "password"
+                "password",
+                "phone"
             ],
             "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
                 "password": {
                     "type": "string",
                     "minLength": 8,
                     "example": "pass1234"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "13800138000"
                 }
             }
         },
@@ -5458,18 +5691,34 @@ const docTemplate = `{
         "user.RegisterRequest": {
             "type": "object",
             "required": [
-                "email",
-                "password"
+                "code",
+                "password",
+                "phone"
             ],
             "properties": {
-                "email": {
+                "code": {
                     "type": "string",
-                    "example": "user@example.com"
+                    "example": "123456"
                 },
                 "password": {
                     "type": "string",
                     "minLength": 8,
                     "example": "pass1234"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "13800138000"
+                }
+            }
+        },
+        "user.RegisterResponse": {
+            "type": "object",
+            "properties": {
+                "token": {
+                    "$ref": "#/definitions/user.TokenResponse"
+                },
+                "user": {
+                    "$ref": "#/definitions/user.Response"
                 }
             }
         },
@@ -5511,6 +5760,27 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "example": "johndoe"
+                }
+            }
+        },
+        "user.SendAuthCodeRequest": {
+            "type": "object",
+            "required": [
+                "phone",
+                "scene"
+            ],
+            "properties": {
+                "phone": {
+                    "type": "string",
+                    "example": "13800138000"
+                },
+                "scene": {
+                    "type": "string",
+                    "enum": [
+                        "register",
+                        "login"
+                    ],
+                    "example": "register"
                 }
             }
         },
@@ -5557,6 +5827,122 @@ const docTemplate = `{
                 "phone": {
                     "type": "string",
                     "example": "13800138000"
+                }
+            }
+        },
+        "userprofile.Preferences": {
+            "type": "object",
+            "properties": {
+                "budget_tuition_max": {
+                    "type": "integer"
+                },
+                "career_plans": {
+                    "type": "string"
+                },
+                "excluded_cities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded_keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded_majors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded_provinces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "family_economy": {
+                    "type": "string"
+                },
+                "family_resources": {
+                    "type": "string"
+                },
+                "holland_code": {
+                    "type": "string"
+                },
+                "preferred_cities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_majors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_provinces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "required_majors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "userprofile.UpsertRequest": {
+            "type": "object",
+            "properties": {
+                "chinese_score": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "english_score": {
+                    "type": "integer",
+                    "example": 130
+                },
+                "math_score": {
+                    "type": "integer",
+                    "example": 135
+                },
+                "physics_score": {
+                    "type": "integer",
+                    "example": 92
+                },
+                "plan_size": {
+                    "type": "integer",
+                    "example": 40
+                },
+                "preferences": {
+                    "$ref": "#/definitions/userprofile.Preferences"
+                },
+                "priority_strategy": {
+                    "type": "string",
+                    "example": "auto"
+                },
+                "provincial_rank": {
+                    "type": "integer",
+                    "example": 4500
+                },
+                "region_code": {
+                    "type": "string",
+                    "example": "230000"
+                },
+                "subject_category_code": {
+                    "type": "string",
+                    "example": "physics"
+                },
+                "total_score": {
+                    "type": "integer",
+                    "example": 620
                 }
             }
         },
