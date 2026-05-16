@@ -78,7 +78,7 @@ make build   # 构建 Docker 镜像
 
 ### 导入业务数据
 
-`make db` 跑完 migration 后，库里只有管理员账号（`admin@admin.com` / `admin1234`）和字典/算法元数据等少量种子。院校、招生组、专业等业务数据通过管理后台上传 PostgreSQL 备份导入：
+`make db` 跑完 migration 后，库里只有管理员账号（手机号 `13888888888` / 密码 `admin1234`）和字典/算法元数据等少量种子。院校、招生组、专业等业务数据通过管理后台上传 PostgreSQL 备份导入：
 
 1. 准备一份 `pg_dump -Fc` 生成的 `.dump` 文件（custom 格式）。
 2. 用管理员账号登录后调用 `POST /api/v1/admin/db/restore`，以 `multipart/form-data` 形式上传 `backup` 字段。
