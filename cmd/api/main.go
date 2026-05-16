@@ -44,6 +44,7 @@ import (
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
 	"admission-api/internal/user"
+	"admission-api/internal/userprofile"
 	"admission-api/internal/volunteerplan"
 )
 
@@ -113,6 +114,10 @@ func run() error {
 	})
 	userService := user.NewAuthService(userStore, phoneService, tokenManager, jwtConfig)
 	userHandler := user.NewHandler(userService, phoneService, jwtConfig)
+
+	userProfileStore := userprofile.NewStore(database.Pool())
+	userProfileService := userprofile.NewService(userProfileStore)
+	userProfileHandler := userprofile.NewHandler(userProfileService)
 
 	membershipStore := membership.NewStore(database.Pool())
 	membershipService := membership.NewService(membershipStore)
@@ -287,6 +292,8 @@ func run() error {
 		authorized.PUT("/me/password", userHandler.ChangePassword)
 		authorized.POST("/me/phone/send-code", userHandler.SendPhoneVerificationCode)
 		authorized.POST("/me/phone/verify", userHandler.VerifyPhone)
+		authorized.GET("/me/profile", userProfileHandler.GetMe)
+		authorized.PUT("/me/profile", userProfileHandler.UpsertMe)
 		authorized.GET("/membership/plans", membershipHandler.ListPlans)
 		authorized.GET("/membership", membershipHandler.GetCurrent)
 		authorized.POST("/conversations", conversationHandler.CreateConversation)
