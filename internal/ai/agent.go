@@ -165,7 +165,7 @@ func (cb AgentCallbacks) toolCallStart(id, name string) {
 	}
 }
 
-func (cb AgentCallbacks) toolCallEnd(id string, success bool, errMsg string, resultContent string) {
+func (cb AgentCallbacks) toolCallEnd(id string, success bool, errMsg, resultContent string) {
 	if cb.OnToolCallEnd != nil {
 		cb.OnToolCallEnd(id, success, errMsg, resultContent)
 	}

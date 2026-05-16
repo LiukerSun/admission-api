@@ -197,11 +197,12 @@ func tierToChinese(tier string) string {
 // 直接读 items），但 V1/V2 前端目前都靠 groups + stats 渲染。
 func buildVolunteerPlanFromItems(items []RecommendationItem) map[string]any {
 	groups := make([]VolunteerPlanGroup, 0, len(items))
-	// key = university_code + "\x1F" + group_code; value = 索引
+	// indexByKey maps "<university_code>\x1F<group_code>" -> slot index in groups.
 	indexByKey := make(map[string]int, len(items))
 	uniqUniversities := make(map[string]struct{})
 
-	for _, it := range items {
+	for i := range items {
+		it := &items[i]
 		key := it.UniversityCode + "\x1F" + it.GroupCode
 		idx, exists := indexByKey[key]
 		if !exists {
@@ -210,9 +211,9 @@ func buildVolunteerPlanFromItems(items []RecommendationItem) map[string]any {
 				UniversityCode:   it.UniversityCode,
 				UniversityName:   it.UniversityName,
 				GroupCode:        it.GroupCode,
-				GroupName:        it.GroupCode,            // 推荐算法当前不返回 group_name，沿用 group_code 兜底
-				IsObeyAdjustment: true,                    // 默认服从调剂；用户后续可在编辑面板里改
-				Remark:           tierToChinese(it.Tier),  // 冲/稳/保 中文版，避免给用户看到 rush/match/safe
+				GroupName:        it.GroupCode,           // 推荐算法当前不返回 group_name，沿用 group_code 兜底
+				IsObeyAdjustment: true,                   // 默认服从调剂；用户后续可在编辑面板里改
+				Remark:           tierToChinese(it.Tier), // 冲/稳/保 中文版，避免给用户看到 rush/match/safe
 				Majors:           []VolunteerPlanMajor{},
 			})
 			idx = len(groups) - 1
@@ -227,8 +228,8 @@ func buildVolunteerPlanFromItems(items []RecommendationItem) map[string]any {
 	}
 
 	recordCount := 0
-	for _, g := range groups {
-		recordCount += len(g.Majors)
+	for i := range groups {
+		recordCount += len(groups[i].Majors)
 	}
 
 	return map[string]any{
