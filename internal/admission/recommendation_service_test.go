@@ -39,7 +39,7 @@ func TestBuildVolunteerPlanFromItems(t *testing.T) {
 		},
 	}
 
-	plan := buildVolunteerPlanFromItems(items)
+	plan := buildVolunteerPlanFromItems(items, nil)
 	raw, err := json.Marshal(plan)
 	require.NoError(t, err)
 
@@ -93,11 +93,104 @@ func TestBuildVolunteerPlanFromItems(t *testing.T) {
 // 至少 groups 必须是 [] 而不是 nil，否则前端 (activePlan.plan_json?.groups ?? [])
 // 兜底虽然能 work，但 JSON 里出现 "groups": null 是个明显 schema 异常信号。
 func TestBuildVolunteerPlanFromItemsEmpty(t *testing.T) {
-	plan := buildVolunteerPlanFromItems(nil)
+	plan := buildVolunteerPlanFromItems(nil, nil)
 	raw, err := json.Marshal(plan)
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"groups":[]`)
 	require.Contains(t, string(raw), `"schoolCount":0`)
+}
+
+// TestBuildVolunteerPlanFromItemsWithExtraMajors 回归"每组只有 1 个专业" bug：
+// 真实志愿表里一个院校专业组允许填多个专业，所以 buildVolunteerPlanFromItems
+// 必须把 extraMajorsByGroup 里的同组其他 majors 合并进 group.Majors。算法选中
+// 的 major 保持首位（majorOrder=1），其余按 roster 顺序追加，组内总数封顶
+// maxMajorsPerGroup。
+func TestBuildVolunteerPlanFromItemsWithExtraMajors(t *testing.T) {
+	items := []RecommendationItem{
+		{
+			Order: 1, Tier: "rush",
+			UniversityCode: "10001", UniversityName: "北大",
+			GroupCode:      "01",
+			LocalMajorCode: "080901", LocalMajorName: "计算机科学与技术",
+		},
+	}
+	extra := map[string][]VolunteerPlanMajor{
+		// key 格式与 buildGroupMajorRoster 一致：university_code\x1Fgroup_code
+		"10001\x1F01": {
+			{MajorCode: "080901", MajorName: "计算机科学与技术"}, // 已选——应该被去重
+			{MajorCode: "080902", MajorName: "软件工程"},
+			{MajorCode: "080903", MajorName: "网络工程"},
+		},
+	}
+	plan := buildVolunteerPlanFromItems(items, extra)
+	raw, err := json.Marshal(plan)
+	require.NoError(t, err)
+
+	type majorView struct {
+		MajorOrder int    `json:"majorOrder"`
+		MajorCode  string `json:"majorCode"`
+		MajorName  string `json:"majorName"`
+	}
+	type groupView struct {
+		Majors []majorView `json:"majors"`
+	}
+	type planView struct {
+		Groups []groupView `json:"groups"`
+		Stats  struct {
+			RecordCount int `json:"recordCount"`
+		} `json:"stats"`
+	}
+	var got planView
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.Len(t, got.Groups, 1)
+	require.Len(t, got.Groups[0].Majors, 3, "已选 1 + roster 中新增 2（去重后）")
+	// 算法选中的 major 必须排首位——这是组内调剂"首选"语义的载体。
+	require.Equal(t, "080901", got.Groups[0].Majors[0].MajorCode)
+	require.Equal(t, 1, got.Groups[0].Majors[0].MajorOrder)
+	require.Equal(t, "080902", got.Groups[0].Majors[1].MajorCode)
+	require.Equal(t, 2, got.Groups[0].Majors[1].MajorOrder)
+	require.Equal(t, "080903", got.Groups[0].Majors[2].MajorCode)
+	require.Equal(t, 3, got.Groups[0].Majors[2].MajorOrder)
+	require.Equal(t, 3, got.Stats.RecordCount)
+}
+
+// TestBuildVolunteerPlanCapsMajorsPerGroup 守住"超大组"截断规则：
+// 一个 group 下哪怕 candidates 有几十个专业，最终也只能塞 maxMajorsPerGroup
+// 个 —— 真实志愿表通常只能填 6 个专业槽，再多徒增 plan_json 体积。
+func TestBuildVolunteerPlanCapsMajorsPerGroup(t *testing.T) {
+	items := []RecommendationItem{
+		{
+			Order: 1, Tier: "rush",
+			UniversityCode: "10001", UniversityName: "北大",
+			GroupCode:      "01",
+			LocalMajorCode: "00", LocalMajorName: "已选首位",
+		},
+	}
+	roster := make([]VolunteerPlanMajor, 0, 20)
+	for i := 1; i <= 20; i++ {
+		roster = append(roster, VolunteerPlanMajor{
+			MajorCode: fmt.Sprintf("M%02d", i),
+			MajorName: fmt.Sprintf("M%02d", i),
+		})
+	}
+	plan := buildVolunteerPlanFromItems(items, map[string][]VolunteerPlanMajor{
+		"10001\x1F01": roster,
+	})
+	raw, _ := json.Marshal(plan)
+
+	type planView struct {
+		Groups []struct {
+			Majors []struct {
+				MajorOrder int    `json:"majorOrder"`
+				MajorCode  string `json:"majorCode"`
+			} `json:"majors"`
+		} `json:"groups"`
+	}
+	var got planView
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.Len(t, got.Groups, 1)
+	require.Equal(t, maxMajorsPerGroup, len(got.Groups[0].Majors), "组内专业总数必须封顶 maxMajorsPerGroup")
+	require.Equal(t, "00", got.Groups[0].Majors[0].MajorCode, "已选 major 仍占首位")
 }
 
 // CHSI category codes used by tests.
@@ -427,6 +520,14 @@ func (s *stubRecommendationStore) FetchCandidates(_ context.Context, q *Candidat
 }
 func (s *stubRecommendationStore) LatestAdmissionYear(_ context.Context, _, _ string) (int, error) {
 	return s.year, nil
+}
+func (s *stubRecommendationStore) LatestPlanYear(_ context.Context, _, _ string) (int, error) {
+	// 测试场景下计划年和分数年相同，跳过 override（实际行为：service 看到
+	// planYear == algoYear 不做任何替换）。
+	return s.year, nil
+}
+func (s *stubRecommendationStore) FetchMajorNames(_ context.Context, _ int, _, _ string, _ []MajorNameKey) (map[MajorNameKey]string, error) {
+	return nil, nil
 }
 
 func TestRecommendMergesTiersIntoSingleList(t *testing.T) {

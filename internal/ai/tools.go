@@ -247,10 +247,14 @@ func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, ca
 		}
 	}
 
-	// 查重：一次会话最多保留一个 ready 状态的草稿。若已经存在 ready 且未被采纳的草稿，
-	// 直接复用它的 draft_id —— 避免模型在临门一脚阶段重复触发昂贵的 Recommend 调用，
-	// 并防止前端出现多张"可保存"卡片导致用户困惑。
-	// 若存在 generating 状态的草稿（罕见：上一次落盘还在跑），返回错误信号告知模型先稍候。
+	// 序列化当前 req，下面要么作为 input_json 落盘，要么用于和旧 draft 做漂移比较。
+	inputJSON, _ := json.Marshal(req)
+
+	// 查重：一次会话理论上只保留一个 ready 草稿。规则分两种：
+	//   - 旧 ready 草稿的 input 与当前 req 一致：复用 draft_id，避免重复跑昂贵算法。
+	//   - input 已漂移（用户在生成后又改了偏好）：把旧 ready 标记 superseded，
+	//     继续往下走 Create+Recommend+MarkReady 新建路径，让 draft 反映最新偏好。
+	// 若存在 generating 状态的草稿（罕见：上一次落盘还在跑），告诉模型先稍候。
 	if existing, listErr := e.draftStore.ListByConversation(ctx, execCtx.UserID, execCtx.ConversationID); listErr == nil {
 		for _, d := range existing {
 			if d == nil {
@@ -265,19 +269,27 @@ func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, ca
 				content, _ := json.Marshal(payload)
 				return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
 			case volunteerplan.DraftStatusReady:
-				out := map[string]any{
-					"draft_id": d.ID,
-					"status":   "ready",
-					"reused":   true,
-					"note":     "an existing ready draft for this conversation was reused; no new recommendation was generated",
+				if sameRecommendationInput(d.InputJSON, inputJSON) {
+					out := map[string]any{
+						"draft_id":     d.ID,
+						"status":       "ready",
+						"reused":       true,
+						"reused_stale": false,
+						"note":         "an existing ready draft with identical preferences was reused; no new recommendation was generated",
+					}
+					content, _ := json.Marshal(out)
+					return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
 				}
-				content, _ := json.Marshal(out)
-				return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+				// 输入已漂移：作废旧草稿，继续往下生成新的。
+				// 作废失败不阻塞——最坏情况：旧 ready 仍在表里，但本轮新草稿会
+				// 在 created_at DESC 排序中排在更前面，后续 reuse 仍命中新的。
+				_ = e.draftStore.MarkSuperseded(ctx, execCtx.UserID, d.ID, "preferences changed in conversation; superseded by newer draft")
 			}
+			// 只考察最近一条草稿（ListByConversation 按 created_at DESC 排序），
+			// 不再继续往下看更旧的 failed/superseded/adopted 草稿。
+			break
 		}
 	}
-
-	inputJSON, _ := json.Marshal(req)
 	draftID, err := e.draftStore.Create(ctx, execCtx.UserID, execCtx.ConversationID, inputJSON, "recommendations_v2")
 	if err != nil {
 		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf(`{"status":"failed","error":"create draft failed: %v"}`, err)}, nil
@@ -304,13 +316,15 @@ func (e *ToolExecutor) executeGenerateVolunteerPlanDraft(ctx context.Context, ca
 	}
 
 	out := map[string]any{
-		"draft_id":    draftID,
-		"status":      "ready",
-		"strategy":    resp.Strategy,
-		"rush_count":  resp.RushCount,
-		"match_count": resp.MatchCount,
-		"safe_count":  resp.SafeCount,
-		"rank_window": resp.RankWindow,
+		"draft_id":     draftID,
+		"status":       "ready",
+		"reused":       false,
+		"reused_stale": false,
+		"strategy":     resp.Strategy,
+		"rush_count":   resp.RushCount,
+		"match_count":  resp.MatchCount,
+		"safe_count":   resp.SafeCount,
+		"rank_window":  resp.RankWindow,
 	}
 	content, _ := json.Marshal(out)
 	return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
@@ -403,6 +417,37 @@ func classifyRequestFields(req *admission.RecommendationRequest) (hard, soft, un
 		unused = append(unused, "health")
 	}
 	return hard, soft, unused
+}
+
+// sameRecommendationInput 判断旧 draft.input_json 是否与本次 req 序列化后语义一致。
+// 旧 input_json 经过 Postgres JSONB 往返后 key 顺序可能变；当前 req 经 omitempty
+// 也只输出非零字段。两边都 unmarshal 回 RecommendationRequest 再重新 marshal，
+// 保证字段顺序由 struct 定义统一，最后做 byte 比较——这样既忽略 JSONB 重排，
+// 又能捕捉到值/切片成员的真实变化。
+//
+// 切片字段顺序敏感（["a","b"] != ["b","a"]）是有意为之：LLM 调用时
+// 通常按累计参数原样传，顺序变化属于罕见 false positive；即使触发
+// 也只是多跑一次算法新建草稿，不影响正确性。
+func sameRecommendationInput(oldInput, newInput []byte) bool {
+	if len(oldInput) == 0 || len(newInput) == 0 {
+		return false
+	}
+	var a, b admission.RecommendationRequest
+	if err := json.Unmarshal(oldInput, &a); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(newInput, &b); err != nil {
+		return false
+	}
+	aBytes, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	bBytes, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+	return string(aBytes) == string(bBytes)
 }
 
 // trimPreviewItems 把推荐结果按三档各取若干条返回给模型，仅保留最少必要字段，
@@ -991,7 +1036,7 @@ func DefaultTools() []ToolDefinition {
 				Parameters  ToolParameter `json:"parameters"`
 			}{
 				Name:        "generate_volunteer_plan_draft",
-				Description: "运行志愿推荐算法，根据 dry_run 切换两种模式：\n• dry_run=true（预览模式）：跑算法但不写库，返回 pool_size / pool_rush_count / pool_match_count / pool_safe_count / plan_size / rank_window / sample_items。多轮对话中每收到一项新偏好就调一次，用于把当前候选规模和分布告诉用户，决定是否继续追问。每次都要传【累计的完整参数集合】，不传增量。\n• dry_run=false（落盘模式）：把推荐结果写入草稿表，返回 draft_id。一次会话只在临门一脚时调用一次——当 plan_size ≤ pool_size ≤ plan_size × 1.5 且三档非空时，可以 dry_run=false 落盘；用户主动要求保存方案时也可落盘。\n必填字段：region_code（仅 230000）、subject_category_code（physics 或 history）、total_score、provincial_rank。",
+				Description: "运行志愿推荐算法，根据 dry_run 切换两种模式：\n• dry_run=true（预览模式）：跑算法但不写库，返回 pool_size / pool_rush_count / pool_match_count / pool_safe_count / plan_size / rank_window / sample_items。多轮对话中每收到一项新偏好就调一次，用于把当前候选规模和分布告诉用户，决定是否继续追问。每次都要传【累计的完整参数集合】，不传增量。\n• dry_run=false（落盘模式）：把推荐结果写入草稿表，返回 draft_id。一次会话只在临门一脚时调用一次——当 plan_size ≤ pool_size ≤ plan_size × 1.5 且三档非空时，可以 dry_run=false 落盘；用户主动要求保存方案时也可落盘。\n必填字段：region_code（仅 230000）、subject_category_code（physics 或 history）、total_score、provincial_rank。\n落盘返回字段说明（仅落盘模式）：\n  • reused=false：本次新建了 draft_id，是基于当前完整偏好的全新草稿，可以直接以本次 dry_run 的统计数字（pool_size 等）写文案。\n  • reused=true & reused_stale=false：本次和上一份 ready 草稿的偏好完全一致，复用了同一个 draft_id；可继续用之前的口径介绍。\n  • reused=true & reused_stale=true：旧 ready 草稿的偏好与当前不一致，已被作废，本次重新生成；务必用本次新的数字写文案，不要回挂任何旧轮的统计。\n  当前实现不会同时返回 reused=true & reused_stale=true（漂移时自动重建），但模型仍应按上表健壮处理。",
 				Parameters: ToolParameter{
 					Type: "object",
 					Properties: map[string]any{

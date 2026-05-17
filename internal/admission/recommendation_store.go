@@ -85,7 +85,26 @@ type RecommendationStore interface {
 	// optionally filtered by region/subject/batch and excluded provinces (the cheap "一刀切" pre-filter).
 	FetchCandidates(ctx context.Context, q *CandidateQuery) ([]RecommendationCandidate, error)
 	// LatestAdmissionYear returns the most recent admission_year present in the DB for the given filter.
+	// 必须有足够量的 min_rank 数据（详见 minRankedMajorsForValidYear 注释）—— 用于位次匹配。
 	LatestAdmissionYear(ctx context.Context, regionCode, subjectCategoryCode string) (int, error)
+	// LatestPlanYear returns the latest admission_year in admission_groups regardless of whether
+	// min_rank data is present. 招生计划目录（专业代码 + 专业名）通常先于录取分数发布，所以
+	// "目录最新年份" 一般 >= "可用分数线最新年份"。用它做"专业名翻译"——LatestAdmissionYear
+	// 选的旧年份分数线没问题，但旧年份的专业名（例如"计算机类(包含...)"）可能已被新年份
+	// 拆分成具体专业（"计算机科学与技术"）。
+	LatestPlanYear(ctx context.Context, regionCode, subjectCategoryCode string) (int, error)
+	// FetchMajorNames 给定 planYear，批量查 (university_id, batch_code, group_code,
+	// local_major_code) 在该年的 local_major_name。candidates 通常 < 5000，一次 SQL
+	// 走 ANY(uni_ids) + 内存按四元组对齐——避免拼超大的 tuple IN。
+	FetchMajorNames(ctx context.Context, planYear int, regionCode, subjectCategoryCode string, keys []MajorNameKey) (map[MajorNameKey]string, error)
+}
+
+// MajorNameKey 用于跨年关联同一个专业（同校 + 同批次 + 同专业组 + 同本地专业代码）。
+type MajorNameKey struct {
+	UniversityID   int64
+	BatchCode      string
+	GroupCode      string
+	LocalMajorCode string
 }
 
 // CandidateQuery is the inputs the store needs to assemble the SQL.
@@ -163,6 +182,73 @@ func (s *recommendationStore) LatestAdmissionYear(ctx context.Context, regionCod
 		return 0, fmt.Errorf("latest admission year: %w", err)
 	}
 	return year, nil
+}
+
+func (s *recommendationStore) LatestPlanYear(ctx context.Context, regionCode, subjectCategoryCode string) (int, error) {
+	// 与 LatestAdmissionYear 的区别：这里不要求 min_rank 数据足量——招生计划目录通常先
+	// 发布，分数线后录。算法位次匹配用旧年份没问题，但专业名要走最新目录。
+	const q = `
+		SELECT COALESCE(MAX(admission_year), 0)
+		FROM admission_groups
+		WHERE ($1::text IS NULL OR region_code = $1)
+		  AND ($2::text IS NULL OR subject_category_code = $2)
+	`
+	var year int
+	if err := s.pool.QueryRow(ctx, q, nullableString(regionCode), nullableString(subjectCategoryCode)).Scan(&year); err != nil {
+		return 0, fmt.Errorf("latest plan year: %w", err)
+	}
+	return year, nil
+}
+
+func (s *recommendationStore) FetchMajorNames(
+	ctx context.Context,
+	planYear int,
+	regionCode, subjectCategoryCode string,
+	keys []MajorNameKey,
+) (map[MajorNameKey]string, error) {
+	if planYear <= 0 || len(keys) == 0 {
+		return nil, nil
+	}
+	// 去重 university_id 缩小 SQL 输入。candidates 涉及的不同 uni 通常远少于
+	// candidates 数量（一个 uni 多个专业），ANY($N::bigint[]) 比拼 tuple IN 简洁。
+	uniSet := make(map[int64]struct{}, len(keys))
+	for _, k := range keys {
+		uniSet[k.UniversityID] = struct{}{}
+	}
+	uniIDs := make([]int64, 0, len(uniSet))
+	for id := range uniSet {
+		uniIDs = append(uniIDs, id)
+	}
+
+	const q = `
+		SELECT ag.university_id, ag.batch_code, ag.group_code,
+		       uma.local_major_code, uma.local_major_name
+		  FROM admission_groups ag
+		  JOIN university_major_admissions uma ON uma.admission_group_id = ag.id
+		 WHERE ag.admission_year = $1
+		   AND ($2::text IS NULL OR ag.region_code = $2)
+		   AND ($3::text IS NULL OR ag.subject_category_code = $3)
+		   AND ag.university_id = ANY($4::bigint[])
+	`
+	rows, err := s.pool.Query(ctx, q, planYear, nullableString(regionCode), nullableString(subjectCategoryCode), uniIDs)
+	if err != nil {
+		return nil, fmt.Errorf("fetch latest major names: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[MajorNameKey]string)
+	for rows.Next() {
+		var k MajorNameKey
+		var name string
+		if err := rows.Scan(&k.UniversityID, &k.BatchCode, &k.GroupCode, &k.LocalMajorCode, &name); err != nil {
+			return nil, fmt.Errorf("scan latest major name: %w", err)
+		}
+		out[k] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate latest major names: %w", err)
+	}
+	return out, nil
 }
 
 func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQuery) ([]RecommendationCandidate, error) {

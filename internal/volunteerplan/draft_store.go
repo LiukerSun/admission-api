@@ -16,6 +16,10 @@ type DraftStore interface {
 	MarkReady(ctx context.Context, userID, draftID int64, planJSON []byte) error
 	MarkFailed(ctx context.Context, userID, draftID int64, errMsg string) error
 	MarkAdopted(ctx context.Context, userID, draftID int64) error
+	// MarkSuperseded 把 ready 草稿标记为已被新草稿顶替。reason 写入 error 字段
+	// 仅作运维线索（前端不展示）。和 MarkFailed 的语义差别：算法本身没出问题，
+	// 只是用户后续又改了偏好；区分开能让历史记录更易解读，也让 stats 不被污染。
+	MarkSuperseded(ctx context.Context, userID, draftID int64, reason string) error
 }
 
 type draftStore struct {
@@ -201,5 +205,18 @@ func (s *draftStore) MarkAdopted(ctx context.Context, userID, draftID int64) err
 		ctx, userID, draftID,
 		[]string{"ready"},
 		"status = 'adopted'",
+	)
+}
+
+// MarkSuperseded only transitions ready -> superseded. A still-generating
+// draft can't be superseded (it might MarkReady right after); terminal
+// states (failed/adopted/already-superseded) are also rejected so we
+// don't rewrite history.
+func (s *draftStore) MarkSuperseded(ctx context.Context, userID, draftID int64, reason string) error {
+	return s.markStatusTransition(
+		ctx, userID, draftID,
+		[]string{"ready"},
+		"status = 'superseded', error = $3",
+		reason,
 	)
 }

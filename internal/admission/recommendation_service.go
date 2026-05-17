@@ -57,6 +57,11 @@ const (
 	// 一个志愿位。所以这里按 group 去重；同一学校多个 group 算多个志愿位。
 	// 每校最多 maxGroupsPerSchool 个组，仍然保留对大体量学校的多样性约束。
 	maxGroupsPerSchool = 4
+
+	// 一个院校专业组内最多回填 maxMajorsPerGroup 个专业。真实志愿表通常 6 个专业槽，
+	// 这里上限取 6——既符合考生真实填报场景，也避免把超大组里几十个专业全展开
+	// 撑炸 plan_json。同组超过这个上限的专业按 scoreCandidates 排序后截断。
+	maxMajorsPerGroup = 6
 )
 
 // bucketWindow 是单个档位（冲/稳/保）的位次范围，仅在 service 内部使用，不暴露到 JSON。
@@ -102,6 +107,10 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 	if err != nil {
 		return nil, err
 	}
+	// 把 local_major_name 换成最新招生计划目录里的版本——LatestAdmissionYear
+	// 用的是"有分数线的最新年"（例 2024），但目录可能已发布到 2025 且已经把
+	// "计算机类(包含...)" 拆成具体的 "计算机科学与技术"，要给用户看真专业名。
+	s.overrideMajorNamesWithLatestPlan(ctx, candidates, req.RegionCode, req.SubjectCategoryCode, year)
 
 	strategy, strategyReason := decideStrategy(req, md)
 
@@ -161,16 +170,82 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 		}
 	}
 
+	// 算法选 item 时按 (university, group) 去重——一行 item = 一个志愿位。
+	// 但真实志愿表里"院校专业组"下面允许填多个专业（通常 6 个）。这里把
+	// filtered 里同 (university, group) 的所有候选 majors 都回填进 group.Majors，
+	// 让用户得到完整的"组内可选专业列表"。同组内按 scoreCandidates 排序，
+	// 已被算法选中的那个 major 强制排第一（与 item.Order 保持一致），其余按
+	// 综合得分跟随。
+	extraMajors := buildGroupMajorRoster(filtered, resp.Items, req, md, strategy)
+
 	// 把 items 折叠成前端期望的 VolunteerPlan(groups + stats) 结构再写进
 	// plan_json。前端 V2 列表/详情/导出都按 plan_json.groups 渲染，原先
 	// 直接把 RecommendationItem 列表存进去，导致采纳后导出全空——字段名
 	// 完全不匹配。这里在算法返回前做一次归一化转换；`items` 同时保留作为
 	// 调试/算法侧消费的原始数据。
-	if planJSON, mErr := json.Marshal(buildVolunteerPlanFromItems(resp.Items)); mErr == nil {
+	if planJSON, mErr := json.Marshal(buildVolunteerPlanFromItems(resp.Items, extraMajors)); mErr == nil {
 		resp.VolunteerPlan = planJSON
 	}
 
 	return resp, nil
+}
+
+// buildGroupMajorRoster 为每个入选 (universityCode, groupCode) 从 filtered 候选池
+// 里抓出同组的所有 major 行，按 scoreCandidates 排序后返回 majorCode 列表（去重）。
+// 不在这里截断 maxMajorsPerGroup —— 留给 buildVolunteerPlanFromItems 在合并已选 major
+// 之后再统一截断，避免"已选 major 排在 maxMajorsPerGroup 之外被误删"。
+func buildGroupMajorRoster(
+	filtered []RecommendationCandidate,
+	items []RecommendationItem,
+	req *RecommendationRequest,
+	md *RecommendationMetadata,
+	strategy string,
+) map[string][]VolunteerPlanMajor {
+	if len(items) == 0 || len(filtered) == 0 {
+		return nil
+	}
+	// 收集所有入选 (univCode, groupCode) —— 只对这些组做回填，没入选的组不浪费。
+	wanted := make(map[string]string, len(items)) // groupKey -> tier (取 item.Tier 给 score 用)
+	for i := range items {
+		key := items[i].UniversityCode + "\x1F" + items[i].GroupCode
+		if _, exists := wanted[key]; !exists {
+			wanted[key] = items[i].Tier
+		}
+	}
+	// 按 groupKey 收集同组的全部候选行
+	byGroup := make(map[string][]RecommendationCandidate, len(wanted))
+	for i := range filtered {
+		c := &filtered[i]
+		key := c.UniversityCode + "\x1F" + c.GroupCode
+		if _, ok := wanted[key]; !ok {
+			continue
+		}
+		byGroup[key] = append(byGroup[key], filtered[i])
+	}
+	out := make(map[string][]VolunteerPlanMajor, len(byGroup))
+	for key, cs := range byGroup {
+		tier := wanted[key]
+		scored := scoreCandidates(cs, req, md, tier, strategy)
+		seen := make(map[string]struct{}, len(scored))
+		list := make([]VolunteerPlanMajor, 0, len(scored))
+		for i := range scored {
+			code := scored[i].item.LocalMajorCode
+			if code == "" {
+				continue
+			}
+			if _, dup := seen[code]; dup {
+				continue
+			}
+			seen[code] = struct{}{}
+			list = append(list, VolunteerPlanMajor{
+				MajorCode: code,
+				MajorName: scored[i].item.LocalMajorName,
+				// MajorOrder 在 buildVolunteerPlanFromItems 里按最终拼接顺序重写
+			})
+		}
+		out[key] = list
+	}
+	return out
 }
 
 // tierToChinese 把算法用的英文档位 (rush/match/safe) 翻成给用户看的中文
@@ -190,15 +265,17 @@ func tierToChinese(tier string) string {
 }
 
 // buildVolunteerPlanFromItems 把推荐算法的 flat RecommendationItem 列表折叠
-// 成 VolunteerPlan 的层级结构（groups -> majors）。当前算法每个 item 是
-// (university, group, major) 三元组，每个 item 对应一个志愿"槽位"，因此
-// 一个志愿组（VolunteerPlanGroup）下默认放一个专业（VolunteerPlanMajor）。
-// 同一 (university_code, group_code) 出现多次的情况非常罕见（推荐算法做了
-// 同校多样性约束），但我们仍按 order 升序合并，避免重复创建组。
+// 成 VolunteerPlan 的层级结构（groups -> majors）。每个 item 是 (university,
+// group, major) 三元组，对应一个志愿"槽位"；pickBucket 已按 (university,
+// group) 去重，所以 items 里同组只会出现一次——但真实志愿填报允许同一专业组
+// 内填多个专业。extraMajorsByGroup 由 buildGroupMajorRoster 提供：把 filtered
+// 候选池里该组的所有 major 都带进来，按用户偏好评分排序。我们把 item 选中的
+// major 放第一位（保留算法的"首选"语义），其余按 roster 顺序追加，整组上限
+// maxMajorsPerGroup。
 //
 // 同时保留 items 数组在外层，方便后续做 schema 演化（前端可以慢慢迁移到
 // 直接读 items），但 V1/V2 前端目前都靠 groups + stats 渲染。
-func buildVolunteerPlanFromItems(items []RecommendationItem) map[string]any {
+func buildVolunteerPlanFromItems(items []RecommendationItem, extraMajorsByGroup map[string][]VolunteerPlanMajor) map[string]any {
 	groups := make([]VolunteerPlanGroup, 0, len(items))
 	// indexByKey maps "<university_code>\x1F<group_code>" -> slot index in groups.
 	indexByKey := make(map[string]int, len(items))
@@ -216,18 +293,47 @@ func buildVolunteerPlanFromItems(items []RecommendationItem) map[string]any {
 				GroupCode:        it.GroupCode,
 				GroupName:        it.GroupCode,           // 推荐算法当前不返回 group_name，沿用 group_code 兜底
 				IsObeyAdjustment: true,                   // 默认服从调剂；用户后续可在编辑面板里改
-				Remark:           tierToChinese(it.Tier), // 冲/稳/保 中文版，避免给用户看到 rush/match/safe
+				Remark:           tierToChinese(it.Tier), // 冲/稳/保 中文版，避免给用户看到 rush/match/保
 				Majors:           []VolunteerPlanMajor{},
 			})
 			idx = len(groups) - 1
 			indexByKey[key] = idx
 		}
+		// 算法选中的 major 永远是组内首选 —— 排第一位。pickBucket 去重后
+		// 同组只会进入这里一次，所以下面的 append 不会出现重复 majorCode。
 		groups[idx].Majors = append(groups[idx].Majors, VolunteerPlanMajor{
 			MajorOrder: len(groups[idx].Majors) + 1,
 			MajorCode:  it.LocalMajorCode,
 			MajorName:  it.LocalMajorName,
 		})
 		uniqUniversities[it.UniversityCode] = struct{}{}
+	}
+
+	// 追加同组其它 majors（来自 buildGroupMajorRoster）。已经放进 group.Majors
+	// 的 majorCode 跳过；剩下的按 roster 顺序追加，组内总数封顶 maxMajorsPerGroup。
+	for key, idx := range indexByKey {
+		roster := extraMajorsByGroup[key]
+		if len(roster) == 0 {
+			continue
+		}
+		existing := make(map[string]struct{}, len(groups[idx].Majors))
+		for _, m := range groups[idx].Majors {
+			existing[m.MajorCode] = struct{}{}
+		}
+		for _, m := range roster {
+			if len(groups[idx].Majors) >= maxMajorsPerGroup {
+				break
+			}
+			if _, dup := existing[m.MajorCode]; dup {
+				continue
+			}
+			groups[idx].Majors = append(groups[idx].Majors, VolunteerPlanMajor{
+				MajorOrder: len(groups[idx].Majors) + 1,
+				MajorCode:  m.MajorCode,
+				MajorName:  m.MajorName,
+			})
+			existing[m.MajorCode] = struct{}{}
+		}
 	}
 
 	recordCount := 0
@@ -286,6 +392,8 @@ func (s *recommendationService) Preview(ctx context.Context, req *Recommendation
 	if err != nil {
 		return nil, err
 	}
+	// Preview 同 Recommend：覆盖为最新计划目录的专业名（详见 Recommend 中注释）。
+	s.overrideMajorNamesWithLatestPlan(ctx, candidates, req.RegionCode, req.SubjectCategoryCode, year)
 
 	filtered, notes := filterByPreference(candidates, req, md)
 	strategy, _ := decideStrategy(req, md)
@@ -547,6 +655,71 @@ func applyDefaultCounts(req *RecommendationRequest) {
 	}
 	if req.PriorityStrategy == "" {
 		req.PriorityStrategy = "auto"
+	}
+}
+
+// overrideMajorNamesWithLatestPlan 把候选的 local_major_name 替换成最新招生
+// 计划目录里的版本。
+//
+// 背景：LatestAdmissionYear 选的是"有足量分数线的最新年"（例 2024），用于位
+// 次匹配。但 admission_groups + university_major_admissions 这两张表里，新年
+// 度的招生计划目录通常先于分数线发布，目录里的专业名可能已被拆分得更准确
+// （例如 2024 行写"计算机类(包含：计算机科学与技术、物联网工程...)"是一段
+// 大类描述；2025 行已经拆成具体的"计算机科学与技术"）。算法虽要用旧年份
+// 分数线做位次匹配，但展示给用户的志愿表必须用最新目录的"真专业名"。
+//
+// 失败时不阻塞主流程——查不到就保留 SQL 已取的旧名，最坏情况是用户看到带括
+// 号的大类描述（即修复前的行为），不会出错。
+func (s *recommendationService) overrideMajorNamesWithLatestPlan(
+	ctx context.Context,
+	candidates []RecommendationCandidate,
+	regionCode, subjectCategoryCode string,
+	algorithmYear int,
+) {
+	if len(candidates) == 0 {
+		return
+	}
+	planYear, err := s.store.LatestPlanYear(ctx, regionCode, subjectCategoryCode)
+	if err != nil {
+		slog.Warn("recommendation: latest plan year lookup failed; keeping algorithm-year major names",
+			"error", err, "region", regionCode, "subject", subjectCategoryCode)
+		return
+	}
+	if planYear <= algorithmYear {
+		// 算法用的就是（或晚于）最新计划目录；旧名 = 新名，无需覆盖。
+		return
+	}
+
+	keys := make([]MajorNameKey, 0, len(candidates))
+	for i := range candidates {
+		c := &candidates[i]
+		keys = append(keys, MajorNameKey{
+			UniversityID:   c.UniversityID,
+			BatchCode:      c.BatchCode,
+			GroupCode:      c.GroupCode,
+			LocalMajorCode: c.LocalMajorCode,
+		})
+	}
+	nameMap, err := s.store.FetchMajorNames(ctx, planYear, regionCode, subjectCategoryCode, keys)
+	if err != nil {
+		slog.Warn("recommendation: latest major names lookup failed; keeping algorithm-year names",
+			"error", err, "planYear", planYear, "region", regionCode, "subject", subjectCategoryCode)
+		return
+	}
+	if len(nameMap) == 0 {
+		return
+	}
+	for i := range candidates {
+		c := &candidates[i]
+		k := MajorNameKey{
+			UniversityID:   c.UniversityID,
+			BatchCode:      c.BatchCode,
+			GroupCode:      c.GroupCode,
+			LocalMajorCode: c.LocalMajorCode,
+		}
+		if newName, ok := nameMap[k]; ok && newName != "" {
+			c.LocalMajorName = newName
+		}
 	}
 }
 

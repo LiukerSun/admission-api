@@ -352,3 +352,16 @@ func (m *memDraftStore) MarkAdopted(_ context.Context, userID, draftID int64) er
 	d.UpdatedAt = time.Now()
 	return nil
 }
+
+func (m *memDraftStore) MarkSuperseded(_ context.Context, userID, draftID int64, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.drafts[draftID]
+	if !ok || d.UserID != userID {
+		return volunteerplan.ErrDraftNotFound
+	}
+	d.Status = volunteerplan.DraftStatusSuperseded
+	d.Error = reason
+	d.UpdatedAt = time.Now()
+	return nil
+}
