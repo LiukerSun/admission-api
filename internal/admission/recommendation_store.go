@@ -236,16 +236,17 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 	}
 	// only_cities + only_provinces 是 OR 关系的硬白名单：命中任一即保留。
 	// 两者都为空时不启用白名单；只设其一时单边过滤。
-	if len(q.OnlyCities) > 0 && len(q.OnlyProvinces) > 0 {
+	switch {
+	case len(q.OnlyCities) > 0 && len(q.OnlyProvinces) > 0:
 		args = append(args, q.OnlyCities)
 		cityIdx := len(args)
 		args = append(args, q.OnlyProvinces)
 		provIdx := len(args)
 		conditions = append(conditions, fmt.Sprintf("(up.city = ANY($%d) OR up.region_code = ANY($%d))", cityIdx, provIdx))
-	} else if len(q.OnlyCities) > 0 {
+	case len(q.OnlyCities) > 0:
 		args = append(args, q.OnlyCities)
 		conditions = append(conditions, fmt.Sprintf("up.city = ANY($%d)", len(args)))
-	} else if len(q.OnlyProvinces) > 0 {
+	case len(q.OnlyProvinces) > 0:
 		args = append(args, q.OnlyProvinces)
 		conditions = append(conditions, fmt.Sprintf("up.region_code = ANY($%d)", len(args)))
 	}

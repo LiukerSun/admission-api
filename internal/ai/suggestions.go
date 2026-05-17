@@ -263,7 +263,7 @@ func buildWelcomeUserPrompt(p *userprofile.Profile, titles []string) string {
 			b.WriteString("  - 选科：" + strings.Join(p.ElectiveSubjects, "+") + "\n")
 		}
 		if p.TotalScore != nil {
-			b.WriteString(fmt.Sprintf("  - 高考总分：%d\n", *p.TotalScore))
+			fmt.Fprintf(&b, "  - 高考总分：%d\n", *p.TotalScore)
 		}
 	}
 	if b.Len() == len("当前用户画像：\n") {

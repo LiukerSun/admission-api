@@ -233,10 +233,10 @@ func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, histo
 func agentCallbacksForTurn(t *Turn) AgentCallbacks {
 	return AgentCallbacks{
 		OnTextDelta: func(content string) {
-			t.Append(SSEEvent{Type: "text_delta", Content: content})
+			t.Append(&SSEEvent{Type: "text_delta", Content: content})
 		},
 		OnToolCallStart: func(callID, toolName string) {
-			t.Append(SSEEvent{
+			t.Append(&SSEEvent{
 				Type:     "tool_call_start",
 				CallID:   callID,
 				ToolName: toolName,
@@ -252,7 +252,7 @@ func agentCallbacksForTurn(t *Turn) AgentCallbacks {
 				payload["result_content"] = resultContent
 			}
 			ok := success
-			t.Append(SSEEvent{
+			t.Append(&SSEEvent{
 				Type:          "tool_call_end",
 				CallID:        callID,
 				Success:       &ok,
@@ -262,7 +262,7 @@ func agentCallbacksForTurn(t *Turn) AgentCallbacks {
 			})
 		},
 		OnWidget: func(widget Widget) {
-			t.Append(SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
+			t.Append(&SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
 		},
 	}
 }
@@ -279,7 +279,7 @@ func (h *Handler) runTurnBody(t *Turn, convID, userID int64, pendingUserMsgID *i
 	msgs, err := h.conversationService.ListMessages(t.Context(), convID)
 	if err != nil {
 		slog.Error("turn: load history failed", "error", err, "conversationID", convID)
-		t.Append(SSEEvent{Type: "error", Content: "failed to load conversation history"})
+		t.Append(&SSEEvent{Type: "error", Content: "failed to load conversation history"})
 		rollbackPendingUserMessage(h.conversationService, convID, pendingUserMsgID)
 		return
 	}
@@ -291,7 +291,7 @@ func (h *Handler) runTurnBody(t *Turn, convID, userID int64, pendingUserMsgID *i
 	})
 	if runErr != nil {
 		slog.Error("turn: agent run failed", "error", runErr, "conversationID", convID)
-		t.Append(SSEEvent{Type: "error", Content: runErr.Error()})
+		t.Append(&SSEEvent{Type: "error", Content: runErr.Error()})
 		// Deadline / cancel 时保留 user msg：用户问题真实存在，切回来后
 		// 可点"继续生成"重试。其它 agent 失败（LLM 5xx / 解析错）走 rollback：
 		// 重新发问题成本低，让历史保持干净。
@@ -313,9 +313,9 @@ func (h *Handler) runTurnBody(t *Turn, convID, userID int64, pendingUserMsgID *i
 	}
 	if _, err := h.conversationService.AddMessage(context.Background(), convID, "assistant", result.Text, toolCallsJSON, toolResultsJSON, widgetsJSON); err != nil {
 		slog.Error("turn: persist assistant failed", "error", err, "conversationID", convID)
-		t.Append(SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
+		t.Append(&SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
 	}
-	t.Append(SSEEvent{Type: "done", Data: result})
+	t.Append(&SSEEvent{Type: "done", Data: result})
 }
 
 func rollbackPendingUserMessage(svc conversation.Service, convID int64, id *int64) {

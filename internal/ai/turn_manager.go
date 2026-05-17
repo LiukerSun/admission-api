@@ -43,16 +43,23 @@ type Turn struct {
 // Append 写入一个事件：先入 backlog（持久重放用），再 fan-out 给所有
 // 订阅者。订阅 channel 满了就丢这条增量——backlog 里仍然有，订阅者
 // 下次重连还能补到，避免一个慢消费者拖垮 agent 写入速度。
-func (t *Turn) Append(ev SSEEvent) {
+//
+// 接受 *SSEEvent 是为了避免按值传 184 字节的大结构体（gocritic hugeParam）。
+// 内部 append 时 deref 拷贝到 backlog，channel 也走值 —— backlog 必须
+// owns 自己的副本，否则调用方在 Append 返回后再改 ev 会污染历史。
+func (t *Turn) Append(ev *SSEEvent) {
+	if ev == nil {
+		return
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.finished {
 		return
 	}
-	t.events = append(t.events, ev)
+	t.events = append(t.events, *ev)
 	for _, ch := range t.subs {
 		select {
-		case ch <- ev:
+		case ch <- *ev:
 		default:
 			slog.Warn("turn subscriber buffer full; event dropped from realtime stream (still in backlog)",
 				"conversationID", t.convID,
@@ -86,12 +93,13 @@ func (t *Turn) markFinished() {
 //
 // 这种"backlog + tail"模式让晚到的订阅者也能看到完整流，又能与正在
 // 跑的 agent 保持低延迟同步——核心目的是支持"切走再切回"无缝续看。
-func (t *Turn) Subscribe() ([]SSEEvent, <-chan SSEEvent, func()) {
+func (t *Turn) Subscribe() (backlog []SSEEvent, incoming <-chan SSEEvent, unsubscribe func()) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	backlog := append([]SSEEvent(nil), t.events...)
+	backlog = append([]SSEEvent(nil), t.events...)
 	if t.finished {
-		return backlog, nil, func() {}
+		unsubscribe = func() {}
+		return backlog, nil, unsubscribe
 	}
 	id := t.nextSub
 	t.nextSub++
@@ -99,7 +107,7 @@ func (t *Turn) Subscribe() ([]SSEEvent, <-chan SSEEvent, func()) {
 	// 慢消费者也很难撑爆）；满了就走 Append 里的 drop fallback。
 	ch := make(chan SSEEvent, 64)
 	t.subs[id] = ch
-	unsub := func() {
+	unsubscribe = func() {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		if existing, ok := t.subs[id]; ok {
@@ -108,7 +116,7 @@ func (t *Turn) Subscribe() ([]SSEEvent, <-chan SSEEvent, func()) {
 			close(existing)
 		}
 	}
-	return backlog, ch, unsub
+	return backlog, ch, unsubscribe
 }
 
 // Done 返回一个会在 turn 终止时 close 的 channel——后台 goroutine
@@ -181,7 +189,7 @@ func (m *TurnManager) Start(convID int64, run func(*Turn)) (*Turn, error) {
 					"conversationID", convID,
 					"panic", r,
 				)
-				t.Append(SSEEvent{Type: "error", Content: "internal error during agent run"})
+				t.Append(&SSEEvent{Type: "error", Content: "internal error during agent run"})
 			}
 		}()
 		run(t)

@@ -16,7 +16,7 @@ type fakeStore struct {
 	planSize     map[int]int // key=year → size; 缺失则 ErrNotFound
 }
 
-func (f *fakeStore) RankFloor(_ context.Context, year int, _, _ string, userScore int) (int, int, error) {
+func (f *fakeStore) RankFloor(_ context.Context, year int, _, _ string, userScore int) (matchedScore, rank int, err error) {
 	fn, ok := f.rankFloor[year]
 	if !ok {
 		return 0, 0, ErrNotFound
@@ -24,7 +24,7 @@ func (f *fakeStore) RankFloor(_ context.Context, year int, _, _ string, userScor
 	return fn(userScore)
 }
 
-func (f *fakeStore) MinScoreRank(_ context.Context, year int, _, _ string) (int, int, error) {
+func (f *fakeStore) MinScoreRank(_ context.Context, year int, _, _ string) (minScore, rank int, err error) {
 	fn, ok := f.minScoreRank[year]
 	if !ok {
 		return 0, 0, ErrNotFound
@@ -253,11 +253,11 @@ type errPlanSizeStore struct {
 	err error
 }
 
-func (s *errPlanSizeStore) RankFloor(_ context.Context, _ int, _, _ string, _ int) (int, int, error) {
+func (s *errPlanSizeStore) RankFloor(_ context.Context, _ int, _, _ string, _ int) (matchedScore, rank int, err error) {
 	return 0, 0, ErrNotFound
 }
 
-func (s *errPlanSizeStore) MinScoreRank(_ context.Context, _ int, _, _ string) (int, int, error) {
+func (s *errPlanSizeStore) MinScoreRank(_ context.Context, _ int, _, _ string) (minScore, rank int, err error) {
 	return 0, 0, ErrNotFound
 }
 

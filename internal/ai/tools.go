@@ -896,8 +896,10 @@ func (e *ToolExecutor) executeRenderForm(ctx context.Context, call ToolCall, exe
 
 func collectFieldKeys(defs []formFieldDef) []string {
 	keys := make([]string, 0, len(defs))
-	for _, d := range defs {
-		keys = append(keys, d.Key)
+	// formFieldDef 含 slice / map / 多个 string 字段，按值循环每次复制
+	// 176 字节；用索引免去这次复制（gocritic rangeValCopy）。
+	for i := range defs {
+		keys = append(keys, defs[i].Key)
 	}
 	return keys
 }

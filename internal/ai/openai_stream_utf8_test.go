@@ -40,9 +40,9 @@ func TestUtf8DeltaBuffer_SplitInsideRune(t *testing.T) {
 func TestUtf8DeltaBuffer_SplitTwoConsecutive(t *testing.T) {
 	// 两个连续 chunk 都在 rune 中间切：chunk2 仍不完整，chunk3 才补全。
 	// "好" = 0xE5 0xA5 0xBD
-	chunk1 := "ok " + string([]byte{0xE5})           // 起始字节
-	chunk2 := string([]byte{0xA5})                   // 第二字节
-	chunk3 := string([]byte{0xBD}) + " done"         // 第三字节 + 后续
+	chunk1 := "ok " + string([]byte{0xE5})   // 起始字节
+	chunk2 := string([]byte{0xA5})           // 第二字节
+	chunk3 := string([]byte{0xBD}) + " done" // 第三字节 + 后续
 
 	var b utf8DeltaBuffer
 	if out := b.Push(chunk1); out != "ok " {

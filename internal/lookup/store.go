@@ -45,7 +45,7 @@ func NewStore(pool *pgxpool.Pool) Store {
 	return &store{pool: pool}
 }
 
-func (s *store) RankFloor(ctx context.Context, year int, regionCode, subjectCode string, userScore int) (int, int, error) {
+func (s *store) RankFloor(ctx context.Context, year int, regionCode, subjectCode string, userScore int) (matchedScore, rank int, err error) {
 	const q = `
 		SELECT score, cumulative_rank
 		FROM score_rank_map
@@ -55,8 +55,7 @@ func (s *store) RankFloor(ctx context.Context, year int, regionCode, subjectCode
 		  AND score <= $4
 		ORDER BY score DESC
 		LIMIT 1`
-	var matchedScore, rank int
-	err := s.pool.QueryRow(ctx, q, year, regionCode, subjectCode, userScore).Scan(&matchedScore, &rank)
+	err = s.pool.QueryRow(ctx, q, year, regionCode, subjectCode, userScore).Scan(&matchedScore, &rank)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, 0, ErrNotFound
@@ -66,7 +65,7 @@ func (s *store) RankFloor(ctx context.Context, year int, regionCode, subjectCode
 	return matchedScore, rank, nil
 }
 
-func (s *store) MinScoreRank(ctx context.Context, year int, regionCode, subjectCode string) (int, int, error) {
+func (s *store) MinScoreRank(ctx context.Context, year int, regionCode, subjectCode string) (minScore, rank int, err error) {
 	const q = `
 		SELECT score, cumulative_rank
 		FROM score_rank_map
@@ -75,8 +74,7 @@ func (s *store) MinScoreRank(ctx context.Context, year int, regionCode, subjectC
 		  AND subject_category_code = $3
 		ORDER BY score ASC
 		LIMIT 1`
-	var minScore, rank int
-	err := s.pool.QueryRow(ctx, q, year, regionCode, subjectCode).Scan(&minScore, &rank)
+	err = s.pool.QueryRow(ctx, q, year, regionCode, subjectCode).Scan(&minScore, &rank)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, 0, ErrNotFound
