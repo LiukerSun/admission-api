@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -447,7 +448,7 @@ func sameRecommendationInput(oldInput, newInput []byte) bool {
 	if err != nil {
 		return false
 	}
-	return string(aBytes) == string(bBytes)
+	return bytes.Equal(aBytes, bBytes)
 }
 
 // trimPreviewItems 把推荐结果按三档各取若干条返回给模型，仅保留最少必要字段，
