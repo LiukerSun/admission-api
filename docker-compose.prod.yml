@@ -14,7 +14,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
       POSTGRES_DB: ${POSTGRES_DB:-admission}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PG 18+ 官方 image 改了 entrypoint 约定：挂载点要在父目录 /var/lib/postgresql，
+      # 数据自动落到 mount/data/ 子目录。挂到老路径 /var/lib/postgresql/data 会被
+      # PG 18 当成"unused mount"拒绝初始化（错误："Counter to that, there appears
+      # to be PostgreSQL data in: /var/lib/postgresql/data"）。
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
