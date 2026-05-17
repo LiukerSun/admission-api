@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
 
 	"admission-api/internal/admission"
 	"admission-api/internal/conversation"
@@ -49,6 +51,18 @@ type ToolExecutor struct {
 	draftStore          volunteerplan.DraftStore
 	conversationService conversation.Service
 	cardLinkWhitelist   []string
+
+	// cityOptionStore 提供"按省份分组的城市枚举"——给 render_form 的
+	// preferred_cities / excluded_cities 字段动态填充选项。可空：
+	// 测试或脱机环境下传 nil 时，render_form 退化为静态硬编码列表。
+	cityOptionStore admission.CityOptionStore
+	// cityOptionsCache 缓存一次 LoadCityOptions 的结果。城市枚举在
+	// 一年内基本不会变（除非新增院校 profile），所以进程级缓存合适——
+	// 避免每次表单调 DB。失败时 cached 仍为 nil，下次调用会重试。
+	cityOptionsCache    []formFieldOption
+	cityOptionsCacheErr error
+	cityOptionsOnce     sync.Once
+	cityOptionsMu       sync.Mutex
 }
 
 // NewToolExecutor creates a new tool executor.
@@ -57,12 +71,16 @@ type ToolExecutor struct {
 // writes against an archived conversation; it may be nil in
 // unit tests that do not exercise that path (the tool falls back to the
 // previous behaviour of skipping the status check when nil).
+//
+// cityOptionStore 可为 nil；nil 时 render_form 的城市字段用 form_fields.go
+// 中的静态硬编码列表兜底，保证脱 DB 环境（单测）仍能跑。
 func NewToolExecutor(
 	admissionLineStore admission.AdmissionLineStore,
 	aggregateStore admission.AggregateStore,
 	recommendations admission.RecommendationService,
 	draftStore volunteerplan.DraftStore,
 	conversationService conversation.Service,
+	cityOptionStore admission.CityOptionStore,
 ) *ToolExecutor {
 	return &ToolExecutor{
 		admissionLineStore:  admissionLineStore,
@@ -70,7 +88,51 @@ func NewToolExecutor(
 		recommendations:     recommendations,
 		draftStore:          draftStore,
 		conversationService: conversationService,
+		cityOptionStore:     cityOptionStore,
 	}
+}
+
+// loadCityOptions 把 DB 拉的 CityOption 转成 formFieldOption（按省份分组）。
+// 第一次调用打 DB，之后命中 sync.Once 缓存；如果首次失败会重试一次再放弃，
+// 因为这种"枚举数据加载"通常是部署期 DB 还没就绪的临时态。
+func (e *ToolExecutor) loadCityOptions(ctx context.Context) ([]formFieldOption, error) {
+	if e.cityOptionStore == nil {
+		return nil, nil
+	}
+	e.cityOptionsOnce.Do(func() {
+		opts, err := e.cityOptionStore.ListCityOptions(ctx)
+		if err != nil {
+			e.cityOptionsCacheErr = err
+			return
+		}
+		// DB 已按 (province, univ_count desc) 排好；这里只做 province →
+		// formFieldOption 的字段映射。GroupCode 填 region_code，前端整省
+		// 勾选时直接拿它当 PreferredProvinces / OnlyProvinces 等字段的值。
+		out := make([]formFieldOption, 0, len(opts))
+		for _, o := range opts {
+			out = append(out, formFieldOption{
+				Value:     o.City,
+				Label:     o.City,
+				Group:     o.ProvinceName,
+				GroupCode: o.ProvinceCode,
+			})
+		}
+		// 按 group 稳定排序，让相同省份连续——下游 antd Select 的 OptGroup
+		// 渲染会按出现顺序聚合。
+		sort.SliceStable(out, func(i, j int) bool { return out[i].Group < out[j].Group })
+		e.cityOptionsCache = out
+	})
+	e.cityOptionsMu.Lock()
+	defer e.cityOptionsMu.Unlock()
+	// 首次失败时清掉 once 让下一轮可重试。代价是并发首调可能多打一次 DB，
+	// 但城市枚举体量小（~300 行）可接受。
+	if e.cityOptionsCacheErr != nil {
+		err := e.cityOptionsCacheErr
+		e.cityOptionsCacheErr = nil
+		e.cityOptionsOnce = sync.Once{}
+		return nil, err
+	}
+	return e.cityOptionsCache, nil
 }
 
 // SetCardLinkWhitelist configures the host whitelist used by render_card.
@@ -101,6 +163,8 @@ func (e *ToolExecutor) Execute(ctx context.Context, call ToolCall, execCtx ToolE
 		return e.executeRenderChart(ctx, call, execCtx)
 	case "render_card":
 		return e.executeRenderCard(ctx, call, execCtx)
+	case "render_form":
+		return e.executeRenderForm(ctx, call, execCtx)
 	case "generate_volunteer_plan_draft":
 		return e.executeGenerateVolunteerPlanDraft(ctx, call, execCtx)
 	default:
@@ -282,6 +346,12 @@ func classifyRequestFields(req *admission.RecommendationRequest) (hard, soft, un
 	if len(req.ExcludedCities) > 0 {
 		hard = append(hard, "excluded_cities")
 	}
+	if len(req.OnlyCities) > 0 {
+		hard = append(hard, "only_cities")
+	}
+	if len(req.OnlyProvinces) > 0 {
+		hard = append(hard, "only_provinces")
+	}
 	if len(req.ExcludedMajors) > 0 {
 		hard = append(hard, "excluded_majors")
 	}
@@ -296,12 +366,6 @@ func classifyRequestFields(req *admission.RecommendationRequest) (hard, soft, un
 	}
 	if req.PhysicsScore != nil {
 		hard = append(hard, "physics_score")
-	}
-	if req.ChineseScore != nil {
-		hard = append(hard, "chinese_score")
-	}
-	if req.EnglishScore != nil {
-		hard = append(hard, "english_score")
 	}
 
 	// 软加分组（影响 composite_score 排序，不剔除）
@@ -746,6 +810,118 @@ func isAllowedCardLink(href string, whitelist []string) bool {
 	return false
 }
 
+// formParams 是 LLM 调 render_form 时允许的入参。fields 是字段 key 列表，
+// 解析时按 formFieldRegistry 查表；title/intro/submit_label 控制表单展示。
+type formParams struct {
+	Title       string   `json:"title"`
+	Intro       string   `json:"intro"`
+	Fields      []string `json:"fields"`
+	SubmitLabel string   `json:"submit_label"`
+}
+
+// maxFormFieldsPerCall 控制单次表单的最大字段数。设计上一张表单覆盖
+// 一轮"批量收偏好"——超过 6 个用户会眼花，应拆成多张。
+const maxFormFieldsPerCall = 6
+
+func (e *ToolExecutor) executeRenderForm(ctx context.Context, call ToolCall, execCtx ToolExecContext) (*ToolResult, error) {
+	_ = ctx
+	var p formParams
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &p); err != nil {
+		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf("Invalid render_form arguments: %v", err)}, nil
+	}
+	if strings.TrimSpace(p.Title) == "" {
+		return &ToolResult{ToolCallID: call.ID, Content: "render_form: title is required"}, nil
+	}
+	if len(p.Fields) == 0 {
+		return &ToolResult{ToolCallID: call.ID, Content: "render_form: at least one field is required"}, nil
+	}
+	if len(p.Fields) > maxFormFieldsPerCall {
+		return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf("render_form: at most %d fields per form", maxFormFieldsPerCall)}, nil
+	}
+
+	defs := make([]formFieldDef, 0, len(p.Fields))
+	seen := map[string]bool{}
+	for _, key := range p.Fields {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if seen[key] {
+			continue
+		}
+		def, ok := formFieldRegistry[key]
+		if !ok {
+			return &ToolResult{ToolCallID: call.ID, Content: fmt.Sprintf("render_form: unknown field %q", key)}, nil
+		}
+		// 城市字段从 DB 动态加载，避免硬编码列表与真实院校分布漂移
+		// （例如黑龙江本来有 13 个地市，硬编码里只列了 3 个）。加载失败
+		// 时退回 def 自带的静态兜底列表——表单仍可用，只是覆盖面窄。
+		if def.Type == formFieldMultiSelect && (def.Key == "preferred_cities" || def.Key == "excluded_cities" || def.Key == "only_cities") {
+			loaded, err := e.loadCityOptions(ctx)
+			if err == nil && len(loaded) > 0 {
+				def.Options = loaded
+			}
+		}
+		seen[key] = true
+		defs = append(defs, def)
+	}
+
+	submitLabel := sanitizeString(p.SubmitLabel)
+	if submitLabel == "" {
+		submitLabel = "提交并继续"
+	}
+
+	payload := map[string]any{
+		"title":        sanitizeString(p.Title),
+		"intro":        sanitizeString(p.Intro),
+		"fields":       defs,
+		"submit_label": submitLabel,
+	}
+	widget := Widget{ID: NewWidgetID(), Kind: "form", Payload: payload}
+	if execCtx.EmitWidget != nil {
+		execCtx.EmitWidget(widget)
+	}
+	// 返回结构化结果而非自由文本，方便模型在下一轮看到"自己刚弹了
+	// 哪些字段"——避免它重复发同一张表单。
+	out := map[string]any{
+		"status":      "form_rendered",
+		"widget_id":   widget.ID,
+		"field_keys":  collectFieldKeys(defs),
+		"awaiting":    "user_submission",
+		"description": "表单已发给用户，等待用户提交（form_submission 代码块）后再继续",
+	}
+	content, _ := json.Marshal(out)
+	return &ToolResult{ToolCallID: call.ID, Content: string(content)}, nil
+}
+
+func collectFieldKeys(defs []formFieldDef) []string {
+	keys := make([]string, 0, len(defs))
+	for _, d := range defs {
+		keys = append(keys, d.Key)
+	}
+	return keys
+}
+
+// FormFieldKeys 暴露当前白名单的字段 key 列表，供 system prompt 拼装时
+// 使用——把可选 key 内嵌到 prompt 里，模型不必猜。
+func FormFieldKeys() []string {
+	keys := make([]string, 0, len(formFieldRegistry))
+	for k := range formFieldRegistry {
+		keys = append(keys, k)
+	}
+	// 排序，保证 prompt 稳定，cache 命中率不会因 map 遍历乱序而抖动。
+	sortStrings(keys)
+	return keys
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j-1] > s[j]; j-- {
+			s[j-1], s[j] = s[j], s[j-1]
+		}
+	}
+}
+
 // DefaultTools returns the default set of tool definitions for the admission agent.
 func DefaultTools() []ToolDefinition {
 	return []ToolDefinition{
@@ -828,12 +1004,25 @@ func DefaultTools() []ToolDefinition {
 						"required_majors":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬白名单——候选必须命中其中任一关键词，否则被剔除。仅当用户明确说\"我想学 X / 只想学 X / 必须是 X\"时才填；含糊时先放 preferred_majors 并追问"},
 						"excluded_majors":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬过滤——含有这些关键词的候选会被剔除。用户说\"不想学/不要 X\"时填这里"},
 						"excluded_keywords":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-						"preferred_cities":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-						"excluded_cities":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-						"preferred_provinces":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-						"excluded_provinces":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"preferred_cities":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "软偏好：命中加分排序，不剔除"},
+						"excluded_cities":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬过滤：命中的城市候选剔除"},
+						"preferred_provinces":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "软偏好：region_code 列表，命中加分"},
+						"excluded_provinces":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬过滤：region_code 列表，命中的省份候选剔除"},
+						"only_cities":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬白名单：候选必须在这些城市里。与 only_provinces 是 OR 关系"},
+						"only_provinces":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "硬白名单：region_code 列表，候选必须在这些省份里。与 only_cities 是 OR 关系"},
 						"priority_strategy":        map[string]any{"type": "string", "enum": []string{"auto", "school", "major"}},
 						"plan_size":                map[string]any{"type": "integer"},
+						// 画像类软偏好——不收窄候选池，但影响排序质量。
+						// 之前 tool schema 漏了这些字段，导致 agent 只在硬过滤维度
+						// （地域 / 专业）反复挖深，无法切到家庭背景 / 职业规划等
+						// 新角度来询问学生。新对话务必在 2-3 轮硬过滤后弹这些。
+						"family_resources":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "家庭行业资源（软偏好）：[公检法,金融,医疗,教育,电网,商业,普通]。影响相关行业相关专业排序"},
+						"family_economy":     map[string]any{"type": "string", "enum": []string{"充裕", "中等", "普通", "紧张"}, "description": "家庭经济（软偏好）：紧张时算法降低高学费 / 民办院校权重"},
+						"holland_code":       map[string]any{"type": "string", "description": "霍兰德 RIASEC 兴趣类型字符串，例如 'RIA' / 'SEC'。影响匹配兴趣方向的专业排序"},
+						"career_plans":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "职业规划（软偏好）：[考公,从医,电网,考研,留学]。影响相关方向加分"},
+						"math_score":         map[string]any{"type": "integer", "description": "数学单科分（硬门槛）：用于剔除强依赖数学的专业当分数明显不够时"},
+						"physics_score":      map[string]any{"type": "integer", "description": "物理单科分（硬门槛）：同上"},
+						"budget_tuition_max": map[string]any{"type": "integer", "description": "学费上限（硬过滤，元/年）：超过的专业剔除"},
 					},
 					Required: []string{"region_code", "subject_category_code", "total_score", "provincial_rank"},
 				},
@@ -859,6 +1048,27 @@ func DefaultTools() []ToolDefinition {
 						"y_fields":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "作为数值序列的字段（每个字段一条 series）"},
 					},
 					Required: []string{"chart_type", "x_field"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: struct {
+				Name        string        `json:"name"`
+				Description string        `json:"description"`
+				Parameters  ToolParameter `json:"parameters"`
+			}{
+				Name:        "render_form",
+				Description: "在聊天界面弹出一张结构化偏好表单，让用户一次勾选多项偏好，代替逐条文字追问。fields 列出本表单包含的字段 key，必须从白名单中选取：preferred_cities / excluded_cities / only_cities / preferred_majors / required_majors / excluded_majors / family_economy / family_resources / career_plans / holland_code / priority_strategy / budget_tuition_max / plan_size。每张表单 1-6 个字段；用户提交后会以 form_submission 代码块形式回灌到对话，agent 不应在弹出表单的同一回合再追问相同字段。",
+				Parameters: ToolParameter{
+					Type: "object",
+					Properties: map[string]any{
+						"title":        map[string]any{"type": "string", "description": "表单标题，例如『地域和专业方向偏好』"},
+						"intro":        map[string]any{"type": "string", "description": "一句话说明，告诉用户为什么要勾这几项"},
+						"fields":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "字段 key 列表（白名单见说明）"},
+						"submit_label": map[string]any{"type": "string", "description": "提交按钮文案，默认『提交并继续』"},
+					},
+					Required: []string{"title", "fields"},
 				},
 			},
 		},

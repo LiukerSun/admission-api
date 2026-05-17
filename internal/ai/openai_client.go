@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // OpenAIClient implements LLMProxy for OpenAI-compatible APIs (DeepSeek, etc.).
@@ -194,6 +195,10 @@ func streamOpenAIBody(ctx context.Context, body io.ReadCloser, out chan<- Stream
 		}
 	}
 
+	// LLM stream 不保证 chunk 落在 UTF-8 字符边界上，需要本地缓冲不完整
+	// 字节避免下游 json.Marshal 把它替换成 U+FFFD。详细背景见 utf8DeltaBuffer。
+	var textBuf utf8DeltaBuffer
+
 	// SSE frames are delimited by blank lines; bufio.Scanner with the
 	// default ScanLines splitter works because we look for the "data: "
 	// prefix per non-empty line.
@@ -219,6 +224,9 @@ func streamOpenAIBody(ctx context.Context, body io.ReadCloser, out chan<- Stream
 			continue
 		}
 		if payload == "[DONE]" {
+			if tail := textBuf.Flush(); tail != "" {
+				send(StreamChunk{Type: StreamChunkText, TextDelta: tail})
+			}
 			flushPending()
 			send(StreamChunk{Type: StreamChunkDone})
 			return
@@ -251,8 +259,11 @@ func streamOpenAIBody(ctx context.Context, body io.ReadCloser, out chan<- Stream
 		}
 		choice := frame.Choices[0]
 		if choice.Delta.Content != "" {
-			if !send(StreamChunk{Type: StreamChunkText, TextDelta: choice.Delta.Content}) {
-				return
+			safe := textBuf.Push(choice.Delta.Content)
+			if safe != "" {
+				if !send(StreamChunk{Type: StreamChunkText, TextDelta: safe}) {
+					return
+				}
 			}
 		}
 		for _, tc := range choice.Delta.ToolCalls {
@@ -286,8 +297,89 @@ func streamOpenAIBody(ctx context.Context, body io.ReadCloser, out chan<- Stream
 		return
 	}
 
+	// 上游正常结束但没发 [DONE]：同样要 flush UTF-8 残余字节 + tool 调用 + done。
+	if tail := textBuf.Flush(); tail != "" {
+		send(StreamChunk{Type: StreamChunkText, TextDelta: tail})
+	}
 	flushPending()
 	send(StreamChunk{Type: StreamChunkDone})
+}
+
+// utf8DeltaBuffer 缓存 LLM stream chunk 末尾的不完整 UTF-8 字节序列。
+//
+// 背景：OpenAI / 兼容厂商的 SSE delta 是按 token / 内部 chunk 切的，
+// 不保证落在 UTF-8 字符边界上——一个 3 字节中文字符可能被切成"前 1 字
+// 节在 chunk N，后 2 字节在 chunk N+1"。Go 的 encoding/json.Marshal 在
+// 遇到非法 UTF-8 字节时会替换成 U+FFFD（即 ��），所以如果直接把切碎
+// 的 string 一路传到前端，用户会看到尾部乱码（典型现象：句子末尾
+// "未来��"）。
+//
+// Push 收到一段字节后，先和上次的 pending 拼接；找到末尾最后一个 rune
+// 起始字节，看它声明的字节数是否被全部覆盖。完整就全部返回，不完整
+// 就把"起始字节到末尾"作为 pending 缓存到下次。Flush 在 stream 终态
+// 调用，把残余 pending 强制 emit 出去（避免最后一个 rune 真的不完整
+// 导致丢字符——尽管这种情况下用户仍可能看到一个 �，但不会"前面文本
+// 看不到"）。
+type utf8DeltaBuffer struct {
+	pending []byte
+}
+
+func (b *utf8DeltaBuffer) Push(s string) string {
+	if s == "" && len(b.pending) == 0 {
+		return ""
+	}
+	data := make([]byte, 0, len(b.pending)+len(s))
+	data = append(data, b.pending...)
+	data = append(data, s...)
+	b.pending = b.pending[:0]
+
+	// 倒序找最后一个非 continuation 字节（即 rune 起始字节）。
+	// utf8.UTFMax=4，所以最多回溯 4 个字节。
+	end := len(data)
+	for i := end - 1; i >= 0 && end-i <= utf8.UTFMax; i-- {
+		c := data[i]
+		// continuation byte = 10xxxxxx，跳过。
+		if c&0xC0 == 0x80 {
+			continue
+		}
+		need := utf8RuneLenFromLead(c)
+		if i+need <= end {
+			// 末尾这个 rune 完整——整段 data 安全。
+			return string(data)
+		}
+		// 不完整：把 [i, end) 缓存到下次。
+		b.pending = append(b.pending, data[i:]...)
+		return string(data[:i])
+	}
+	// 全是 continuation 字节（罕见，可能上一帧有残留 continuation
+	// 但起始字节本身丢了）—— 不缓存，原样发，让 json.Marshal 自行替换。
+	return string(data)
+}
+
+func (b *utf8DeltaBuffer) Flush() string {
+	if len(b.pending) == 0 {
+		return ""
+	}
+	out := string(b.pending)
+	b.pending = b.pending[:0]
+	return out
+}
+
+// utf8RuneLenFromLead 按 lead byte 高位 bit 判定该 rune 总字节数。
+// 与 unicode/utf8 内部表保持一致；非法 lead byte 视为 1（不缓存）。
+func utf8RuneLenFromLead(b byte) int {
+	switch {
+	case b < 0x80:
+		return 1
+	case b&0xE0 == 0xC0:
+		return 2
+	case b&0xF0 == 0xE0:
+		return 3
+	case b&0xF8 == 0xF0:
+		return 4
+	default:
+		return 1
+	}
 }
 
 // decodeOpenAIError reads the JSON error body from a non-200 response.

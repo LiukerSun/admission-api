@@ -121,11 +121,18 @@ type Handler struct {
 	web.BaseHandler
 	agent               *Agent
 	conversationService conversation.Service
+	turns               *TurnManager
 }
 
 // NewHandler creates a new AI handler.
-func NewHandler(agent *Agent, conversationService conversation.Service) *Handler {
-	return &Handler{agent: agent, conversationService: conversationService}
+//
+// turns 可为 nil（兼容旧测试）；为 nil 时 ChatWithConversation 退化到
+// 同步模式（客户端断 → agent 死），相当于禁用"切对话后台续跑"特性。
+func NewHandler(agent *Agent, conversationService conversation.Service, turns *TurnManager) *Handler {
+	if turns == nil {
+		turns = NewTurnManager()
+	}
+	return &Handler{agent: agent, conversationService: conversationService, turns: turns}
 }
 
 // streamWriter encapsulates the SSE write loop for a single request so
@@ -221,6 +228,143 @@ func (h *Handler) runAgentOnHistory(ctx context.Context, sw *streamWriter, histo
 	return result, nil
 }
 
+// agentCallbacksForTurn 构造把 agent 事件写进 Turn backlog 的回调。
+// Turn.Append 内部会同步广播给所有当前订阅者。
+func agentCallbacksForTurn(t *Turn) AgentCallbacks {
+	return AgentCallbacks{
+		OnTextDelta: func(content string) {
+			t.Append(SSEEvent{Type: "text_delta", Content: content})
+		},
+		OnToolCallStart: func(callID, toolName string) {
+			t.Append(SSEEvent{
+				Type:     "tool_call_start",
+				CallID:   callID,
+				ToolName: toolName,
+				Data:     map[string]any{"call_id": callID, "tool_name": toolName},
+			})
+		},
+		OnToolCallEnd: func(callID string, success bool, errMsg string, resultContent string) {
+			payload := map[string]any{"call_id": callID, "success": success}
+			if errMsg != "" {
+				payload["error"] = errMsg
+			}
+			if resultContent != "" {
+				payload["result_content"] = resultContent
+			}
+			ok := success
+			t.Append(SSEEvent{
+				Type:          "tool_call_end",
+				CallID:        callID,
+				Success:       &ok,
+				Error:         errMsg,
+				ResultContent: resultContent,
+				Data:          payload,
+			})
+		},
+		OnWidget: func(widget Widget) {
+			t.Append(SSEEvent{Type: "widget", ID: widget.ID, Kind: widget.Kind, Payload: widget.Payload, Data: widget})
+		},
+	}
+}
+
+// runTurnBody 是 detached agent 主体——在 TurnManager.Start 的 goroutine
+// 里执行。它接管 history 加载、agent 执行、assistant 落盘、错误处理与
+// 可选的 user-message 回滚。pendingUserMsgID 仅 ChatWithConversation 传，
+// Regenerate 传 nil（没有"刚插入的 user 行"需要兜底回滚）。
+//
+// 所有 DB 写入都走 context.Background() 而不是 turn.Context()——agent
+// run 超时（DeadlineExceeded）也得保证 assistant 文本能落盘，否则用户
+// 切回来看不到任何输出。
+func (h *Handler) runTurnBody(t *Turn, convID, userID int64, pendingUserMsgID *int64) {
+	msgs, err := h.conversationService.ListMessages(t.Context(), convID)
+	if err != nil {
+		slog.Error("turn: load history failed", "error", err, "conversationID", convID)
+		t.Append(SSEEvent{Type: "error", Content: "failed to load conversation history"})
+		rollbackPendingUserMessage(h.conversationService, convID, pendingUserMsgID)
+		return
+	}
+	aiMessages := conversationMessagesToAIMessages(msgs)
+
+	cb := agentCallbacksForTurn(t)
+	result, runErr := h.agent.RunStreamWithOptions(t.Context(), aiMessages, cb, RunOptions{
+		ToolContext: ToolExecContext{UserID: userID, ConversationID: convID},
+	})
+	if runErr != nil {
+		slog.Error("turn: agent run failed", "error", runErr, "conversationID", convID)
+		t.Append(SSEEvent{Type: "error", Content: runErr.Error()})
+		// Deadline / cancel 时保留 user msg：用户问题真实存在，切回来后
+		// 可点"继续生成"重试。其它 agent 失败（LLM 5xx / 解析错）走 rollback：
+		// 重新发问题成本低，让历史保持干净。
+		if !errors.Is(runErr, context.DeadlineExceeded) && !errors.Is(runErr, context.Canceled) {
+			rollbackPendingUserMessage(h.conversationService, convID, pendingUserMsgID)
+		}
+		return
+	}
+
+	var toolCallsJSON, toolResultsJSON, widgetsJSON []byte
+	if len(result.ToolCalls) > 0 {
+		toolCallsJSON, _ = json.Marshal(result.ToolCalls)
+	}
+	if len(result.ToolResults) > 0 {
+		toolResultsJSON, _ = json.Marshal(result.ToolResults)
+	}
+	if len(result.Widgets) > 0 {
+		widgetsJSON, _ = json.Marshal(result.Widgets)
+	}
+	if _, err := h.conversationService.AddMessage(context.Background(), convID, "assistant", result.Text, toolCallsJSON, toolResultsJSON, widgetsJSON); err != nil {
+		slog.Error("turn: persist assistant failed", "error", err, "conversationID", convID)
+		t.Append(SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
+	}
+	t.Append(SSEEvent{Type: "done", Data: result})
+}
+
+func rollbackPendingUserMessage(svc conversation.Service, convID int64, id *int64) {
+	if id == nil {
+		return
+	}
+	if _, _, err := svc.Rollback(context.Background(), convID, *id, true); err != nil {
+		slog.Error("turn: rollback user message failed",
+			"conversationID", convID,
+			"messageID", *id,
+			"error", err,
+		)
+	}
+}
+
+// streamTurnToClient 把一个 Turn 的事件流（backlog + 增量）灌到当前
+// HTTP 连接。客户端在生成中断开（切对话）→ unsubscribe，agent 继续；
+// 客户端重连调 StreamActiveTurn → 同样走这里，先收 backlog 回放再追平
+// 实时。
+func (h *Handler) streamTurnToClient(c *gin.Context, t *Turn) {
+	sw := newStreamWriter(c)
+	backlog, ch, unsub := t.Subscribe()
+	defer unsub()
+
+	for i := range backlog {
+		sw.write(&backlog[i])
+		if c.Request.Context().Err() != nil {
+			return
+		}
+	}
+	if ch == nil {
+		// turn 已完成；backlog 全部回放完即可退出。
+		return
+	}
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			// 客户端断；agent 继续在后台跑。
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				// turn 结束（markFinished 关了 channel）。
+				return
+			}
+			sw.write(&ev)
+		}
+	}
+}
+
 // Chat godoc
 // @Summary      AI chat with SSE streaming
 // @Description  Streams AI responses via SSE. Send messages array; receive text_delta / tool_call_start / tool_call_end / widget / done events.
@@ -305,6 +449,16 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 		return
 	}
 
+	// 拒绝"同一对话已有 active turn 时再开新一轮"——这种情况通常意味
+	// 着用户上一轮还没跑完就再发一条。让前端走 StreamActiveTurn 续看
+	// 旧 turn，而不是把新问题也插进去（容易混淆历史 + 双倍 LLM 成本）。
+	// 注意是软检查：在 AddMessage + Start 之间可能有微小窗口让别的请求
+	// 抢先，Start 内部会再做一次原子检查兜底。
+	if existing := h.turns.Get(convID); existing != nil && !existing.isFinished() {
+		h.RespondError(c, http.StatusConflict, web.ErrCodeBadRequest, "previous turn still running; reconnect via stream endpoint")
+		return
+	}
+
 	// Save user message. We must NOT swallow this error: if the user's
 	// turn never lands in the database, the LLM will run on a history
 	// that's missing the latest question, fabricate a reply, and that
@@ -316,27 +470,58 @@ func (h *Handler) ChatWithConversation(c *gin.Context) {
 		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to save message")
 		return
 	}
-
-	// Hold the freshly-inserted user message ID so streamConversationTurn
-	// can roll it back if the agent run fails. Otherwise a failed turn
-	// leaves a dangling user message that the next regenerate/chat call
-	// would replay, producing two consecutive user rows in history.
 	pendingUserMsgID := userMsg.ID
 
-	if turnErr := h.streamConversationTurn(c, convID, userID, &pendingUserMsgID); turnErr != nil {
-		slog.Warn("rolling back pending user message after failed agent run",
-			"conversationID", convID,
-			"messageID", pendingUserMsgID,
-			"error", turnErr,
-		)
-		if _, _, rbErr := h.conversationService.Rollback(c.Request.Context(), convID, pendingUserMsgID, true); rbErr != nil {
-			slog.Error("failed to rollback user message after agent failure",
-				"conversationID", convID,
-				"messageID", pendingUserMsgID,
-				"error", rbErr,
-			)
-		}
+	// 启动后台 turn。run goroutine 拿到 detached ctx，客户端断开不再
+	// 影响它；只有 turnRunDeadline 才能终止 agent。
+	turn, startErr := h.turns.Start(convID, func(t *Turn) {
+		h.runTurnBody(t, convID, userID, &pendingUserMsgID)
+	})
+	if startErr != nil {
+		// 与上面的软检查同义；并发抢跑时这里兜底——回滚刚插入的 user
+		// 消息保持历史干净，告诉客户端去 stream endpoint 续看现有 turn。
+		_, _, _ = h.conversationService.Rollback(context.Background(), convID, pendingUserMsgID, true)
+		h.RespondError(c, http.StatusConflict, web.ErrCodeBadRequest, "previous turn still running; reconnect via stream endpoint")
+		return
 	}
+
+	h.streamTurnToClient(c, turn)
+}
+
+// StreamActiveTurn godoc
+// @Summary      Resume the active AI turn (if any) over SSE
+// @Description  Subscribes to the in-flight or recently finished turn for the conversation. Returns 204 when no turn is available. Used by the frontend to seamlessly resume streaming after the user switches conversations mid-generation.
+// @Tags         ai
+// @Produce      text/event-stream
+// @Param        id path int true "Conversation ID"
+// @Success      200 {string} string "SSE stream"
+// @Success      204 {string} string "No active turn"
+// @Failure      401 {object} web.Response
+// @Failure      404 {object} web.Response
+// @Router       /api/v1/conversations/{id}/active-turn-stream [get]
+func (h *Handler) StreamActiveTurn(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	convID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid conversation id")
+		return
+	}
+	if !h.verifyConversationOwnership(c, convID, userID) {
+		return
+	}
+
+	turn := h.turns.Get(convID)
+	if turn == nil {
+		// 没有 active 或保留期内的 turn——告诉客户端可以直接 loadMessages
+		// 显示最终状态，无需挂 SSE。
+		c.Status(http.StatusNoContent)
+		return
+	}
+	h.streamTurnToClient(c, turn)
 }
 
 // Regenerate godoc
@@ -388,82 +573,21 @@ func (h *Handler) Regenerate(c *gin.Context) {
 		}
 	}
 
-	// Regenerate does NOT roll back on agent failure: there is no
-	// just-inserted user message to remove — the standing user turn at
-	// the tail of history is what we're retrying against, and removing
-	// it would silently delete the user's question.
-	_ = h.streamConversationTurn(c, convID, userID, nil)
-}
-
-// streamConversationTurn loads the current conversation history, runs
-// the agent over it with SSE callbacks, then persists the assistant
-// reply. Used by both ChatWithConversation (after inserting the new
-// user message) and Regenerate (after optionally rolling back the last
-// assistant message). Keeps the persistence + SSE pattern in exactly
-// one place.
-//
-// Returns a non-nil error when the agent run fails so the caller (only
-// ChatWithConversation today) can roll back any just-inserted user
-// message. SSE headers have already been flushed by then; the client
-// will have seen the "error" event and the rollback is purely a
-// database-side cleanup. pendingUserMsgID is the just-inserted user
-// message's ID (or nil when there is none — e.g. Regenerate); it is
-// not used by this function directly but recorded in slog warnings
-// when an agent failure happens so ops can see what would be cleaned.
-func (h *Handler) streamConversationTurn(c *gin.Context, convID, userID int64, pendingUserMsgID *int64) error {
-	msgs, err := h.conversationService.ListMessages(c.Request.Context(), convID)
-	if err != nil {
-		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to load messages")
-		return err
+	// Regenerate 与 ChatWithConversation 共享 turn 模型——区别只在不传
+	// pendingUserMsgID，因为这一轮重跑针对的是历史尾巴上的 user 消息，
+	// 不存在"刚插入需要兜底回滚"的概念。
+	if existing := h.turns.Get(convID); existing != nil && !existing.isFinished() {
+		h.RespondError(c, http.StatusConflict, web.ErrCodeBadRequest, "previous turn still running; reconnect via stream endpoint")
+		return
 	}
-	aiMessages := conversationMessagesToAIMessages(msgs)
-
-	sw := newStreamWriter(c)
-	ctx, cancel := context.WithTimeout(c.Request.Context(), aiStreamTimeout)
-	defer cancel()
-
-	result, err := h.runAgentOnHistory(ctx, sw, aiMessages, RunOptions{
-		ToolContext: ToolExecContext{
-			UserID:         userID,
-			ConversationID: convID,
-		},
+	turn, startErr := h.turns.Start(convID, func(t *Turn) {
+		h.runTurnBody(t, convID, userID, nil)
 	})
-	if err != nil {
-		if pendingUserMsgID != nil {
-			slog.Warn("agent run failed; caller will rollback pending user message",
-				"conversationID", convID,
-				"messageID", *pendingUserMsgID,
-				"error", err,
-			)
-		}
-		return err
+	if startErr != nil {
+		h.RespondError(c, http.StatusConflict, web.ErrCodeBadRequest, "previous turn still running; reconnect via stream endpoint")
+		return
 	}
-
-	// Save assistant message with tool calls + widgets. The SSE stream
-	// has already been flushed to the client by this point, so a save
-	// failure can't be turned into a non-200 status — but we MUST surface
-	// it on the wire so the user sees that history won't be persisted,
-	// and in logs so ops sees the failure.
-	var toolCallsJSON []byte
-	if len(result.ToolCalls) > 0 {
-		toolCallsJSON, _ = json.Marshal(result.ToolCalls)
-	}
-	var toolResultsJSON []byte
-	if len(result.ToolResults) > 0 {
-		toolResultsJSON, _ = json.Marshal(result.ToolResults)
-	}
-	var widgetsJSON []byte
-	if len(result.Widgets) > 0 {
-		widgetsJSON, _ = json.Marshal(result.Widgets)
-	}
-	if _, err := h.conversationService.AddMessage(c.Request.Context(), convID, "assistant", result.Text, toolCallsJSON, toolResultsJSON, widgetsJSON); err != nil {
-		slog.Error("failed to persist assistant message after AI run", "error", err, "conversationID", convID)
-		sw.write(&SSEEvent{Type: "warning", Content: "assistant message could not be saved; future replies in this conversation may not see it"})
-	}
-
-	sw.write(&SSEEvent{Type: "done", Data: result})
-	slog.Info("sse stream complete")
-	return nil
+	h.streamTurnToClient(c, turn)
 }
 
 // verifyConversationOwnership writes the appropriate error response and

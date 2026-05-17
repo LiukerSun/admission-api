@@ -35,6 +35,7 @@ import (
 	"admission-api/internal/analysis"
 	"admission-api/internal/conversation"
 	"admission-api/internal/health"
+	"admission-api/internal/lookup"
 	"admission-api/internal/membership"
 	"admission-api/internal/payment"
 	"admission-api/internal/platform/alipay"
@@ -43,6 +44,7 @@ import (
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/sms"
+	"admission-api/internal/snapshot"
 	"admission-api/internal/user"
 	"admission-api/internal/userprofile"
 	"admission-api/internal/volunteerplan"
@@ -118,6 +120,18 @@ func run() error {
 	userProfileStore := userprofile.NewStore(database.Pool())
 	userProfileService := userprofile.NewService(userProfileStore)
 	userProfileHandler := userprofile.NewHandler(userProfileService)
+
+	// snapshot：把 user_profile 答案 + lookup 表（一分一段 + 志愿数）合并成
+	// recommendation 算法可直接消费的快照。YearProvider 暂用机器当前年份，
+	// year-walk fallback 在 lookup 层兜底当年数据未入库的情况。
+	lookupStore := lookup.NewStore(database.Pool())
+	lookupService := lookup.NewService(lookupStore)
+	snapshotService := snapshot.NewService(
+		userProfileService,
+		lookupService,
+		func(_ context.Context) (int, error) { return time.Now().Year(), nil },
+	)
+	snapshotHandler := snapshot.NewHandler(snapshotService)
 
 	membershipStore := membership.NewStore(database.Pool())
 	membershipService := membership.NewService(membershipStore)
@@ -225,11 +239,13 @@ func run() error {
 	recommendationScoreRefresher := admission.NewRecommendationScoreRefresher(recommendationScoreStore, scoreEvaluator)
 	recommendationScoreHandler := admission.NewRecommendationScoreHandler(recommendationScoreRefresher)
 
-	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, recommendationService, volunteerDraftStore, conversationService)
+	cityOptionStore := admission.NewCityOptionStore(database.Pool())
+	toolExecutor := ai.NewToolExecutor(admissionLineStore, aggregateStore, recommendationService, volunteerDraftStore, conversationService, cityOptionStore)
 	toolExecutor.SetCardLinkWhitelist(cfg.CardLinkWhitelist)
 	agent := ai.NewAgent(llmProxy, toolExecutor)
-	aiHandler := ai.NewHandler(agent, conversationService)
-	aiSuggestionsHandler := ai.NewSuggestionsHandler(llmProxy, conversationService, redisClient)
+	turnManager := ai.NewTurnManager()
+	aiHandler := ai.NewHandler(agent, conversationService, turnManager)
+	aiSuggestionsHandler := ai.NewSuggestionsHandler(llmProxy, conversationService, userProfileService, redisClient)
 	healthHandler := health.NewHandler(database)
 
 	// Initialize admin module
@@ -294,6 +310,7 @@ func run() error {
 		authorized.POST("/me/phone/verify", userHandler.VerifyPhone)
 		authorized.GET("/me/profile", userProfileHandler.GetMe)
 		authorized.PUT("/me/profile", userProfileHandler.UpsertMe)
+		authorized.GET("/me/profile/snapshot", snapshotHandler.GetMySnapshot)
 		authorized.GET("/membership/plans", membershipHandler.ListPlans)
 		authorized.GET("/membership", membershipHandler.GetCurrent)
 		authorized.POST("/conversations", conversationHandler.CreateConversation)
@@ -307,6 +324,8 @@ func run() error {
 		authorized.GET("/plan-drafts/:draft_id", volunteerPlanHandlerV2.GetDraft)
 		authorized.GET("/volunteer-plans", volunteerPlanHandlerV2.ListPlans)
 		authorized.GET("/volunteer-plans/:id", volunteerPlanHandlerV2.GetPlan)
+		authorized.PATCH("/volunteer-plans/:id", volunteerPlanHandlerV2.UpdatePlan)
+		authorized.DELETE("/volunteer-plans/:id", volunteerPlanHandlerV2.DeletePlan)
 		authorized.POST("/volunteer-plans/adopt", volunteerPlanHandlerV2.Adopt)
 		authorized.POST("/payment/orders", paymentHandler.CreateOrder)
 		authorized.GET("/payment/orders", paymentHandler.ListMyOrders)
@@ -333,7 +352,13 @@ func run() error {
 		premium.POST("/ai/chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Chat)
 		premium.POST("/conversations/:id/ai-chat", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.ChatWithConversation)
 		premium.POST("/conversations/:id/regenerate", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiHandler.Regenerate)
+		// active-turn-stream 不限速：它只是被动订阅一个已存在的 turn，
+		// 自身不触发 LLM 调用，被切对话场景反复调用是合理用法。
+		premium.GET("/conversations/:id/active-turn-stream", aiHandler.StreamActiveTurn)
 		premium.GET("/conversations/:id/suggestions", middleware.RateLimitByUser(redisClient.RDB(), 30, 1*time.Minute), aiSuggestionsHandler.Suggestions)
+		// 欢迎页 chips：每分钟限 5 次足够——chips 通常进页面渲染一次，
+		// 命中 Redis 缓存就直接返回，不会真正打 LLM。
+		premium.GET("/me/welcome-suggestions", middleware.RateLimitByUser(redisClient.RDB(), 5, 1*time.Minute), aiSuggestionsHandler.WelcomeSuggestions)
 
 		adminRoutes := authorized.Group("/admin")
 		adminRoutes.Use(middleware.RequireAdmin())

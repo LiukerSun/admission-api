@@ -80,7 +80,7 @@ func run() error {
 	draftStore := newMemDraftStore()
 	// repl 跑在内存里，不接 conversations 模块；传 nil 让 toolExecutor
 	// 跳过 archived 状态校验（在 ToolExecutor 内部已经做了 nil-safe 判断）。
-	exec := ai.NewToolExecutor(admissionLines, aggregates, recService, draftStore, nil)
+	exec := ai.NewToolExecutor(admissionLines, aggregates, recService, draftStore, nil, nil)
 	agent := ai.NewAgent(llmProxy, exec)
 
 	r := &repl{

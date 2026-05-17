@@ -14,8 +14,15 @@ type Service interface {
 	GetDraft(ctx context.Context, userID, draftID int64) (*Draft, error)
 	ListDraftsByConversation(ctx context.Context, userID, conversationID int64) ([]*Draft, error)
 	AdoptDraft(ctx context.Context, userID, draftID int64, title string) (*UserVolunteerPlan, error)
-	ListPlans(ctx context.Context, userID int64) ([]*UserVolunteerPlan, error)
+	// ListPlans 返回轻量摘要（不含 plan_json）。前端用 summary 渲染左侧列表，
+	// 选中后再通过 GetPlan 拉详情。
+	ListPlans(ctx context.Context, userID int64) ([]*UserVolunteerPlanSummary, error)
 	GetPlan(ctx context.Context, userID, planID int64) (*UserVolunteerPlan, error)
+	// UpdatePlanMeta 部分更新 title / description。任一字段 nil 表示不动。
+	// 用 title="" 表示清空名字（service 层会拦掉这种没意义的情况）。
+	UpdatePlanMeta(ctx context.Context, userID, planID int64, title, description *string) (*UserVolunteerPlan, error)
+	// DeletePlan 软删除。再次调用已删方案返回 ErrPlanNotFound。
+	DeletePlan(ctx context.Context, userID, planID int64) error
 }
 
 type service struct {
@@ -49,19 +56,34 @@ func (s *service) ListDraftsByConversation(ctx context.Context, userID, conversa
 	return s.drafts.ListByConversation(ctx, userID, conversationID)
 }
 
-func (s *service) ListPlans(ctx context.Context, userID int64) ([]*UserVolunteerPlan, error) {
-	plans, err := s.plans.ListByUser(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range plans {
-		p.PlanJSON = normalizeLegacyPlanJSON(p.PlanJSON)
-	}
-	return plans, nil
+func (s *service) ListPlans(ctx context.Context, userID int64) ([]*UserVolunteerPlanSummary, error) {
+	return s.plans.ListSummariesByUser(ctx, userID)
 }
 
 func (s *service) GetPlan(ctx context.Context, userID, planID int64) (*UserVolunteerPlan, error) {
 	p, err := s.plans.GetByID(ctx, userID, planID)
+	if err != nil {
+		return nil, err
+	}
+	p.PlanJSON = normalizeLegacyPlanJSON(p.PlanJSON)
+	return p, nil
+}
+
+func (s *service) DeletePlan(ctx context.Context, userID, planID int64) error {
+	return s.plans.SoftDelete(ctx, userID, planID)
+}
+
+// UpdatePlanMeta 校验后转交 store。title 不允许写空字符串（业务上方案必须有名字）；
+// description 允许空（用户主动清空备注是合法操作）。
+func (s *service) UpdatePlanMeta(ctx context.Context, userID, planID int64, title, description *string) (*UserVolunteerPlan, error) {
+	if title != nil {
+		trimmed := strings.TrimSpace(*title)
+		if trimmed == "" {
+			return nil, ErrInvalidPlanTitle
+		}
+		title = &trimmed
+	}
+	p, err := s.plans.UpdateMeta(ctx, userID, planID, title, description)
 	if err != nil {
 		return nil, err
 	}

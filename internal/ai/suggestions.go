@@ -15,6 +15,7 @@ import (
 	"admission-api/internal/platform/middleware"
 	"admission-api/internal/platform/redis"
 	"admission-api/internal/platform/web"
+	"admission-api/internal/userprofile"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,16 +55,29 @@ type SuggestionsResponse struct {
 // Agent + tool loop) and on Redis. Keeping them split lets the main
 // streaming handler stay free of Redis and the suggestions endpoint
 // stay free of agent plumbing.
+//
+// 同一个 handler 承载两条相关但语义不同的端点：
+//   - Suggestions（对话内）：基于当前对话历史，生成"下一个追问"
+//   - WelcomeSuggestions（欢迎页）：基于 user profile + 最近对话标题，
+//     生成"开场提问"，让欢迎页 chips 个性化而不是写死。
 type SuggestionsHandler struct {
 	web.BaseHandler
 	llm                 LLMProxy
 	conversationService conversation.Service
+	userProfileService  userprofile.Service
 	cache               *redis.Client
 }
 
 // NewSuggestionsHandler builds a suggestions handler.
-func NewSuggestionsHandler(llm LLMProxy, conversationService conversation.Service, cache *redis.Client) *SuggestionsHandler {
-	return &SuggestionsHandler{llm: llm, conversationService: conversationService, cache: cache}
+// userProfileService 可为 nil（兼容只用对话内 suggestions 的场景）；
+// 为 nil 时 WelcomeSuggestions 退化到纯历史驱动，画像段省略。
+func NewSuggestionsHandler(llm LLMProxy, conversationService conversation.Service, userProfileService userprofile.Service, cache *redis.Client) *SuggestionsHandler {
+	return &SuggestionsHandler{
+		llm:                 llm,
+		conversationService: conversationService,
+		userProfileService:  userProfileService,
+		cache:               cache,
+	}
 }
 
 // Suggestions godoc
@@ -210,6 +224,159 @@ func parseSuggestions(raw string) []string {
 		}
 	}
 	return sanitizeSuggestions(arr)
+}
+
+// welcomeSystemPrompt 让 LLM 基于用户画像 + 最近对话标题生成 3-4 条
+// 开场提问。和 suggestionsSystemPrompt 的核心区别：
+//   - 入参不是对话流，而是"用户已知信息 + 历史意图摘要"
+//   - 输出更偏"用户主动想做什么"而非"接下来回什么"
+//   - 必须覆盖至少 2 种场景，避免 chips 同质化
+const welcomeSystemPrompt = `你是高考志愿填报助手的"欢迎页推荐生成器"。基于用户画像和最近对话标题，输出 3-4 条用户最可能想发起的开场提问，用于在欢迎页展示为可点击的胶囊。
+
+严格要求：
+1. 只输出一个 JSON 数组，数组元素是字符串，例如 ["提问1","提问2","提问3"]
+2. 不要任何 markdown / 代码块 / 解释文本
+3. 每条 ≤ 25 个字符，第一人称口语化
+4. 若用户已填写分数 / 选科，禁止再生成"我是 X 分"这种重复画像信息的提问
+5. 必须覆盖至少 2 种场景（例如：志愿表生成 / 地域偏好 / 专业方向 / 院校点查）
+6. 优先复用最近对话标题里出现过但用户可能想换角度再问的方向
+
+样例输出：["帮我做一份志愿表","我只想看上海北京的院校","推荐适合我的专业方向"]`
+
+const welcomeCacheTTL = 30 * time.Minute
+const welcomeMaxConversationTitles = 8
+
+// welcomeUserPrompt 把 profile + 历史标题塞成一段紧凑文本喂给 LLM。
+// 故意不用结构化 JSON：LLM 对自然语言更稳，且这段 prompt 不需要
+// 让 LLM 再回填，只是输入。
+func buildWelcomeUserPrompt(p *userprofile.Profile, titles []string) string {
+	var b strings.Builder
+	b.WriteString("当前用户画像：\n")
+	if p != nil {
+		if p.RegionCode != nil && *p.RegionCode != "" {
+			b.WriteString("  - 省份：" + *p.RegionCode + "\n")
+		}
+		if p.SubjectCategoryCode != nil && *p.SubjectCategoryCode != "" {
+			b.WriteString("  - 科类：" + *p.SubjectCategoryCode + "\n")
+		}
+		if len(p.ElectiveSubjects) > 0 {
+			b.WriteString("  - 选科：" + strings.Join(p.ElectiveSubjects, "+") + "\n")
+		}
+		if p.TotalScore != nil {
+			b.WriteString(fmt.Sprintf("  - 高考总分：%d\n", *p.TotalScore))
+		}
+	}
+	if b.Len() == len("当前用户画像：\n") {
+		b.WriteString("  （画像为空）\n")
+	}
+	if len(titles) > 0 {
+		b.WriteString("\n最近 ")
+		b.WriteString(strconv.Itoa(len(titles)))
+		b.WriteString(" 个对话标题（按时间倒序）：\n")
+		for _, t := range titles {
+			b.WriteString("  - ")
+			b.WriteString(t)
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("\n请输出 3-4 条开场提问的 JSON 数组。")
+	return b.String()
+}
+
+// WelcomeSuggestions godoc
+// @Summary      Personalised welcome-screen suggestion chips
+// @Description  Generates 3-4 opening question chips for the AI welcome screen, tailored to the user's profile and recent conversation titles. Cached in Redis.
+// @Tags         ai
+// @Produce      json
+// @Success      200 {object} web.Response
+// @Failure      401 {object} web.Response
+// @Router       /api/v1/me/welcome-suggestions [get]
+func (h *SuggestionsHandler) WelcomeSuggestions(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+
+	var profile *userprofile.Profile
+	if h.userProfileService != nil {
+		if resp, err := h.userProfileService.GetMyProfile(c.Request.Context(), userID); err == nil && resp != nil {
+			p := resp.Profile
+			profile = &p
+		}
+	}
+
+	convs, err := h.conversationService.ListConversations(c.Request.Context(), &userID)
+	if err != nil {
+		// 历史拿不到不阻塞——用空标题列表继续，生成的 chips 仍可用。
+		slog.Warn("welcome suggestions: list conversations failed", "error", err, "userID", userID)
+		convs = nil
+	}
+	titles := make([]string, 0, welcomeMaxConversationTitles)
+	for _, c := range convs {
+		if c == nil {
+			continue
+		}
+		t := strings.TrimSpace(c.Title)
+		if t == "" || t == "新对话" {
+			continue
+		}
+		titles = append(titles, t)
+		if len(titles) == welcomeMaxConversationTitles {
+			break
+		}
+	}
+
+	// 缓存 key 同时考虑画像和最新对话——用户填了分数 / 新建了对话都
+	// 应该让 chips 跟着变。profile.UpdatedAt 作为画像指纹，最新对话
+	// 用最新 ID。任一缺失就用 0。
+	profileFingerprint := int64(0)
+	if profile != nil {
+		profileFingerprint = profile.UpdatedAt.Unix()
+	}
+	latestConvID := int64(0)
+	if len(convs) > 0 && convs[0] != nil {
+		latestConvID = convs[0].ID
+	}
+	cacheKey := fmt.Sprintf("welcome_suggest:%d:%d:%d", userID, profileFingerprint, latestConvID)
+
+	if h.cache != nil {
+		if cached, err := h.cache.Get(c.Request.Context(), cacheKey); err == nil && cached != "" {
+			var s []string
+			if json.Unmarshal([]byte(cached), &s) == nil && len(s) > 0 {
+				h.RespondJSON(c, http.StatusOK, web.SuccessResponse(SuggestionsResponse{Suggestions: s}))
+				return
+			}
+		}
+	}
+
+	suggestions := h.generateWelcome(c.Request.Context(), profile, titles)
+
+	if h.cache != nil && len(suggestions) > 0 {
+		if payload, err := json.Marshal(suggestions); err == nil {
+			if cacheErr := h.cache.Set(c.Request.Context(), cacheKey, payload, welcomeCacheTTL); cacheErr != nil {
+				slog.Warn("welcome suggestions cache set failed", "error", cacheErr, "userID", userID)
+			}
+		}
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(SuggestionsResponse{Suggestions: suggestions}))
+}
+
+func (h *SuggestionsHandler) generateWelcome(ctx context.Context, profile *userprofile.Profile, titles []string) []string {
+	llmCtx, cancel := context.WithTimeout(ctx, suggestionsLLMTimeout)
+	defer cancel()
+
+	user := buildWelcomeUserPrompt(profile, titles)
+	llmMessages := []Message{
+		{Role: "system", Content: welcomeSystemPrompt},
+		{Role: "user", Content: user},
+	}
+	resp, err := h.llm.ChatCompletion(llmCtx, llmMessages, nil)
+	if err != nil {
+		slog.Warn("welcome suggestions llm call failed", "error", err)
+		return []string{}
+	}
+	return parseSuggestions(resp.Content)
 }
 
 // sanitizeSuggestions trims, drops empties, caps length per item, and

@@ -127,7 +127,7 @@ func TestAgentContinuesAfterThreeToolCallsUntilFinalAnswer(t *testing.T) {
 		},
 	}
 	lineStore := &stubAdmissionLineStore{}
-	agent := NewAgent(llm, NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil, nil))
+	agent := NewAgent(llm, NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil, nil, nil))
 
 	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "650分，喜欢985，不想去北京，喜欢计算机"}})
 	if err != nil {
@@ -176,7 +176,7 @@ func TestAgentSingleIterationTextHasNoBreakMarker(t *testing.T) {
 			{Content: "你好！我可以帮你筛选院校。"},
 		},
 	}
-	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil))
+	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil, nil))
 
 	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "你好"}})
 	if err != nil {
@@ -205,7 +205,7 @@ func TestAgentStopsAtMaxIterations(t *testing.T) {
 		}
 	}
 	llm := &queuedLLM{responses: responses}
-	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil))
+	agent := NewAgent(llm, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil, nil))
 
 	result, err := agent.Run(context.Background(), []Message{{Role: "user", Content: "继续推荐"}})
 	if err == nil {
@@ -230,7 +230,7 @@ func TestAgentStopsAtMaxIterations(t *testing.T) {
 
 func TestAgentStopsWhenContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	agent := NewAgent(&cancelingLLM{cancel: cancel}, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil))
+	agent := NewAgent(&cancelingLLM{cancel: cancel}, NewToolExecutor(&stubAdmissionLineStore{}, stubAggregateStore{}, nil, nil, nil, nil))
 
 	result, err := agent.Run(ctx, []Message{{Role: "user", Content: "继续查询"}})
 	if err == nil {
@@ -246,7 +246,7 @@ func TestAgentStopsWhenContextIsCancelled(t *testing.T) {
 
 func TestToolExecutorParsesSnakeCaseFilterArguments(t *testing.T) {
 	lineStore := &stubAdmissionLineStore{}
-	executor := NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil, nil)
+	executor := NewToolExecutor(lineStore, stubAggregateStore{}, nil, nil, nil, nil)
 
 	_, err := executor.Execute(context.Background(), newToolCall("call-1", "search_universities", `{
 		"filter": {

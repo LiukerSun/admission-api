@@ -2,6 +2,7 @@ package admission
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -92,13 +93,19 @@ type CandidateQuery struct {
 	AdmissionYear          int
 	RegionCode             string
 	SubjectCategoryCode    string
-	SubjectRequirementCode string
-	BatchCodes             []string
-	RankMin                int
-	RankMax                int
-	BudgetTuitionMax       *int
-	ExcludedProvinces      []string
-	ExcludedCities         []string
+	SubjectRequirementCode string // [legacy] 单 requirement_code 过滤；与 UserSubjectLabels 互斥使用
+	// UserSubjectLabels 是用户已修读科目的中文标签集合（首选 + 再选），用于和
+	// subject_requirements.normalized_subjects 做 JSONB 子集判断：要求 ⊆ 用户已修读
+	// → 通过。空切片 = 不做选科过滤（兼容旧调用方）。
+	UserSubjectLabels []string
+	BatchCodes        []string
+	RankMin           int
+	RankMax           int
+	BudgetTuitionMax  *int
+	ExcludedProvinces []string
+	ExcludedCities    []string
+	OnlyProvinces     []string
+	OnlyCities        []string
 	// Limit, when > 0, caps the number of rows returned. The query orders
 	// by min_rank ASC, so the cap keeps the lower-rank (more competitive)
 	// candidates within the window. Callers should issue one query per rank
@@ -116,21 +123,43 @@ func NewRecommendationStore(pool *pgxpool.Pool) RecommendationStore {
 	return &recommendationStore{pool: pool}
 }
 
+// minRankedMajorsForValidYear 是把一个年份认作"分数线已实际入库"的最小阈值。
+//
+// 旧实现用 EXISTS(min_rank IS NOT NULL)（≥1 条即认定有效），会被"招生计划已
+// 提前入库但分数线尚未全量入库"的边界态打穿：典型场景是 6 月之前的新年度，
+// 招生计划侧已经发布了上万行 admission_groups + universities_major_admissions，
+// 但只有零星几条带 min_rank（可能是测试/补录数据），EXISTS 判定该年有效后
+// FetchCandidates 会把整年候选拉出来，filterByPreference / 三档分桶又因为
+// 大量候选 min_rank 为 NULL 而剔光，最终 pool_size=0。
+//
+// 这里用绝对阈值而非比例：黑龙江一个科类一年正常就有 9000+ 条带分数线的
+// 录取数据；小省份小科类也至少应有几百条。把门槛设到 1000 既能覆盖最小的
+// 真实数据集，又能稳妥拒掉"零星几条"的脏边界。
+const minRankedMajorsForValidYear = 1000
+
 func (s *recommendationStore) LatestAdmissionYear(ctx context.Context, regionCode, subjectCategoryCode string) (int, error) {
 	// 必须取"最新且实际带分数线的年份"——单纯 MAX(admission_year) 会撞到
 	// 当年招生计划行（min_rank/min_score 全空），导致后续算法 0 命中。
+	// 阈值见 minRankedMajorsForValidYear 的注释。
 	const q = `
 		SELECT COALESCE(MAX(ag.admission_year), 0)
 		FROM admission_groups ag
+		JOIN university_major_admissions uma ON uma.admission_group_id = ag.id
 		WHERE ($1::text IS NULL OR ag.region_code = $1)
 		  AND ($2::text IS NULL OR ag.subject_category_code = $2)
-		  AND EXISTS (
-		      SELECT 1 FROM university_major_admissions uma
-		      WHERE uma.admission_group_id = ag.id AND uma.min_rank IS NOT NULL
+		  AND ag.admission_year IN (
+		      SELECT ag2.admission_year
+		      FROM admission_groups ag2
+		      JOIN university_major_admissions uma2 ON uma2.admission_group_id = ag2.id
+		      WHERE ($1::text IS NULL OR ag2.region_code = $1)
+		        AND ($2::text IS NULL OR ag2.subject_category_code = $2)
+		        AND uma2.min_rank IS NOT NULL
+		      GROUP BY ag2.admission_year
+		      HAVING COUNT(*) >= $3
 		  )
 	`
 	var year int
-	if err := s.pool.QueryRow(ctx, q, nullableString(regionCode), nullableString(subjectCategoryCode)).Scan(&year); err != nil {
+	if err := s.pool.QueryRow(ctx, q, nullableString(regionCode), nullableString(subjectCategoryCode), minRankedMajorsForValidYear).Scan(&year); err != nil {
 		return 0, fmt.Errorf("latest admission year: %w", err)
 	}
 	return year, nil
@@ -151,7 +180,31 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 		args = append(args, q.SubjectCategoryCode)
 		conditions = append(conditions, fmt.Sprintf("ag.subject_category_code = $%d", len(args)))
 	}
-	if q.SubjectRequirementCode != "" {
+	// 选科过滤：UserSubjectLabels（PR1+）优先于 SubjectRequirementCode（legacy）。
+	//
+	// 语义：候选专业组的 subject_requirement.normalized_subjects 必须是
+	//   用户已修读科目集合的子集（要求 ⊆ 用户已修读 → 满足）。
+	// 用 Postgres JSONB <@ 子集操作符在 SQL 内完成判断，避免把全部候选拉回 Go
+	// 端后过滤。
+	//
+	// admission_groups.subject_requirement_code 为 NULL / '' 的专业组视为不限，
+	// 无条件通过；指向 'none' 字典（normalized_subjects = []）的也通过，
+	// 因为空集是任何集合的子集。
+	switch {
+	case len(q.UserSubjectLabels) > 0:
+		subjectsJSON, err := json.Marshal(q.UserSubjectLabels)
+		if err != nil {
+			return nil, fmt.Errorf("marshal user subject labels: %w", err)
+		}
+		args = append(args, subjectsJSON)
+		conditions = append(conditions, fmt.Sprintf(
+			`(ag.subject_requirement_code IS NULL OR ag.subject_requirement_code = ''
+			  OR EXISTS (SELECT 1 FROM subject_requirements sr
+			             WHERE sr.code = ag.subject_requirement_code
+			               AND sr.normalized_subjects <@ $%d::jsonb))`,
+			len(args),
+		))
+	case q.SubjectRequirementCode != "":
 		args = append(args, q.SubjectRequirementCode)
 		conditions = append(conditions, fmt.Sprintf("(ag.subject_requirement_code IS NULL OR ag.subject_requirement_code = '' OR ag.subject_requirement_code = $%d)", len(args)))
 	}
@@ -180,6 +233,21 @@ func (s *recommendationStore) FetchCandidates(ctx context.Context, q *CandidateQ
 	if len(q.ExcludedCities) > 0 {
 		args = append(args, q.ExcludedCities)
 		conditions = append(conditions, fmt.Sprintf("(up.city IS NULL OR up.city <> ALL($%d))", len(args)))
+	}
+	// only_cities + only_provinces 是 OR 关系的硬白名单：命中任一即保留。
+	// 两者都为空时不启用白名单；只设其一时单边过滤。
+	if len(q.OnlyCities) > 0 && len(q.OnlyProvinces) > 0 {
+		args = append(args, q.OnlyCities)
+		cityIdx := len(args)
+		args = append(args, q.OnlyProvinces)
+		provIdx := len(args)
+		conditions = append(conditions, fmt.Sprintf("(up.city = ANY($%d) OR up.region_code = ANY($%d))", cityIdx, provIdx))
+	} else if len(q.OnlyCities) > 0 {
+		args = append(args, q.OnlyCities)
+		conditions = append(conditions, fmt.Sprintf("up.city = ANY($%d)", len(args)))
+	} else if len(q.OnlyProvinces) > 0 {
+		args = append(args, q.OnlyProvinces)
+		conditions = append(conditions, fmt.Sprintf("up.region_code = ANY($%d)", len(args)))
 	}
 
 	limitClause := ""

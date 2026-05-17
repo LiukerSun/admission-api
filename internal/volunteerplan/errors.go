@@ -19,4 +19,7 @@ var (
 	// transition that was attempted.
 	ErrDraftNotInExpectedState = errors.New("draft not in expected state")
 	ErrPlanNotFound            = errors.New("plan not found")
+	// ErrInvalidPlanTitle: title 必须非空（trim 后）。description 没有这种限制，
+	// 允许用户主动清空备注。
+	ErrInvalidPlanTitle = errors.New("plan title cannot be empty")
 )

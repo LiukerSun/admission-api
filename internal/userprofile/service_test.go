@@ -3,14 +3,12 @@ package userprofile
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 )
 
 // fakeStore is an in-memory implementation of Store used to unit test the
-// service-layer validation rules without spinning up Postgres. The store
-// surface is small enough that this is cheaper to maintain than mockgen.
+// service-layer validation rules without spinning up Postgres.
 type fakeStore struct {
 	getProfile *Profile
 	getErr     error
@@ -51,19 +49,10 @@ func (f *fakeStore) Upsert(_ context.Context, userID int64, req *UpsertRequest, 
 		UserID:              userID,
 		RegionCode:          req.RegionCode,
 		SubjectCategoryCode: req.SubjectCategoryCode,
+		ElectiveSubjects:    req.ElectiveSubjects,
 		TotalScore:          req.TotalScore,
-		ProvincialRank:      req.ProvincialRank,
-		PlanSize:            req.PlanSize,
-		PriorityStrategy:    req.PriorityStrategy,
-		MathScore:           req.MathScore,
-		PhysicsScore:        req.PhysicsScore,
-		ChineseScore:        req.ChineseScore,
-		EnglishScore:        req.EnglishScore,
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
-	}
-	if req.Preferences != nil {
-		p.Preferences = *req.Preferences
 	}
 	if markCompleted {
 		now := time.Now()
@@ -79,9 +68,8 @@ func validRequiredRequest() *UpsertRequest {
 	return &UpsertRequest{
 		RegionCode:          strPtr("230000"),
 		SubjectCategoryCode: strPtr(SubjectPhysics),
+		ElectiveSubjects:    []string{"biology", "chemistry"},
 		TotalScore:          intPtr(620),
-		ProvincialRank:      intPtr(4500),
-		PlanSize:            intPtr(40),
 	}
 }
 
@@ -116,7 +104,22 @@ func TestUpsertMyProfile_MarksCompletedWhenAllRequiredPresent(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !stub.lastMarkDone {
-		t.Error("expected markCompleted=true when all 4 required scalars are filled")
+		t.Error("expected markCompleted=true when all 4 required fields are filled")
+	}
+}
+
+func TestUpsertMyProfile_NormalizesElectiveSubjects(t *testing.T) {
+	stub := &fakeStore{}
+	svc := NewService(stub)
+	req := validRequiredRequest()
+	req.ElectiveSubjects = []string{"chemistry", "biology"} // 倒序
+	_, err := svc.UpsertMyProfile(context.Background(), 1, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// service 在调 store 前归一化为升序
+	if got := stub.lastReq.ElectiveSubjects; len(got) != 2 || got[0] != "biology" || got[1] != "chemistry" {
+		t.Errorf("expected normalized [biology chemistry], got %v", got)
 	}
 }
 
@@ -128,8 +131,8 @@ func TestUpsertMyProfile_DoesNotMarkCompletedWhenMissingScalar(t *testing.T) {
 		{"missing region", func(r *UpsertRequest) { r.RegionCode = nil }},
 		{"empty region", func(r *UpsertRequest) { r.RegionCode = strPtr("   ") }},
 		{"missing subject", func(r *UpsertRequest) { r.SubjectCategoryCode = nil }},
+		{"missing electives", func(r *UpsertRequest) { r.ElectiveSubjects = nil }},
 		{"missing total", func(r *UpsertRequest) { r.TotalScore = nil }},
-		{"missing rank", func(r *UpsertRequest) { r.ProvincialRank = nil }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -157,14 +160,17 @@ func TestUpsertMyProfile_ValidationErrors(t *testing.T) {
 		{"bad region format", func(r *UpsertRequest) { r.RegionCode = strPtr("12345") }, ErrInvalidRegion},
 		{"region not numeric", func(r *UpsertRequest) { r.RegionCode = strPtr("ABC123") }, ErrInvalidRegion},
 		{"bad subject", func(r *UpsertRequest) { r.SubjectCategoryCode = strPtr("comprehensive") }, ErrInvalidSubject},
-		{"bad strategy", func(r *UpsertRequest) { r.PriorityStrategy = strPtr("random") }, ErrInvalidStrategy},
 		{"score below 0", func(r *UpsertRequest) { r.TotalScore = intPtr(-1) }, ErrScoreOutOfRange},
 		{"score above 750", func(r *UpsertRequest) { r.TotalScore = intPtr(751) }, ErrScoreOutOfRange},
-		{"rank below 0", func(r *UpsertRequest) { r.ProvincialRank = intPtr(-1) }, ErrRankOutOfRange},
-		{"rank above 500000", func(r *UpsertRequest) { r.ProvincialRank = intPtr(500001) }, ErrRankOutOfRange},
-		{"plan size 0", func(r *UpsertRequest) { r.PlanSize = intPtr(0) }, ErrPlanSizeOutOfRange},
-		{"plan size 97", func(r *UpsertRequest) { r.PlanSize = intPtr(97) }, ErrPlanSizeOutOfRange},
-		{"subject math 200", func(r *UpsertRequest) { r.MathScore = intPtr(200) }, ErrSubjectScoreInvalid},
+		{"electives length=1", func(r *UpsertRequest) { r.ElectiveSubjects = []string{"biology"} }, ErrInvalidElectiveSet},
+		{"electives length=3", func(r *UpsertRequest) {
+			r.ElectiveSubjects = []string{"biology", "chemistry", "geography"}
+		}, ErrInvalidElectiveSet},
+		{"electives unknown code", func(r *UpsertRequest) { r.ElectiveSubjects = []string{"biology", "english"} }, ErrInvalidElectiveSet},
+		{"electives duplicate", func(r *UpsertRequest) { r.ElectiveSubjects = []string{"biology", "biology"} }, ErrInvalidElectiveSet},
+		{"electives physics in elective list", func(r *UpsertRequest) {
+			r.ElectiveSubjects = []string{"physics", "biology"}
+		}, ErrInvalidElectiveSet},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -177,106 +183,4 @@ func TestUpsertMyProfile_ValidationErrors(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestUpsertMyProfile_PreferenceArrayLimits(t *testing.T) {
-	tests := []struct {
-		name string
-		make func() *Preferences
-	}{
-		{
-			"too many entries",
-			func() *Preferences {
-				return &Preferences{RequiredMajors: makeStringSlice(MaxArrayEntries+1, "x")}
-			},
-		},
-		{
-			"entry too long",
-			func() *Preferences {
-				return &Preferences{PreferredMajors: []string{strings.Repeat("a", MaxArrayEntryLength+1)}}
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			svc := NewService(&fakeStore{})
-			req := validRequiredRequest()
-			req.Preferences = tt.make()
-			_, err := svc.UpsertMyProfile(context.Background(), 1, req)
-			if !errors.Is(err, ErrPreferenceTooLong) {
-				t.Fatalf("expected ErrPreferenceTooLong, got %v", err)
-			}
-		})
-	}
-}
-
-func TestUpsertMyProfile_HollandCodeValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		code    string
-		wantErr error
-	}{
-		{"valid uppercase", "RIA", nil},
-		{"valid mixed case", "RiAs", nil},
-		{"valid full", "RIASEC", nil},
-		{"invalid char", "RX", ErrInvalidHollandCode},
-		{"too long", "RIASECR", ErrInvalidHollandCode},
-		{"digits", "R1A", ErrInvalidHollandCode},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			svc := NewService(&fakeStore{})
-			req := validRequiredRequest()
-			req.Preferences = &Preferences{HollandCode: tt.code}
-			_, err := svc.UpsertMyProfile(context.Background(), 1, req)
-			if tt.wantErr == nil {
-				if err != nil {
-					t.Fatalf("expected no error, got %v", err)
-				}
-			} else if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("expected %v, got %v", tt.wantErr, err)
-			}
-		})
-	}
-}
-
-func TestUpsertMyProfile_FreeTextLimit(t *testing.T) {
-	svc := NewService(&fakeStore{})
-	req := validRequiredRequest()
-	req.Preferences = &Preferences{CareerPlans: strings.Repeat("a", MaxFreeTextLength+1)}
-	_, err := svc.UpsertMyProfile(context.Background(), 1, req)
-	if !errors.Is(err, ErrPreferenceTooLong) {
-		t.Fatalf("expected ErrPreferenceTooLong for long free text, got %v", err)
-	}
-}
-
-func TestUpsertMyProfile_BudgetRange(t *testing.T) {
-	svc := NewService(&fakeStore{})
-	req := validRequiredRequest()
-	req.Preferences = &Preferences{BudgetTuitionMax: intPtr(BudgetMax + 1)}
-	_, err := svc.UpsertMyProfile(context.Background(), 1, req)
-	if !errors.Is(err, ErrInvalidBudget) {
-		t.Fatalf("expected ErrInvalidBudget, got %v", err)
-	}
-}
-
-func TestUpsertMyProfile_AcceptsPartialOptionals(t *testing.T) {
-	// Only required filled; all optionals nil — must succeed and mark completed.
-	stub := &fakeStore{}
-	svc := NewService(stub)
-	_, err := svc.UpsertMyProfile(context.Background(), 1, validRequiredRequest())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !stub.upsertCalled {
-		t.Error("store.Upsert should have been called")
-	}
-}
-
-func makeStringSlice(n int, val string) []string {
-	out := make([]string, n)
-	for i := range out {
-		out[i] = val
-	}
-	return out
 }

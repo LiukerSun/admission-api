@@ -17,15 +17,16 @@ type RecommendationRequest struct { //nolint:revive // Keeps Swagger and API nam
 	ProvincialRank      int    `json:"provincial_rank" binding:"required"`       // 省内位次（来自一分一段）
 
 	// 选科 / 年份
-	SubjectRequirementCode string   `json:"subject_requirement_code,omitempty"` // 选科组合编码（用于专业组匹配）
+	SubjectRequirementCode string   `json:"subject_requirement_code,omitempty"` // [legacy] 单 requirement code 过滤；PR1 起优先使用 ElectiveSubjects
+	ElectiveSubjects       []string `json:"elective_subjects,omitempty"`        // 再选科目 4 选 2：biology/chemistry/geography/politics
 	SelectedSubjects       []string `json:"selected_subjects,omitempty"`        // 选科列表，例如 ["物理","化学","生物"]
 	AdmissionYear          *int     `json:"admission_year,omitempty"`           // 默认取数据库中最新年份
 
-	// 单科成绩 (硬门槛 + 能力匹配)
+	// 单科成绩（硬门槛 + 能力匹配）。只保留数学 + 物理：
+	// 它们是算法层 hasAbilityRuleForSubject 唯一参考的两个学科——其他单科分
+	// algo 不读，纯属占用 prompt 空间。
 	MathScore    *int `json:"math_score,omitempty"`
 	PhysicsScore *int `json:"physics_score,omitempty"`
-	ChineseScore *int `json:"chinese_score,omitempty"`
-	EnglishScore *int `json:"english_score,omitempty"`
 
 	// 个人画像
 	HollandCode      string   `json:"holland_code,omitempty"`      // RIASEC，例如 "RIA"
@@ -43,6 +44,12 @@ type RecommendationRequest struct { //nolint:revive // Keeps Swagger and API nam
 	ExcludedCities     []string `json:"excluded_cities,omitempty"`
 	PreferredProvinces []string `json:"preferred_provinces,omitempty"` // region_code 列表
 	ExcludedProvinces  []string `json:"excluded_provinces,omitempty"`
+
+	// 硬白名单（"只看这些地方"）：候选必须命中其中之一才保留。
+	// 两个字段是 OR 关系——OnlyCities=["上海"], OnlyProvinces=["230000"]
+	// 表示"上海的院校 OR 黑龙江的院校"都收。两个都空表示不启用白名单。
+	OnlyCities    []string `json:"only_cities,omitempty"`
+	OnlyProvinces []string `json:"only_provinces,omitempty"` // region_code 列表
 
 	// 职业规划
 	CareerPlans []string `json:"career_plans,omitempty"` // ["考公","从医","电网","考研","留学"]

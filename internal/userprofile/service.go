@@ -6,34 +6,20 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode/utf8"
+
+	"admission-api/internal/admission"
 )
 
-// Validation limits. Keep arrays small and entries short — they all flow
-// into the LLM prompt context, and a runaway profile could blow past the
-// agent's iteration budget.
+// Validation limits for the 4 core fields.
+// Other validation rules (preferences / single-subject scores / strategy /
+// holland / budget) were removed in migration 008.
 const (
-	MaxArrayEntries      = 16
-	MaxArrayEntryLength  = 32
-	MaxFreeTextLength    = 500
-	MaxHollandCodeLength = 6
-	ScoreMin             = 0
-	ScoreMax             = 750
-	SubjectScoreMax      = 150
-	RankMin              = 0
-	RankMax              = 500000
-	PlanSizeMin          = 1
-	PlanSizeMax          = 96
-	BudgetMin            = 0
-	BudgetMax            = 1000000 // 100w/yr — generous upper bound
+	ScoreMin = 0
+	ScoreMax = 750
 )
 
-var (
-	// region_code is a 6-digit GB/T 2260 administrative division code.
-	regionCodeRe = regexp.MustCompile(`^\d{6}$`)
-	// holland_code is a 1-6 char subset of RIASEC, e.g. "RIA".
-	hollandCodeRe = regexp.MustCompile(`^[RIASECriasec]{1,6}$`)
-)
+// region_code is a 6-digit GB/T 2260 administrative division code.
+var regionCodeRe = regexp.MustCompile(`^\d{6}$`)
 
 // Service is the userprofile business layer.
 type Service interface {
@@ -66,11 +52,13 @@ func (s *service) GetMyProfile(ctx context.Context, userID int64) (*ProfileRespo
 }
 
 // UpsertMyProfile validates the payload, decides whether to mark completed,
-// and writes the row.
+// and writes the row. ElectiveSubjects 在写入前归一化（升序去重），保证
+// [biology,chemistry] 和 [chemistry,biology] 视为同值。
 func (s *service) UpsertMyProfile(ctx context.Context, userID int64, req *UpsertRequest) (*ProfileResponse, error) {
 	if err := s.validate(req); err != nil {
 		return nil, err
 	}
+	req.ElectiveSubjects = admission.NormalizeElectives(req.ElectiveSubjects)
 	markCompleted := allRequiredPresent(req)
 	p, err := s.store.Upsert(ctx, userID, req, markCompleted)
 	if err != nil {
@@ -80,8 +68,11 @@ func (s *service) UpsertMyProfile(ctx context.Context, userID int64, req *Upsert
 	return &resp, nil
 }
 
-// allRequiredPresent reports whether the 4 business-required fields are filled.
-// plan_size is intentionally optional here — agent.go has its own default 40.
+// allRequiredPresent reports whether the 4 business-required fields are filled:
+//
+//	region + subject + elective_subjects(=2) + total_score
+//
+// 与 migration 008 后的数据模型一致。其余偏好由 AI 在对话中收集，不影响 completed 标记。
 func allRequiredPresent(req *UpsertRequest) bool {
 	if req.RegionCode == nil || strings.TrimSpace(*req.RegionCode) == "" {
 		return false
@@ -89,10 +80,10 @@ func allRequiredPresent(req *UpsertRequest) bool {
 	if req.SubjectCategoryCode == nil || strings.TrimSpace(*req.SubjectCategoryCode) == "" {
 		return false
 	}
-	if req.TotalScore == nil {
+	if len(req.ElectiveSubjects) != 2 {
 		return false
 	}
-	if req.ProvincialRank == nil {
+	if req.TotalScore == nil {
 		return false
 	}
 	return true
@@ -118,14 +109,9 @@ func (s *service) validate(req *UpsertRequest) error {
 			}
 		}
 	}
-	if req.PriorityStrategy != nil {
-		ps := strings.TrimSpace(*req.PriorityStrategy)
-		if ps != "" {
-			switch ps {
-			case StrategyAuto, StrategySchool, StrategyMajor:
-			default:
-				return ErrInvalidStrategy
-			}
+	if len(req.ElectiveSubjects) > 0 {
+		if err := validateElectiveSubjects(req.ElectiveSubjects); err != nil {
+			return err
 		}
 	}
 	if req.TotalScore != nil {
@@ -133,88 +119,24 @@ func (s *service) validate(req *UpsertRequest) error {
 			return ErrScoreOutOfRange
 		}
 	}
-	if req.ProvincialRank != nil {
-		if *req.ProvincialRank < RankMin || *req.ProvincialRank > RankMax {
-			return ErrRankOutOfRange
-		}
-	}
-	if req.PlanSize != nil {
-		if *req.PlanSize < PlanSizeMin || *req.PlanSize > PlanSizeMax {
-			return ErrPlanSizeOutOfRange
-		}
-	}
-	for _, v := range []*int{req.MathScore, req.PhysicsScore, req.ChineseScore, req.EnglishScore} {
-		if v == nil {
-			continue
-		}
-		if *v < ScoreMin || *v > SubjectScoreMax {
-			return ErrSubjectScoreInvalid
-		}
-	}
-	if req.Preferences != nil {
-		if err := validatePreferences(req.Preferences); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
-func validatePreferences(p *Preferences) error {
-	groups := [][]string{
-		p.RequiredMajors,
-		p.PreferredMajors,
-		p.ExcludedMajors,
-		p.ExcludedKeywords,
-		p.PreferredCities,
-		p.ExcludedCities,
-		p.PreferredProvinces,
-		p.ExcludedProvinces,
+// validateElectiveSubjects 校验再选科目：长度=2 + 元素 ∈ 枚举 + 不重复。
+// 归一化排序由 service 层在写入前调用 admission.NormalizeElectives 完成。
+func validateElectiveSubjects(es []string) error {
+	if len(es) != 2 {
+		return ErrInvalidElectiveSet
 	}
-	for _, g := range groups {
-		if err := checkStringArray(g); err != nil {
-			return err
+	seen := make(map[string]struct{}, 2)
+	for _, code := range es {
+		if !admission.IsValidElectiveCode(code) {
+			return ErrInvalidElectiveSet
 		}
-	}
-	if p.HollandCode != "" {
-		if utf8.RuneCountInString(p.HollandCode) > MaxHollandCodeLength {
-			return ErrInvalidHollandCode
+		if _, dup := seen[code]; dup {
+			return ErrInvalidElectiveSet
 		}
-		if !hollandCodeRe.MatchString(p.HollandCode) {
-			return ErrInvalidHollandCode
-		}
-	}
-	if err := checkFreeText(p.FamilyResources); err != nil {
-		return err
-	}
-	if err := checkFreeText(p.FamilyEconomy); err != nil {
-		return err
-	}
-	if err := checkFreeText(p.CareerPlans); err != nil {
-		return err
-	}
-	if p.BudgetTuitionMax != nil {
-		if *p.BudgetTuitionMax < BudgetMin || *p.BudgetTuitionMax > BudgetMax {
-			return ErrInvalidBudget
-		}
-	}
-	return nil
-}
-
-func checkStringArray(items []string) error {
-	if len(items) > MaxArrayEntries {
-		return ErrPreferenceTooLong
-	}
-	for _, s := range items {
-		if utf8.RuneCountInString(s) > MaxArrayEntryLength {
-			return ErrPreferenceTooLong
-		}
-	}
-	return nil
-}
-
-func checkFreeText(s string) error {
-	if utf8.RuneCountInString(s) > MaxFreeTextLength {
-		return ErrPreferenceTooLong
+		seen[code] = struct{}{}
 	}
 	return nil
 }

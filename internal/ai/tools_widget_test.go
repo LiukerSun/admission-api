@@ -59,7 +59,7 @@ func TestIsAllowedCardLink(t *testing.T) {
 //  3. the produced option NEVER contains keys outside the whitelist
 //     (no formatter strings, no JS expressions, no arbitrary fields)
 func TestExecuteRenderChartBuildsBarOption(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -110,7 +110,7 @@ func TestExecuteRenderChartBuildsBarOption(t *testing.T) {
 }
 
 func TestExecuteRenderChartBuildsPieOption(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "pie",
@@ -146,7 +146,7 @@ func TestExecuteRenderChartBuildsPieOption(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsUnsupportedChartType(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "scatter3d",
@@ -166,7 +166,7 @@ func TestExecuteRenderChartRejectsUnsupportedChartType(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsMissingXField(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -184,7 +184,7 @@ func TestExecuteRenderChartRejectsMissingXField(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsEmptyData(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -204,7 +204,7 @@ func TestExecuteRenderChartRejectsEmptyData(t *testing.T) {
 }
 
 func TestExecuteRenderChartResolvesPriorToolResult(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	prior := `{"top": [
 		{"city": "哈尔滨", "rank": 100},
@@ -237,7 +237,7 @@ func TestExecuteRenderChartResolvesPriorToolResult(t *testing.T) {
 }
 
 func TestExecuteRenderChartRejectsUnknownToolResult(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"chart_type": "bar",
@@ -261,7 +261,7 @@ func TestExecuteRenderChartRejectsUnknownToolResult(t *testing.T) {
 // ---------- executeRenderCard ---------------------------------------
 
 func TestExecuteRenderCardEmitsWidgetWithMetrics(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	executor.SetCardLinkWhitelist([]string{"admission.example.com"})
 	emitted := captureWidget()
 	args := `{
@@ -301,7 +301,7 @@ func TestExecuteRenderCardEmitsWidgetWithMetrics(t *testing.T) {
 }
 
 func TestExecuteRenderCardRejectsUnwhitelistedLink(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	executor.SetCardLinkWhitelist([]string{"admission.example.com"})
 	emitted := captureWidget()
 	args := `{
@@ -318,7 +318,7 @@ func TestExecuteRenderCardRejectsUnwhitelistedLink(t *testing.T) {
 }
 
 func TestExecuteRenderCardSanitizesUnknownTrendValue(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{
 		"title": "x",
@@ -335,7 +335,7 @@ func TestExecuteRenderCardSanitizesUnknownTrendValue(t *testing.T) {
 }
 
 func TestExecuteRenderCardRequiresTitle(t *testing.T) {
-	executor := NewToolExecutor(nil, nil, nil, nil, nil)
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
 	emitted := captureWidget()
 	args := `{"title": "   "}`
 	res, _ := executor.Execute(context.Background(), newToolCall("c13", "render_card", args), ToolExecContext{EmitWidget: emitted.fn})
@@ -344,6 +344,144 @@ func TestExecuteRenderCardRequiresTitle(t *testing.T) {
 	}
 	if emitted.count() != 0 {
 		t.Fatalf("widget MUST NOT be emitted without a title")
+	}
+}
+
+// ---------- executeRenderForm ---------------------------------------
+//
+// render_form 是把 LLM 偏好收集从"逐条文字追问"压缩成"一次表单"的入口。
+// 由于字段选项是后端白名单，LLM 不能凭空生成 options，所以测试只需要
+// 确认：(1) 引用白名单内字段成功；(2) 引用未注册字段失败；(3) 不发
+// widget 时也返回可读的错误内容；(4) payload 形状对得上前端契约。
+func TestExecuteRenderFormEmitsWidgetForWhitelistedFields(t *testing.T) {
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
+	emitted := captureWidget()
+	args := `{
+		"title": "地域和方向偏好",
+		"intro": "勾完一次就能开始筛选",
+		"fields": ["preferred_cities", "required_majors", "family_economy"],
+		"submit_label": "提交"
+	}`
+	res, err := executor.Execute(context.Background(), newToolCall("f1", "render_form", args), ToolExecContext{EmitWidget: emitted.fn})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res.Content, "form_rendered") {
+		t.Fatalf("expected form_rendered status, got %q", res.Content)
+	}
+	w := emitted.must(t)
+	if w.Kind != "form" {
+		t.Fatalf("kind = %q, want form", w.Kind)
+	}
+	if w.Payload["title"] != "地域和方向偏好" {
+		t.Fatalf("title = %v, want 地域和方向偏好", w.Payload["title"])
+	}
+	if w.Payload["submit_label"] != "提交" {
+		t.Fatalf("submit_label = %v, want 提交", w.Payload["submit_label"])
+	}
+	fields, ok := w.Payload["fields"].([]formFieldDef)
+	if !ok {
+		t.Fatalf("fields should be []formFieldDef, got %T", w.Payload["fields"])
+	}
+	if len(fields) != 3 {
+		t.Fatalf("expected 3 fields, got %d", len(fields))
+	}
+	if fields[0].Key != "preferred_cities" || fields[0].Type != formFieldMultiSelect {
+		t.Fatalf("first field shape unexpected: %+v", fields[0])
+	}
+	if fields[2].Key != "family_economy" || fields[2].Type != formFieldSingleSelect {
+		t.Fatalf("third field shape unexpected: %+v", fields[2])
+	}
+}
+
+func TestExecuteRenderFormDefaultsSubmitLabel(t *testing.T) {
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
+	emitted := captureWidget()
+	args := `{
+		"title": "x",
+		"fields": ["plan_size"]
+	}`
+	_, _ = executor.Execute(context.Background(), newToolCall("f2", "render_form", args), ToolExecContext{EmitWidget: emitted.fn})
+	w := emitted.must(t)
+	if w.Payload["submit_label"] != "提交并继续" {
+		t.Fatalf("expected default submit_label, got %v", w.Payload["submit_label"])
+	}
+}
+
+func TestExecuteRenderFormRejectsUnknownField(t *testing.T) {
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
+	emitted := captureWidget()
+	args := `{
+		"title": "x",
+		"fields": ["preferred_cities", "nuclear_codes"]
+	}`
+	res, _ := executor.Execute(context.Background(), newToolCall("f3", "render_form", args), ToolExecContext{EmitWidget: emitted.fn})
+	if !strings.Contains(res.Content, "unknown field") || !strings.Contains(res.Content, "nuclear_codes") {
+		t.Fatalf("expected unknown field error mentioning nuclear_codes, got %q", res.Content)
+	}
+	if emitted.count() != 0 {
+		t.Fatalf("widget MUST NOT be emitted when any field is unknown")
+	}
+}
+
+func TestExecuteRenderFormRequiresTitle(t *testing.T) {
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
+	emitted := captureWidget()
+	args := `{"title": "   ", "fields": ["plan_size"]}`
+	res, _ := executor.Execute(context.Background(), newToolCall("f4", "render_form", args), ToolExecContext{EmitWidget: emitted.fn})
+	if !strings.Contains(res.Content, "title is required") {
+		t.Fatalf("expected title required error, got %q", res.Content)
+	}
+	if emitted.count() != 0 {
+		t.Fatalf("widget MUST NOT be emitted without a title")
+	}
+}
+
+func TestExecuteRenderFormRejectsEmptyFields(t *testing.T) {
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
+	emitted := captureWidget()
+	args := `{"title": "x", "fields": []}`
+	res, _ := executor.Execute(context.Background(), newToolCall("f5", "render_form", args), ToolExecContext{EmitWidget: emitted.fn})
+	if !strings.Contains(res.Content, "at least one field") {
+		t.Fatalf("expected at-least-one-field error, got %q", res.Content)
+	}
+	if emitted.count() != 0 {
+		t.Fatalf("widget MUST NOT be emitted without fields")
+	}
+}
+
+func TestExecuteRenderFormRejectsTooManyFields(t *testing.T) {
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
+	emitted := captureWidget()
+	args := `{
+		"title": "x",
+		"fields": [
+			"preferred_cities","excluded_cities","preferred_majors",
+			"required_majors","excluded_majors","family_economy",
+			"priority_strategy"
+		]
+	}`
+	res, _ := executor.Execute(context.Background(), newToolCall("f6", "render_form", args), ToolExecContext{EmitWidget: emitted.fn})
+	if !strings.Contains(res.Content, "at most") {
+		t.Fatalf("expected too-many-fields error, got %q", res.Content)
+	}
+	if emitted.count() != 0 {
+		t.Fatalf("widget MUST NOT be emitted when fields cap is exceeded")
+	}
+}
+
+func TestExecuteRenderFormDedupesRepeatedField(t *testing.T) {
+	executor := NewToolExecutor(nil, nil, nil, nil, nil, nil)
+	emitted := captureWidget()
+	args := `{
+		"title": "x",
+		"fields": ["plan_size", "plan_size", "family_economy"]
+	}`
+	_, _ = executor.Execute(context.Background(), newToolCall("f7", "render_form", args), ToolExecContext{EmitWidget: emitted.fn})
+	w := emitted.must(t)
+	fields := w.Payload["fields"].([]formFieldDef)
+	if len(fields) != 2 {
+		t.Fatalf("expected dedup to 2 fields, got %d", len(fields))
 	}
 }
 

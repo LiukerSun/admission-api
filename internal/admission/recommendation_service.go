@@ -91,9 +91,12 @@ func (s *recommendationService) Recommend(ctx context.Context, req *Recommendati
 		RegionCode:             req.RegionCode,
 		SubjectCategoryCode:    req.SubjectCategoryCode,
 		SubjectRequirementCode: req.SubjectRequirementCode,
+		UserSubjectLabels:      UserSubjectLabels(req.SubjectCategoryCode, req.ElectiveSubjects),
 		BudgetTuitionMax:       req.BudgetTuitionMax,
 		ExcludedProvinces:      req.ExcludedProvinces,
 		ExcludedCities:         req.ExcludedCities,
+		OnlyProvinces:          req.OnlyProvinces,
+		OnlyCities:             req.OnlyCities,
 	}
 	candidates, err := s.fetchBucketCandidates(ctx, &baseQ, rushW, matchW, safeW)
 	if err != nil {
@@ -272,9 +275,12 @@ func (s *recommendationService) Preview(ctx context.Context, req *Recommendation
 		RegionCode:             req.RegionCode,
 		SubjectCategoryCode:    req.SubjectCategoryCode,
 		SubjectRequirementCode: req.SubjectRequirementCode,
+		UserSubjectLabels:      UserSubjectLabels(req.SubjectCategoryCode, req.ElectiveSubjects),
 		BudgetTuitionMax:       req.BudgetTuitionMax,
 		ExcludedProvinces:      req.ExcludedProvinces,
 		ExcludedCities:         req.ExcludedCities,
+		OnlyProvinces:          req.OnlyProvinces,
+		OnlyCities:             req.OnlyCities,
 	}
 	candidates, err := s.fetchBucketCandidates(ctx, &baseQ, rushW, matchW, safeW)
 	if err != nil {
@@ -512,6 +518,23 @@ func validateRequest(req *RecommendationRequest) error {
 	if req.ProvincialRank <= 0 {
 		return fmt.Errorf("provincial_rank must be positive")
 	}
+	// elective_subjects 可选；一旦提供必须严格 4 选 2，且元素 ∈ 枚举字典。
+	// 空切片走旧路径（不做选科过滤，依靠 SubjectRequirementCode 兜底）。
+	if n := len(req.ElectiveSubjects); n > 0 {
+		if n != 2 {
+			return fmt.Errorf("elective_subjects must contain exactly 2 values")
+		}
+		seen := make(map[string]struct{}, 2)
+		for _, code := range req.ElectiveSubjects {
+			if !IsValidElectiveCode(code) {
+				return fmt.Errorf("invalid elective_subject %q", code)
+			}
+			if _, dup := seen[code]; dup {
+				return fmt.Errorf("elective_subjects must be distinct")
+			}
+			seen[code] = struct{}{}
+		}
+	}
 	return nil
 }
 
@@ -608,6 +631,8 @@ func filterByPreference(candidates []RecommendationCandidate, req *Recommendatio
 			excludeRules[cat][r.Subject] = r.ExcludeBelowScore
 		}
 	}
+	// 只支持算法层实际用到的两个学科。原本含 chinese/english 分支但 ability rule
+	// 表（recommendation_major_ability_rules）里没有这两科的告警阈值，永远走空闭包。
 	subjectScore := func(subject string) (int, bool) {
 		switch subject {
 		case "physics":
@@ -617,14 +642,6 @@ func filterByPreference(candidates []RecommendationCandidate, req *Recommendatio
 		case "math":
 			if req.MathScore != nil {
 				return *req.MathScore, true
-			}
-		case "chinese":
-			if req.ChineseScore != nil {
-				return *req.ChineseScore, true
-			}
-		case "english":
-			if req.EnglishScore != nil {
-				return *req.EnglishScore, true
 			}
 		}
 		return 0, false

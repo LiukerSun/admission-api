@@ -2,7 +2,6 @@ package userprofile
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -26,36 +25,23 @@ func NewStore(pool *pgxpool.Pool) Store {
 	return &store{pool: pool}
 }
 
-const profileColumns = `user_id, region_code, subject_category_code, total_score, provincial_rank,
-	plan_size, priority_strategy, math_score, physics_score, chinese_score, english_score,
-	preferences, completed_at, created_at, updated_at`
+// migration 008 之后，user_profiles 只剩 4 项核心信息 + 系统/状态字段。
+const profileColumns = `user_id, region_code, subject_category_code, elective_subjects,
+	total_score, completed_at, created_at, updated_at`
 
 func scanProfile(row pgx.Row) (*Profile, error) {
 	var p Profile
-	var prefsRaw []byte
 	if err := row.Scan(
 		&p.UserID,
 		&p.RegionCode,
 		&p.SubjectCategoryCode,
+		&p.ElectiveSubjects,
 		&p.TotalScore,
-		&p.ProvincialRank,
-		&p.PlanSize,
-		&p.PriorityStrategy,
-		&p.MathScore,
-		&p.PhysicsScore,
-		&p.ChineseScore,
-		&p.EnglishScore,
-		&prefsRaw,
 		&p.CompletedAt,
 		&p.CreatedAt,
 		&p.UpdatedAt,
 	); err != nil {
 		return nil, err
-	}
-	if len(prefsRaw) > 0 {
-		if err := json.Unmarshal(prefsRaw, &p.Preferences); err != nil {
-			return nil, fmt.Errorf("decode preferences: %w", err)
-		}
 	}
 	return &p, nil
 }
@@ -75,17 +61,13 @@ func (s *store) GetByUserID(ctx context.Context, userID int64) (*Profile, error)
 // Upsert inserts a new profile row or replaces every column on the existing
 // one. The service layer has already validated values; we just write them.
 // markCompleted=true sets completed_at to NOW() on this call (when all 4
-// required scalars are present); markCompleted=false preserves the existing
-// completed_at value to avoid silently un-completing a profile when the user
-// edits an optional field.
+// required fields are present); markCompleted=false preserves the existing
+// completed_at value to avoid silently un-completing a profile.
 func (s *store) Upsert(ctx context.Context, userID int64, req *UpsertRequest, markCompleted bool) (*Profile, error) {
-	prefs := Preferences{}
-	if req.Preferences != nil {
-		prefs = *req.Preferences
-	}
-	prefsRaw, err := json.Marshal(prefs)
-	if err != nil {
-		return nil, fmt.Errorf("encode preferences: %w", err)
+	// elective_subjects: 空切片转 nil，让 pgx 写 NULL 而不是 {}（CHECK 拒绝空数组）。
+	electives := req.ElectiveSubjects
+	if len(electives) == 0 {
+		electives = nil
 	}
 
 	var completedExpr string
@@ -93,18 +75,11 @@ func (s *store) Upsert(ctx context.Context, userID int64, req *UpsertRequest, ma
 		userID,
 		req.RegionCode,
 		req.SubjectCategoryCode,
+		electives,
 		req.TotalScore,
-		req.ProvincialRank,
-		req.PlanSize,
-		req.PriorityStrategy,
-		req.MathScore,
-		req.PhysicsScore,
-		req.ChineseScore,
-		req.EnglishScore,
-		prefsRaw,
 	}
 	if markCompleted {
-		completedExpr = "$13"
+		completedExpr = "$6"
 		args = append(args, time.Now())
 	} else {
 		// Preserve existing completed_at on UPDATE; default to NULL on first INSERT.
@@ -116,29 +91,20 @@ func (s *store) Upsert(ctx context.Context, userID int64, req *UpsertRequest, ma
 	// UPDATE, COALESCE keeps the existing value unless markCompleted overrides.
 	var insertCompleted string
 	if markCompleted {
-		insertCompleted = "$13"
+		insertCompleted = "$6"
 	} else {
 		insertCompleted = "NULL"
 	}
 
 	query := `
 		INSERT INTO user_profiles (
-			user_id, region_code, subject_category_code, total_score, provincial_rank,
-			plan_size, priority_strategy, math_score, physics_score, chinese_score, english_score,
-			preferences, completed_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, ` + insertCompleted + `)
+			user_id, region_code, subject_category_code, elective_subjects, total_score, completed_at
+		) VALUES ($1, $2, $3, $4, $5, ` + insertCompleted + `)
 		ON CONFLICT (user_id) DO UPDATE SET
 			region_code           = EXCLUDED.region_code,
 			subject_category_code = EXCLUDED.subject_category_code,
+			elective_subjects     = EXCLUDED.elective_subjects,
 			total_score           = EXCLUDED.total_score,
-			provincial_rank       = EXCLUDED.provincial_rank,
-			plan_size             = EXCLUDED.plan_size,
-			priority_strategy     = EXCLUDED.priority_strategy,
-			math_score            = EXCLUDED.math_score,
-			physics_score         = EXCLUDED.physics_score,
-			chinese_score         = EXCLUDED.chinese_score,
-			english_score         = EXCLUDED.english_score,
-			preferences           = EXCLUDED.preferences,
 			completed_at          = ` + completedExpr + `,
 			updated_at            = NOW()
 		RETURNING ` + profileColumns

@@ -90,6 +90,70 @@ func (h *Handler) GetPlan(c *gin.Context) {
 	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(plan))
 }
 
+func (h *Handler) DeletePlan(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid plan id")
+		return
+	}
+	if err := h.service.DeletePlan(c.Request.Context(), userID, id); err != nil {
+		if errors.Is(err, ErrPlanNotFound) {
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "plan not found")
+			return
+		}
+		h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to delete plan")
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(map[string]any{"deleted": true, "id": id}))
+}
+
+// UpdatePlanMetaRequest：PATCH /volunteer-plans/:id 的入参。
+// 用 *string 而不是 string —— 字段未传 (nil) 表示不动；空串表示清空（仅 description 允许）。
+type UpdatePlanMetaRequest struct {
+	Title       *string `json:"title,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
+func (h *Handler) UpdatePlan(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		h.RespondError(c, http.StatusUnauthorized, web.ErrCodeUnauthorized, "unauthorized")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid plan id")
+		return
+	}
+	var req UpdatePlanMetaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "invalid request body")
+		return
+	}
+	if req.Title == nil && req.Description == nil {
+		h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "nothing to update")
+		return
+	}
+	plan, err := h.service.UpdatePlanMeta(c.Request.Context(), userID, id, req.Title, req.Description)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrPlanNotFound):
+			h.RespondError(c, http.StatusNotFound, web.ErrCodeNotFound, "plan not found")
+		case errors.Is(err, ErrInvalidPlanTitle):
+			h.RespondError(c, http.StatusBadRequest, web.ErrCodeBadRequest, "方案名称不能为空")
+		default:
+			h.RespondError(c, http.StatusInternalServerError, web.ErrCodeInternal, "failed to update plan")
+		}
+		return
+	}
+	h.RespondJSON(c, http.StatusOK, web.SuccessResponse(plan))
+}
+
 func (h *Handler) GetDraft(c *gin.Context) {
 	userID, ok := middleware.GetUserID(c)
 	if !ok {

@@ -22,7 +22,7 @@ func NewHandler(service Service) *Handler {
 
 // GetMe godoc
 // @Summary      获取当前用户的志愿调查问卷档案
-// @Description  返回当前用户保存的 region/subject/score/rank 等基础信息与偏好；从未填写时返回空档案 + completed=false（不会 404）。
+// @Description  返回当前用户保存的 region/subject/electives/total_score 4 项核心信息；从未填写时返回空档案 + completed=false（不会 404）。
 // @Tags         user-profile
 // @Produce      json
 // @Security     BearerAuth
@@ -89,22 +89,10 @@ func mapValidationError(err error) (status, code int, msg string, matched bool) 
 		return http.StatusBadRequest, web.ErrCodeBadRequest, "省份代码格式不正确", true
 	case errors.Is(err, ErrInvalidSubject):
 		return http.StatusBadRequest, web.ErrCodeBadRequest, "选科类别取值不合法", true
-	case errors.Is(err, ErrInvalidStrategy):
-		return http.StatusBadRequest, web.ErrCodeBadRequest, "填报策略取值不合法", true
 	case errors.Is(err, ErrScoreOutOfRange):
 		return http.StatusBadRequest, web.ErrCodeBadRequest, "总分超出 0-750 范围", true
-	case errors.Is(err, ErrRankOutOfRange):
-		return http.StatusBadRequest, web.ErrCodeBadRequest, "省内位次超出允许范围", true
-	case errors.Is(err, ErrPlanSizeOutOfRange):
-		return http.StatusBadRequest, web.ErrCodeBadRequest, "志愿数应在 1-96 之间", true
-	case errors.Is(err, ErrSubjectScoreInvalid):
-		return http.StatusBadRequest, web.ErrCodeBadRequest, "单科成绩超出 0-150 范围", true
-	case errors.Is(err, ErrPreferenceTooLong):
-		return http.StatusBadRequest, web.ErrCodeBadRequest, "偏好字段长度超出限制", true
-	case errors.Is(err, ErrInvalidHollandCode):
-		return http.StatusBadRequest, web.ErrCodeBadRequest, "霍兰德兴趣代码格式不正确", true
-	case errors.Is(err, ErrInvalidBudget):
-		return http.StatusBadRequest, web.ErrCodeBadRequest, "学费预算超出允许范围", true
+	case errors.Is(err, ErrInvalidElectiveSet):
+		return http.StatusBadRequest, web.ErrCodeBadRequest, "再选科目需从生物/化学/地理/政治中恰好选 2 门", true
 	}
 	return 0, 0, "", false
 }
