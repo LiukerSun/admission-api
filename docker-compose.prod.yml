@@ -1,6 +1,11 @@
 services:
   db:
-    image: postgres:15-alpine
+    # PG 18：与 Dockerfile 里 API 容器自带的 pg_dump/pg_restore client 版本对齐，
+    # 避免跨大版本 client/server 组合产生 "unrecognized configuration parameter
+    # transaction_timeout" 之类的 warning。首次 deploy 这版会被 Jenkins pipeline
+    # 的 "Postgres major upgrade if needed" stage 自动迁移（dump→删旧 volume→
+    # 起空 PG 18 cluster→restore）；之后再 build 直接复用现有 PG 18 volume。
+    image: postgres:18-alpine
     container_name: admission-db
     env_file:
       - .env
